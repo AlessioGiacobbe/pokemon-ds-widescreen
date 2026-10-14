@@ -1,14 +1,47 @@
 # Changelog
 
-## v0.2.0 — build from your own ROM
+## v0.2.1 — 64-bit ARM Linux
 
-**No ready-made download.** A built program would contain the game's code, so
-releases are source only. Download the source code, run
-`python3 ssrecomp_setup.py`, choose your own Pokémon SoulSilver (US) ROM and
-press Build; see the README's Quick start.
+**Downloads:** `ssrecomp-setup-linux-x86_64`,
+`ssrecomp-setup-linux-aarch64.AppImage` (64-bit ARM Linux: Raspberry Pi 4/5
+with a 64-bit OS, other arm64 boards and laptops) and
+`ssrecomp-setup-windows-x86_64.exe` are setup programs, not the game: start
+one, choose your own Pokémon SoulSilver (US) ROM, press Build, then Play. Use
+these instead of the v0.2.0 ones.
 
 ### New
 
+- **Setup program for 64-bit ARM Linux**, as an AppImage
+  (`tools/make_appimage.sh`). The game compiles for arm64; cross-compiled and
+  run under emulation it is identical to the x86 build frame for frame. Not yet
+  tried on real ARM hardware.
+
+### Fixed
+
+- **The game would not compile on ARM, and would crash on older x86 CPUs**: the
+  widescreen renderer was always built with AVX2 instructions. They are now
+  used only on x86 CPUs that have them; nothing changes on those.
+- The recompiler failed when its output folder was on another drive.
+
+### Known limitations
+
+- Windows and ARM builds not yet tried on real hardware (Windows under Wine,
+  ARM under emulation).
+- See v0.2.0 and v0.1.0 for the rest.
+
+## v0.2.0 — build from your own ROM
+
+**Downloads:** `ssrecomp-setup-linux-x86_64` and
+`ssrecomp-setup-windows-x86_64.exe` are setup programs, not the game: start
+one, choose your own Pokémon SoulSilver (US) ROM, press Build, then Play. A
+compiler and a few libraries are needed; the program says which and how to get
+them. A ready-built game cannot be offered, as it would contain the game's code.
+
+### New
+
+- **Setup programs for Linux and Windows**: one file each, made from this
+  release's source (`tools/package_setup.py`). They carry the project's source
+  and build the game in a folder of their own.
 - **Setup window** (`ssrecomp_setup.py`): pick your ROM, press Build, press
   Play. It checks the ROM is the right game, says what is missing to compile
   and how to install it, picks the number of compile jobs from your memory, and

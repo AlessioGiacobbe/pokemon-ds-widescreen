@@ -27,7 +27,7 @@ class WriteIfChanged(io.StringIO):
         except OSError:
             old = None
         if old != text:
-            with open(self.path, 'w') as f:
+            with open(self.path, 'w', newline='\n') as f:
                 f.write(text)
         return super().__exit__(*exc)
 

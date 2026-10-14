@@ -33,34 +33,56 @@ buttons laid out along the bottom (one screen, played with a controller):
 You need your own copy of Pokémon SoulSilver (US) as a `.nds` file, dumped from
 your cartridge. Nothing of the game is in this repository or its releases.
 
-1. Download this repository (the source code zip of the latest release, or
-   `git clone`).
-2. Start the setup window: `python3 ssrecomp_setup.py`.
+1. Download the setup program for your system from the
+   [latest release](../../releases/latest):
+   - Linux PC: `ssrecomp-setup-linux-x86_64`
+   - Linux on ARM (Raspberry Pi 4/5 with a 64-bit OS, other arm64 boards and
+     laptops): `ssrecomp-setup-linux-aarch64.AppImage`
+   - Windows: `ssrecomp-setup-windows-x86_64.exe`
+
+   On Linux, make it executable (`chmod +x <file>`, or the file's properties).
+2. Start it.
 3. Choose your ROM, press **Build**, wait (the first build takes 20–40 minutes),
    then press **Play**.
 
-The window checks that the ROM is the right game and tells you if something
-needed for compiling is missing, with the command to install it:
+The setup program carries this project's source and unpacks it into a folder of
+its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
+Windows), where the game is built and its save is kept. It contains nothing of
+the game. Instead of the download you can also run `python3 ssrecomp_setup.py`
+from a copy of this repository (then the game is built in that folder).
 
-- **Linux (Ubuntu, Debian, Mint):** `sudo apt install python3-tk cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev`
-- **Fedora:** `sudo dnf install python3-tkinter cmake ninja-build gcc-c++ pkgconf-pkg-config SDL2-devel libpng-devel zlib-devel`
-- **Arch:** `sudo pacman -S --needed tk cmake ninja gcc pkgconf sdl2 libpng zlib`
+The window checks that the ROM is the right game and tells you if something
+needed for compiling is missing, with the command to install it (with
+`python3 ssrecomp_setup.py` instead of the download, add Python's Tk support:
+`python3-tk`, `python3-tkinter` or `tk`):
+
+- **Linux (Ubuntu, Debian, Mint):** `sudo apt install cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev`
+- **Fedora:** `sudo dnf install cmake ninja-build gcc-c++ pkgconf-pkg-config SDL2-devel libpng-devel zlib-devel`
+- **Arch:** `sudo pacman -S --needed cmake ninja gcc pkgconf sdl2 libpng zlib`
 - **Immutable Linux (Bazzite, Silverblue, SteamOS):** run it in a container:
 
       distrobox create -n ssrecomp -i ubuntu:24.04
-      distrobox enter ssrecomp -- sudo apt install -y python3-tk cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev
-      distrobox enter ssrecomp -- python3 ssrecomp_setup.py
+      distrobox enter ssrecomp -- sudo apt install -y cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev
+      distrobox enter ssrecomp -- ./ssrecomp-setup-linux-x86_64
 
   The finished game also runs outside the container (`./run.sh`).
-- **Windows (untested so far):** install [MSYS2](https://www.msys2.org), open
-  "MSYS2 UCRT64", install the tools with
+- **Windows (untested so far):** install [MSYS2](https://www.msys2.org) in its
+  default place (`C:\msys64`), open "MSYS2 UCRT64" and install the compiler and
+  libraries with
 
-      pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libpng mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-tk
+      pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libpng mingw-w64-ucrt-x86_64-zlib
 
-  then `cd` to this folder and run `python ssrecomp_setup.py`.
+  The setup program finds them there by itself. (To run `ssrecomp_setup.py`
+  instead of the download, also install `mingw-w64-ucrt-x86_64-python` and
+  `mingw-w64-ucrt-x86_64-tk` and start it from that window.)
 
-Without a display: `python3 ssrecomp_setup.py --rom your-rom.nds` does the same
-in the terminal. After building, `./run.sh --fullscreen` starts the game too.
+Without a display: `ssrecomp-setup-linux-x86_64 --rom your-rom.nds` (or
+`python3 ssrecomp_setup.py --rom ...`) does the same in the terminal.
+
+Making the setup programs: `pip install pyinstaller && python tools/package_setup.py`
+on the system they are for; `tools/make_appimage.sh` wraps the Linux one into an
+AppImage. `.github/workflows/release.yml` does all three on GitHub's machines
+when started by hand from the Actions tab.
 
 How it works without the decompilation: the code to recompile is read straight
 from your ROM (`tools/ndsrom.py`). What the decompilation adds, which parts of

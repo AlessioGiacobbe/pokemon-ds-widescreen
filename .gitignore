@@ -17,3 +17,4 @@ ssrecomp.cfg
 __pycache__/
 /ssrecomp.rom
 /gen.new/
+/dist/

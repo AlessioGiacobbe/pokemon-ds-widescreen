@@ -237,5 +237,17 @@ endif()
 #endif()
 
 
-# ssrecomp: the widescreen rasteriser is a hot per-pixel loop.
-set_source_files_properties(GPU3D_Wide.cpp PROPERTIES COMPILE_OPTIONS "-O3;-ffast-math;-mavx2;-mfma")
+# ssrecomp: the widescreen rasteriser is a hot per-pixel loop. AVX2 only on x86 machines
+# that have it (the game is compiled on the machine it runs on); ARM gets NEON by default.
+set(SSR_WIDE_FLAGS -O3 -ffast-math)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    include(CheckCXXSourceRuns)
+    set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma")
+    check_cxx_source_runs("int main() { return __builtin_cpu_supports(\"avx2\") && __builtin_cpu_supports(\"fma\") ? 0 : 1; }"
+        SSR_HOST_AVX2)
+    unset(CMAKE_REQUIRED_FLAGS)
+    if(SSR_HOST_AVX2)
+        list(APPEND SSR_WIDE_FLAGS -mavx2 -mfma)
+    endif()
+endif()
+set_source_files_properties(GPU3D_Wide.cpp PROPERTIES COMPILE_OPTIONS "${SSR_WIDE_FLAGS}")
