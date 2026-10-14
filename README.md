@@ -23,7 +23,7 @@ to pret, whose contribution rules do not accept such work.
     ./run.sh                 # windowed
     ./run.sh --fullscreen
 
-`run.sh` expects the ROM at
+First build it: see "Building" below. `run.sh` expects the ROM at
 `../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds`, i.e. the
 decompilation checked out next to this repository and built. The save file is `soulsilver.sav` next to the script; settings
 are remembered in `ssrecomp.cfg`.
@@ -198,29 +198,94 @@ In a window, `--shot-dir` with `--shot-at`/`--shot-every` also writes
 
 ## Building
 
-You need a checkout of pret/pokeheartgold next to this one and its own build
-requirements (see its INSTALL.md), plus CMake, Ninja, a C++20 compiler, SDL2
-(or sdl2-compat), libpng and Python 3 with `pyelftools`.
+Tested on Linux (Ubuntu 24.04 inside a distrobox on Fedora/Bazzite). Other
+Linux distributions should work the same way; Windows and macOS are untested.
+Expect about half an hour for a first build.
 
-Everything is built inside the `hgss-decomp` distrobox.
+### What you need
 
-    # 1. build the ROM and its ELF (in ../pokeheartgold)
-    make soulsilver
-    # 2. recompile the ARM9 code to C++ (writes gen/)
-    python3 tools/recomp.py ../pokeheartgold/build/soulsilver.us melonDS/src gen
-    python3 tools/apps.py ../pokeheartgold/build/soulsilver.us gen
-    # 3. build
-    cmake -S . -B build -G Ninja && ninja -C build
+- **The game.** Only build this if you own Pokémon SoulSilver (US). The
+  decompilation below rebuilds the game from its source; the result has to be
+  byte-for-byte identical to the retail cartridge, which you can check against a
+  dump of your own copy (SHA-1 below).
+- **About 3 GB of free disk space and 16 GB of RAM.** The generated code is
+  large and the compiler needs about 1.5 GB per parallel job.
+- **pret/pokeheartgold's build requirements** — see its
+  [INSTALL.md](https://github.com/pret/pokeheartgold/blob/master/INSTALL.md).
+- **For this project:** CMake 3.16+, Ninja, a C++17 compiler (GCC or Clang),
+  SDL2 (or sdl2-compat), libpng, zlib, and Python 3 with `pyelftools`. On
+  Ubuntu/Debian:
 
-The resulting `build/ssrecomp` also runs directly on the Bazzite host.
+      sudo apt install cmake ninja-build g++ libsdl2-dev libpng-dev zlib1g-dev python3-pyelftools
 
-Step 3 takes about ten minutes on 12 cores: `gen/` holds 1.69 million
-recompiled instructions. Changing `runtime/recomp_rt.h` or
-`runtime/recomp_gen.h` rebuilds all of it.
+  On Fedora: `sudo dnf install cmake ninja-build gcc-c++ SDL2-devel libpng-devel zlib-devel python3-pyelftools`.
 
-Because step 2 reads the decompilation's build output, changes made to the
-game's source in `../pokeheartgold` flow into the native build by repeating the
-three steps.
+### Steps
+
+1. **Put both repositories side by side.** `run.sh` and the commands below
+   assume this layout:
+
+       some-folder/
+       ├── pokeheartgold/   (pret's decompilation)
+       └── ssrecomp/        (this repository)
+
+       git clone https://github.com/pret/pokeheartgold.git
+       git clone <this repository's URL> ssrecomp
+
+2. **Build SoulSilver with the decompilation** (in `pokeheartgold/`):
+
+       cd pokeheartgold
+       make soulsilver
+
+   This produces `build/soulsilver.us/pokesoulsilver.us.nds` plus the files the
+   recompiler reads (the linked `.nef` and one `.sbin` per code section). Check
+   the ROM is a faithful build:
+
+       sha1sum build/soulsilver.us/pokesoulsilver.us.nds
+       # f8dc38ea20c17541a43b58c5e6d18c1732c7e582
+
+   If it differs, fix the decompilation build first (see its INSTALL.md); the
+   recompiled code would not match the ROM.
+
+3. **Generate the recompiled code** (in `ssrecomp/`). This writes `gen/`, which
+   is the game's code translated to C++: keep it to yourself, never commit or
+   share it.
+
+       cd ../ssrecomp
+       python3 tools/recomp.py ../pokeheartgold/build/soulsilver.us melonDS/src gen
+       python3 tools/apps.py ../pokeheartgold/build/soulsilver.us gen
+
+   The first prints something like `121 sections, 25118 chunks, 1685104
+   instructions, 71 files`.
+
+4. **Compile:**
+
+       cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+       ninja -C build
+
+   This takes 20–30 minutes on a 6-core CPU: `gen/` holds 1.69 million
+   recompiled instructions. Ninja runs one job per CPU thread by default; with
+   less than about 1.5 GB of RAM per thread, limit it (`ninja -C build -j8` for
+   16 GB). The result is `build/ssrecomp`.
+
+5. **Run:**
+
+       ./run.sh --fullscreen
+
+   `run.sh` starts `build/ssrecomp` with the ROM from step 2 and keeps the save
+   in `soulsilver.sav` next to the script. The ROM built in step 2 is identical
+   to the cartridge, so `build/ssrecomp <your own dump>.nds --save my.sav` works
+   too, as long as it is the same US SoulSilver ROM.
+
+### Later
+
+- **Updating:** after pulling changes to this repository, run `ninja -C build`
+  again. After changing or updating the decompilation, repeat steps 2–4.
+- **Mods:** changes made to the game's source in `pokeheartgold/` flow into the
+  native build by repeating steps 2–4.
+- **Rebuild times:** changing `runtime/recomp_rt.h`, `runtime/recomp_gen.h` or
+  melonDS headers included by `NDS.h` recompiles all of `gen/`; frontend
+  changes take seconds.
 
 ## How the recompiled code works
 
