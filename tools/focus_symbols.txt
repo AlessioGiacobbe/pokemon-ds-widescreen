@@ -1,0 +1,25 @@
+# Functions whose execution tells the frontend that the bottom screen is in use.
+# One name per line; resolved against the linker map by tools/apps.py.
+Task_StartMenu
+BattleInput_CheckTouch
+TouchscreenListMenu_HandleInput
+# Save flow in the start menu and the save confirmation on the touch screen.
+sub_0203D264
+sub_0203D288
+sub_0203D2CC
+sub_0203D2EC
+sub_0203D304
+TouchSaveApp_HandleSaveConfirmation
+# Bottom-screen task that shows the answer buttons for a question asked in the overworld.
+ov27_0225C434
+# Bottom-screen task of the Poke Mart buy list.
+ov31_0225D7A0
+# Touch hit tests: something on the bottom screen is waiting to be touched.
+TouchscreenHitbox_FindRectAtTouchHeld
+TouchscreenHitbox_FindRectAtTouchNew
+TouchscreenHitbox_FindHitboxAtTouchNew
+TouchscreenHitbox_FindHitboxAtTouchHeld
+TouchscreenHitbox_TouchHeldIsIn
+TouchscreenHitbox_TouchNewIsIn
+# The overworld map is being drawn.
+FieldMap_Main

@@ -1,0 +1,288 @@
+# ssrecomp
+
+A native build of Pokémon SoulSilver for single-screen devices. The game's ARM9
+code is statically recompiled to C++ from the `pokeheartgold` decompilation's
+build output; the melonDS core (GPLv3, vendored in `melonDS/` at tag 1.1 with a
+few patches) provides the DS hardware: graphics, sound, cartridge, save memory
+and the ARM7.
+
+**This repository contains no game code or data.** It holds the recompiler,
+the runtime and the frontend. The game-specific part (`gen/`) is generated on
+your own machine from your own build of
+[pret/pokeheartgold](https://github.com/pret/pokeheartgold), which in turn needs
+your own copy of the game; see "Building". Do not commit `gen/`, ROMs, saves or
+save states to this repository.
+
+Not affiliated with or endorsed by Nintendo, Game Freak, The Pokémon Company,
+pret or the melonDS project. Pokémon is a trademark of its owners. This project
+was written with the help of an AI coding assistant; do not submit any of it
+to pret, whose contribution rules do not accept such work.
+
+## Running
+
+    ./run.sh                 # windowed
+    ./run.sh --fullscreen
+
+`run.sh` expects the ROM at
+`../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds`, i.e. the
+decompilation checked out next to this repository and built. The save file is `soulsilver.sav` next to the script; settings
+are remembered in `ssrecomp.cfg`.
+
+Everything can be done from a controller:
+
+| Action | Controller | Keyboard |
+|---|---|---|
+| D-pad | D-pad or left stick | arrow keys |
+| A / B / X / Y | the buttons with those labels | X / Z / S / A |
+| L / R | shoulders | Q / W |
+| Start / Select | Start / Back | Enter / Right Shift |
+| Pause menu | Guide, or Start + Select together | Esc |
+| Touch screen | off by default; with "STICK TOUCH CURSOR" on in the pause menu: right stick moves a cursor, right trigger presses | mouse, or I J K L and Space |
+| Fast forward (4x) | hold left trigger | hold Left Shift |
+| Swap the large screen | click right stick (only with "STICK TOUCH CURSOR" on) | F1 |
+| Next layout | click left stick (only with "STICK TOUCH CURSOR" on) | Tab |
+| Quick save / load state | pause menu | F5 / F8 |
+| Fullscreen | pause menu | F11 |
+
+The pause menu also has the view, 60 FPS, smooth scaling, button mapping by
+label or by position, reset and quit.
+
+### Single-screen view
+
+The default view (`merged`) shows one picture, with no second screen beside it
+and no switching by hand. What it is made of depends on what the game is doing:
+
+| Situation | What is shown |
+|---|---|
+| Overworld, dialogue | the top screen; on a wide display the world fills the whole view (see "Widescreen world") |
+| A question in the overworld (Yes/No, PC and shop choices) | the answer buttons drawn at the right above the message box |
+| X menu open | the menu panel at the right edge, mostly beside the overworld; the game's "look at the other screen" strip is not drawn. Coming back from the Bag, Pokegear and so on, that strip is also what tells the frontend the menu is up before the menu's own code runs again, so the overworld fades in with the panel already in place |
+| Battle | the scene across the whole view: each row's outermost pixels continue into the sides, darkening outwards, so the sky, ground and HP boxes run to the edges |
+| Battle, choosing a command or move | the buttons taken off the touch screen and laid out as a strip along the bottom in place of the message box, under a label with the message's first line ("What will X do?"): FIGHT, BAG, POKeMON, RUN, or the four moves (B cancels). Left and right walk along the row (empty move slots are skipped) and A presses the outlined button; the frontend does that by touching it, since the game's own cursor moves in the touch screen's two-row arrangement; nothing of the scene is covered. Other touch-screen questions in battle, and narrow views, get the whole touch panel as a card at the lower left |
+| In-battle bag and party | that screen alone |
+| Learning a fifth move | "Forget a move / Keep old moves" at the lower left, then the move picker and its confirm page alone |
+| Bag | the item list with the description box from the other screen underneath |
+| Poke Mart | the item description above the list of goods; quantity and confirmation in the same page |
+| PC box | the selected Pokemon's info card beside the box |
+| Pokedex list | one page: title bar across the top, name, picture and type/size card on the left, description above the number grid and its buttons on the right |
+| Pokedex area, size, forms | one page: the title bar and the tab bar span the view, the two bodies are its columns |
+| Pokedex cover, search | the closed cover as one tall picture; search as a two-column page |
+| Party, options, trainer card, naming, save, Voltorb Flip, ... | the bottom screen alone |
+| Summary | both halves joined into one page |
+| Choosing a starter | the preview at the left edge, the tray of Poke Balls as a card on the right |
+| Pokegear phone | clock above the contact list; during a call, the call screen |
+| Pokegear map, town map | the location's description beside the map |
+| New-game intro | the professor's screen in the middle with its backdrop continued across the view; for a choice it slides left and the choices stand beside him |
+| Top screen blank (e.g. Continue menu) | the bottom screen |
+| Any other screen that waits for a touch (e.g. Apricorn Box) | both screens joined as one spread, so nothing is hidden |
+
+The right-stick touch cursor works through these overlays; if nothing touchable
+is on screen, moving it brings up the bottom screen. Clicking the right stick
+(F1) shows the other screen as an escape hatch for situations not covered yet.
+
+The pieces are put together by the graphics card (`frontend/gpucompose.h`):
+each is uploaded at DS resolution and scaled by the SDL renderer, so the cost
+does not grow with the size of the window. `MergedCompose` in
+`frontend/merged.h` draws the same picture on the CPU for the headless tests;
+the two are compared with `SSR_CPU_COMPOSE=1` and window screenshots (see
+"Performance").
+
+How it works: a patch to the 2D renderer records which graphics layer each
+pixel came from, so a screen's background can be dropped and only its buttons
+drawn (`frontend/merged.h`). The situation is recognised by which game
+functions ran in the last few frames: `tools/apps.py` reads every
+application's per-frame function, and the names in `tools/focus_symbols.txt`,
+out of the decompilation's linker map. The rules are in `pickScene` in
+`frontend/main.cpp`. A new layout must be asked for several frames in a row before
+it replaces the one on screen, so transitions do not flash a wrong one.
+
+The older layouts are still in the pause menu: `hybrid`, `side`, `vertical`,
+`top`, `bottom`.
+
+### Widescreen world
+
+In the merged view on a wide display the overworld fills the whole picture
+instead of a 4:3 box, and is drawn at high resolution ("WIDESCREEN WORLD" and
+"WORLD DETAIL" in the pause menu; `wide` and `wide_lines` in `ssrecomp.cfg`).
+Because it is no longer limited to the DS's 256x192 pixels, the world also
+moves in steps smaller than a DS pixel: walking up and down, where the camera's
+tilt makes the DS scroll 2, 1, 2, 1 pixels, is even.
+
+How it works (`melonDS/src/GPU3D_Wide.cpp`): every polygon the game submits is
+recorded before clipping. When the frame is flushed, the list is submitted a
+second time with the horizontal clip coordinate squeezed by 256 / (view width),
+so that what lies left and right of the DS's view survives clipping, into
+separate polygon memory. A separate rasteriser draws that list at the size of
+the output (perspective-correct textures, depth, translucency, fog; no edge
+marking or shadow volumes), on worker threads while emulation continues. The
+frontend puts the picture behind the top screen and draws only the top screen's
+2D pixels (text boxes, signs) over it; fades are applied to it from the
+brightness registers, and 2D effects that touch the screen's edge (wipes) are
+continued into the margins. The game sees the same polygon counts as without it, with one exception: the
+box test, which the game uses to decide whether a tree or a building is in
+view, is made against the wide view while widescreen is on, so that those are
+also drawn beside the DS's own picture instead of popping in at its edge
+(`GPU3D::BoxTest`). `--lockstep` therefore runs with widescreen off.
+Battles, menus and everything that is not the overworld stay 4:3.
+
+Known limits: anything the game culls by other means than the box test could
+still pop in at the far left and right (none found so far); there are no
+edge-marking outlines; 2D weather or
+overlays do not extend beyond the 4:3 area; "WORLD DETAIL" above 720 costs
+frame time (about 5 ms at 720 lines, 12 at 1080, 18 at 1440 on a 6-core
+desktop CPU).
+
+### 60 fps
+
+The game updates its 3D scene 30 times a second. With "60 FPS" on (the
+default, in the pause menu), the 3D engine records the polygons of each frame
+and, on the display frame in between, draws them halfway between their old and
+new positions. Walking scrolls 1 pixel per frame instead of 2 every other
+frame. Game speed and game state are unchanged, the 3D picture is one display
+frame (1/60 s) later than without it, and 2D elements such as text boxes still
+update at the game's own rate. A polygon is paired with its
+counterpart in the previous frame by how the scene as a whole moved (found by
+letting every possible pairing vote), and only if it moved roughly like that;
+anything else is drawn where it now is. The polygon after the last partner is
+tried first (objects keep their order in the list), the scene's movement is
+voted on from both ends of the list so that a map block entering it does not
+upset the vote, and a strip polygon whose neighbour was treated differently is
+built on its own. `SSR_PAIR_DEBUG=1` logs where the pairing changes step. Pairing with the nearest look-alike
+instead drew models halfway towards a neighbour that had just left the picture
+(`SSR_PAIR_LOOSE=1` brings that back for comparison). It switches itself off when the scene does not
+update on a steady 30 fps cadence, when polygons cannot be matched between
+frames, and while the game captures the 3D image.
+
+## Performance
+
+`SSR_PERF=1` prints, every 300 frames, the average time spent per frame in
+emulation, in choosing and drawing the picture, in presenting it and in
+waiting for the next frame, and the longest frame. At 2560x1440 on a 6-core
+desktop CPU the overworld with the widescreen world at 720 lines takes about
+8 ms of the 16.7 ms a frame has.
+
+What keeps it there:
+
+- the DS-resolution 3D picture is drawn on its own thread (melonDS's threaded
+  software renderer; `SSR_NO_RENDER_THREAD=1` turns that off), the widescreen
+  picture on a pool of worker threads;
+- the graphics card composes the picture, through SDL's OpenGL ES renderer,
+  which uploads textures several times faster than its desktop OpenGL one here
+  (`SDL_RENDER_DRIVER` overrides the choice);
+- in recompiled code a branch to an instruction of the same chunk continues
+  there instead of returning to the dispatcher (half as many dispatches);
+- frames are paced by sleeping and then spinning for the last fraction of a
+  millisecond, which keeps them an even 16.7 ms apart.
+
+What does not help yet is the recompiled code itself: because every
+instruction still calls the interpreter's handler and repeats its bookkeeping,
+it runs slightly slower than the plain interpreter (`--interp`): about 6.1
+against 5.2 ms of emulation per frame in the overworld, the generated code
+being 390 MB against the interpreter's few hundred KB. `rc_code_read32` in
+`runtime/recomp_gen.h` is meant to be inlined but is not at `-O1`. Translating
+the common instructions to inline C++ with their operands folded in is where
+the remaining CPU time would come from; `--lockstep` checks each instruction,
+and comparing `--hash-every` output with the interpreter's checks how they are
+chained.
+
+`SSR_SAMPLE=<file>` records about 1000 call stacks a second from whichever
+thread is running (`frontend/sampler.h`); `tools/samples.py build/ssrecomp
+<file>` lists where the time went. To measure the real window path without
+putting a window on the desktop, run the game inside a headless compositor:
+
+    SSR_PERF=1 gamescope --backend headless -W 2560 -H 1440 -w 2560 -h 1440 -- \
+        build/ssrecomp <rom> --fullscreen --no-save --state-load <snapshot> --frames <n>
+
+In a window, `--shot-dir` with `--shot-at`/`--shot-every` also writes
+`window_<frame>.png`, read back from the renderer: exactly what is shown.
+
+## Building
+
+You need a checkout of pret/pokeheartgold next to this one and its own build
+requirements (see its INSTALL.md), plus CMake, Ninja, a C++20 compiler, SDL2
+(or sdl2-compat), libpng and Python 3 with `pyelftools`.
+
+Everything is built inside the `hgss-decomp` distrobox.
+
+    # 1. build the ROM and its ELF (in ../pokeheartgold)
+    make soulsilver
+    # 2. recompile the ARM9 code to C++ (writes gen/)
+    python3 tools/recomp.py ../pokeheartgold/build/soulsilver.us melonDS/src gen
+    python3 tools/apps.py ../pokeheartgold/build/soulsilver.us gen
+    # 3. build
+    cmake -S . -B build -G Ninja && ninja -C build
+
+The resulting `build/ssrecomp` also runs directly on the Bazzite host.
+
+Step 3 takes about ten minutes on 12 cores: `gen/` holds 1.69 million
+recompiled instructions. Changing `runtime/recomp_rt.h` or
+`runtime/recomp_gen.h` rebuilds all of it.
+
+Because step 2 reads the decompilation's build output, changes made to the
+game's source in `../pokeheartgold` flow into the native build by repeating the
+three steps.
+
+## How the recompiled code works
+
+`tools/recomp.py` reads the linked `.nef` for section addresses and the
+`$a`/`$t`/`$d` mapping symbols, so it knows exactly which bytes are ARM code,
+Thumb code or data in the main module, the ITCM block and all overlays. Every
+instruction becomes a labelled statement inside a "chunk" function of up to
+256 instructions (`gen/rc_*.cpp`).
+
+- `runtime/recomp_gen.h` defines what one recompiled instruction does. It
+  repeats the interpreter's per-instruction sequence (prefetch, execute, cycle
+  accounting), so a recompiled run is bit-identical to an interpreted one.
+  At present the execute step calls the melonDS handler for that instruction;
+  translating the common instructions to inline C++ is the next optimisation.
+- Many overlays are linked at the same addresses. `runtime/recomp_rt.cpp`
+  enters a chunk only after comparing its bytes with emulated memory, and each
+  instruction checks its own opcode, so stale code is never executed. Anything
+  not covered (the BIOS, code not yet loaded) falls back to the interpreter one
+  instruction at a time.
+
+## Testing
+
+The save states and input scripts used during development are not part of this
+repository (save states contain game memory), so the examples below need ones
+of your own: `--state-save` writes one.
+
+    build/ssrecomp <rom> --lockstep --frames 9000 --input test/play2.txt
+
+`--lockstep` runs an interpreter-only console and the recompiled one side by
+side and compares registers, flags, cycle counts and timestamps after every
+ARM9 instruction. Other test options (`--headless`, `--input`, `--shot-at`,
+`--compose`, `--state-save`/`--state-load`, `--hash-every`, `--log-sections`,
+`--shot-layers`, `--trace-funcs`, `--count-changes`, `--interp60`)
+are listed by running the binary with no arguments. `--no-wide` turns the
+widescreen renderer off, `--bench-compose` composes the merged picture every
+frame in headless mode so whole-frame time can be measured, and the environment
+variable `SSR_WIDE_PROF=1` prints the widescreen renderer's time per frame. `tools/try.sh` resumes from
+a snapshot, runs an input script and tiles the screenshots; `tools/mshots.sh`
+does the same for the merged view (`tools/wshots.sh` through the real window
+path, inside a headless gamescope), and `tools/scroll.py` measures the scroll
+between consecutive screenshots. With `--log-sections` and a shot directory a
+screenshot is taken at every change of merged layout; `tools/strip.py` tiles a
+shot directory into contact sheets, which is how layouts are reviewed in motion. Input scripts can
+drive a virtual controller (`pad:guide`, `pad:rt`, `pad:rx+`, ...) to test the
+controller paths without hardware.
+
+To get around the game world in tests, `--nav "x,z;x,z;..."` walks the player to
+a list of tiles (door tiles included; `x,z,L` keeps walking left into a side
+door), using the overworld collision grid that
+`tools/navmap.py` extracts (`--nav-map`; `--nav-map-id <map id>=file` adds the grid of one
+interior, made by passing that map's matrix file to `navmap.py`; ladders need a push, `x,z,U`); the input script is held until it
+arrives or, with `--nav-stop-on-battle`, until a battle starts. `--battle-mash`
+fights battles by pressing A and tapping the left-hand moves in turn, `--pos-every N` prints the player's tile, `--stop-at N` quits at a real frame
+(writing the `--state-save` snapshot), and
+`tools/navrun.sh` wraps these; `tools/grind.sh` loops grass walking and healing to gain levels.
+`--log-sections` also prints each change of merged scene, which shows where a new screen appeared in a long run. Tile coordinates of doors and people are in the
+decompilation's `files/fielddata/eventdata/zone_event/*.json`.
+
+## License
+
+GPL-3.0-or-later (see `LICENSE`), as required by the melonDS core it is built
+on. `melonDS/` is melonDS 1.1 with changes for this project: recompiled-code
+dispatch in the ARM9 loop, per-pixel layer flags in the 2D renderer, the 60 fps
+in-between frames and the widescreen renderer (`src/GPU3D_Wide.cpp`, new). The
+changes to existing melonDS files are listed in `melonDS-ssrecomp.patch`.

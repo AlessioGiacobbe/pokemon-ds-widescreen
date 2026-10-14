@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Static recompiler for the pokeheartgold ARM9 build output.
+
+Reads the linked NEF (for section addresses and $a/$t/$d mapping symbols) and
+the per-section .sbin images, and emits C++ in which every ARM9 instruction is
+a labelled statement inside a "chunk" function. The melonDS core supplies the
+hardware and the cycle model; see runtime/recomp_gen.h for the macros.
+"""
+import argparse
+import collections
+import os
+import re
+import struct
+import sys
+
+from elftools.elf.elffile import ELFFile
+
+CHUNK_MAX = 256        # instructions per chunk function
+FILE_MAX = 24000       # instructions per generated source file
+
+
+def parse_instr_tables(path):
+    text = open(path).read()
+    tables = {}
+    for m in re.finditer(r'INSTRFUNC_PROTO\((\w+)\[(\d+)\]\)\s*=\s*\{(.*?)\};', text, re.S):
+        body = re.sub(r'//[^\n]*', '', m.group(3))
+        names = [n.strip() for n in body.split(',') if n.strip()]
+        assert len(names) == int(m.group(2)), (m.group(1), len(names))
+        tables[m.group(1)] = names
+    return tables['ARMInstrTable'], tables['THUMBInstrTable']
+
+
+class Section:
+    def __init__(self, name, base, image):
+        self.name = name
+        self.base = base
+        self.image = image
+        self.ranges = []   # (start, end, thumb)
+
+
+def load_sections(build_dir):
+    nef = [f for f in os.listdir(build_dir) if f.endswith('.nef')]
+    assert len(nef) == 1, nef
+    maps = collections.defaultdict(list)
+    named = collections.defaultdict(set)
+    with open(os.path.join(build_dir, nef[0]), 'rb') as f:
+        elf = ELFFile(f)
+        secinfo = [(s.name, s['sh_addr']) for s in elf.iter_sections()]
+        for sym in elf.get_section_by_name('.symtab').iter_symbols():
+            if not isinstance(sym['st_shndx'], int):
+                continue
+            if sym.name in ('$a', '$t', '$d'):
+                maps[sym['st_shndx']].append((sym['st_value'], sym.name))
+            elif sym.name and not sym.name.startswith('$'):
+                named[sym['st_shndx']].add(sym['st_value'] & ~1)
+
+    main_image = open(os.path.join(build_dir, 'main.sbin'), 'rb').read()
+    sections = []
+    for idx in sorted(maps):
+        name, base = secinfo[idx]
+        if name == 'ITCM':
+            # Autoload info sits at the end of main.sbin: (address, size, bss size) per block,
+            # with the blocks stored back to back after the static module.
+            off = None
+            pos = len(main_image) - 0x24
+            entries = [struct.unpack_from('<3I', main_image, pos + i * 12) for i in range(2)]
+            data_off = len(main_image) - 0x24 - sum(e[1] for e in entries)
+            for addr, size, _ in entries:
+                if addr == base:
+                    off = data_off
+                    image = main_image[data_off:data_off + size]
+                data_off += size
+            assert off is not None, 'ITCM autoload block not found'
+        else:
+            path = os.path.join(build_dir, name + '.sbin')
+            if not os.path.exists(path):
+                print('warning: no image for section', name, file=sys.stderr)
+                continue
+            image = open(path, 'rb').read()
+        sec = Section(name, base, image)
+        sec.named = named[idx]
+        syms = sorted(set(maps[idx]))
+        end_of_image = base + len(image)
+        for (addr, kind), nxt in zip(syms, syms[1:] + [(end_of_image, None)]):
+            end = min(nxt[0], end_of_image)
+            if kind == '$d' or end <= addr:
+                continue
+            thumb = kind == '$t'
+            step = 2 if thumb else 4
+            end -= (end - addr) % step
+            if end <= addr:
+                continue
+            if sec.ranges and sec.ranges[-1][1] == addr and sec.ranges[-1][2] == thumb:
+                sec.ranges[-1] = (sec.ranges[-1][0], end, thumb)
+            else:
+                sec.ranges.append((addr, end, thumb))
+        sections.append(sec)
+    return sections
+
+
+ARM_COND = ['EQ', 'NE', 'CS', 'CC', 'MI', 'PL', 'VS', 'VC', 'HI', 'LS', 'GE', 'LT', 'GT', 'LE']
+
+
+def post(addr, step, target, local):
+    """The statement after an instruction; `target` is where a direct branch goes.
+    A branch to an instruction of the same chunk continues there without a trip through
+    the dispatcher, unless something has a name at that address: the frontend watches
+    function entries (probes), and those are noticed in the dispatcher."""
+    if target is not None and target in local:
+        return f'RC_POST_BR(0x{addr + 2 * step:08X}u, 0x{target + step:08X}u, L{local[target]})'
+    return f'RC_POST(0x{addr + 2 * step:08X}u)'
+
+
+def sext(value, bits):
+    return value - (1 << bits) if value & (1 << (bits - 1)) else value
+
+
+def emit_arm(addr, opc, arm_tbl, local):
+    cond = opc >> 28
+    icode = ((opc >> 4) & 0xF) | ((opc >> 16) & 0xFF0)
+    handler = arm_tbl[icode]
+    if cond == 0xE:
+        body = f'{handler}(cpu);'
+    elif cond == 0xF:
+        if (opc & 0xFE000000) == 0xFA000000:
+            body = 'A_BLX_IMM(cpu);'
+        else:
+            body = 'cpu->AddCycles_C();'
+    else:
+        body = f'if (RC_CC_{ARM_COND[cond]}) {handler}(cpu); else cpu->AddCycles_C();'
+    target = None
+    if handler == 'A_B' and cond != 0xF:
+        target = (addr + 8 + (sext(opc & 0xFFFFFF, 24) << 2)) & 0xFFFFFFFF
+    return f'RC_A_FETCH RC_A_GUARD(0x{opc:08X}u) {body} {post(addr, 4, target, local)}'
+
+
+def emit_thumb(addr, opc, thumb_tbl, local):
+    handler = thumb_tbl[(opc >> 6) & 0x3FF]
+    fetch = 'RC_T_FETCH_SHIFT' if (addr & 2) else 'RC_T_FETCH_READ'
+    target = None
+    if handler == 'T_BCOND':
+        target = (addr + 4 + (sext(opc & 0xFF, 8) << 1)) & 0xFFFFFFFF
+    elif handler == 'T_B':
+        target = (addr + 4 + (sext(opc & 0x7FF, 11) << 1)) & 0xFFFFFFFF
+    return f'{fetch} RC_T_GUARD(0x{opc:04X}u) {handler}(cpu); {post(addr, 2, target, local)}'
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('build_dir')
+    ap.add_argument('melonds_src')
+    ap.add_argument('out_dir')
+    ap.add_argument('--only', help='comma-separated section names to recompile (default: all)')
+    args = ap.parse_args()
+
+    arm_tbl, thumb_tbl = parse_instr_tables(os.path.join(args.melonds_src, 'ARM_InstrTable.h'))
+    sections = load_sections(args.build_dir)
+    if args.only:
+        keep = set(args.only.split(','))
+        sections = [s for s in sections if s.name in keep]
+    os.makedirs(args.out_dir, exist_ok=True)
+    for f in os.listdir(args.out_dir):
+        if f.startswith('rc_') or f == 'sources.cmake':
+            os.remove(os.path.join(args.out_dir, f))
+
+    files = []
+    cur_lines = []
+    cur_count = 0
+    chunk_rows = []   # (start, end, thumb, section index, function name)
+    total = 0
+
+    def flush():
+        nonlocal cur_lines, cur_count
+        if not cur_lines:
+            return
+        name = f'rc_{len(files):03d}.cpp'
+        with open(os.path.join(args.out_dir, name), 'w') as f:
+            f.write('// Generated by tools/recomp.py. Do not edit.\n#include "recomp_gen.h"\n\n')
+            f.write('\n'.join(cur_lines))
+            f.write('\n')
+        files.append(name)
+        cur_lines = []
+        cur_count = 0
+
+    for si, sec in enumerate(sections):
+        for start, end, thumb in sec.ranges:
+            step = 2 if thumb else 4
+            addr = start
+            while addr < end:
+                cend = min(end, addr + CHUNK_MAX * step)
+                n = (cend - addr) // step
+                fn = f'rc_s{si}_{addr:08X}'
+                out = [f'void {fn}(melonDS::ARMv5* cpu, melonDS::u32 addr)', '{',
+                       '    melonDS::NDS& nds = cpu->NDS;',
+                       f'    const melonDS::u32 RC_SECTION = {si};',
+                       f'    switch ((addr - 0x{addr:08X}u) >> {1 if thumb else 2})', '    {']
+                out += [f'    case {i}: goto L{i};' for i in range(n)]
+                out += ['    default: return;', '    }']
+                local = {addr + i * step: i for i in range(n) if addr + i * step not in sec.named}
+                for i in range(n):
+                    a = addr + i * step
+                    off = a - sec.base
+                    if thumb:
+                        opc = struct.unpack_from('<H', sec.image, off)[0]
+                        stmt = emit_thumb(a, opc, thumb_tbl, local)
+                    else:
+                        opc = struct.unpack_from('<I', sec.image, off)[0]
+                        stmt = emit_arm(a, opc, arm_tbl, local)
+                    out.append(f'L{i}: {stmt}')
+                out += ['    return;', '}', '']
+                cur_lines += out
+                cur_count += n
+                total += n
+                chunk_rows.append((addr, cend, int(thumb), si, fn))
+                addr = cend
+                if cur_count >= FILE_MAX:
+                    flush()
+    flush()
+
+    # Section images, embedded with .incbin.
+    with open(os.path.join(args.out_dir, 'rc_images.S'), 'w') as f:
+        f.write('    .section .rodata\n')
+        for si, sec in enumerate(sections):
+            img = f'rc_image_{si}.bin'
+            open(os.path.join(args.out_dir, img), 'wb').write(sec.image)
+            f.write(f'    .global rc_image_{si}\n    .balign 16\nrc_image_{si}:\n    .incbin "{img}"\n')
+        f.write('    .section .note.GNU-stack,"",@progbits\n')
+
+    with open(os.path.join(args.out_dir, 'rc_tables.cpp'), 'w') as f:
+        f.write('// Generated by tools/recomp.py. Do not edit.\n#include "recomp_rt.h"\n\n')
+        f.write('namespace melonDS { class ARMv5; }\n')
+        for row in chunk_rows:
+            f.write(f'void {row[4]}(melonDS::ARMv5*, melonDS::u32);\n')
+        f.write('extern "C" {\n')
+        for si in range(len(sections)):
+            f.write(f'extern const unsigned char rc_image_{si}[];\n')
+        f.write('}\n\n')
+        for si, sec in enumerate(sections):
+            f.write(f'static const RcRange rc_ranges_{si}[] = {{')
+            f.write(', '.join(f'{{0x{s:08X}u, 0x{e:08X}u}}' for s, e, _ in sec.ranges))
+            f.write('};\n')
+        f.write('\nconst RcChunk rc_chunks[] = {\n')
+        for start, end, thumb, si, fn in chunk_rows:
+            f.write(f'    {{0x{start:08X}u, 0x{end:08X}u, {thumb}, {si}, {fn}}},\n')
+        f.write('};\n')
+        f.write(f'const melonDS::u32 rc_num_chunks = {len(chunk_rows)};\n\n')
+        f.write('RcSection rc_sections[] = {\n')
+        first = 0
+        for si, sec in enumerate(sections):
+            count = sum(1 for r in chunk_rows if r[3] == si)
+            f.write(f'    {{"{sec.name}", 0x{sec.base:08X}u, 0x{len(sec.image):X}u, rc_image_{si}, '
+                    f'rc_ranges_{si}, {len(sec.ranges)}, {first}, {count}}},\n')
+            first += count
+        f.write('};\n')
+        f.write(f'const melonDS::u32 rc_num_sections = {len(sections)};\n')
+
+    with open(os.path.join(args.out_dir, 'sources.cmake'), 'w') as f:
+        f.write('set(RC_GENERATED_SOURCES\n')
+        for name in files + ['rc_tables.cpp', 'rc_images.S']:
+            f.write(f'    ${{CMAKE_CURRENT_LIST_DIR}}/{name}\n')
+        f.write(')\n')
+
+    print(f'{len(sections)} sections, {len(chunk_rows)} chunks, {total} instructions, {len(files)} files')
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,17 @@
+# Generated from your own game build: never commit (it is the game's code).
+/gen/
+# Build output
+/build/
+/build-*/
+# Game files, saves and save states
+*.nds
+*.sav
+*.sav.state
+*.state
+*.st
+*.sbin
+*.nef
+# Per-user settings and test output
+ssrecomp.cfg
+/test/
+__pycache__/

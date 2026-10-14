@@ -1,0 +1,427 @@
+diff --git a/src/ARM.cpp b/src/ARM.cpp
+index 827fcb01..67208150 100644
+--- a/src/ARM.cpp
++++ b/src/ARM.cpp
+@@ -657,7 +657,11 @@ void ARMv5::Execute()
+         else
+ #endif
+         {
+-            if (CPSR & 0x20) // THUMB
++            if (RecompEnable && RecompRun(this))
++            {
++                // recompiled code ran one or more instructions
++            }
++            else if (CPSR & 0x20) // THUMB
+             {
+                 if constexpr (mode == CPUExecuteMode::InterpreterGDB)
+                     GdbCheckC();
+@@ -698,6 +702,8 @@ void ARMv5::Execute()
+                     AddCycles_C();
+             }
+ 
++            if (TraceHook) TraceHook(this, TraceUser);
++
+             // TODO optimize this shit!!!
+             if (Halted)
+             {
+diff --git a/src/ARM.h b/src/ARM.h
+index 96ed66f0..4ecb159e 100644
+--- a/src/ARM.h
++++ b/src/ARM.h
+@@ -229,6 +229,10 @@ protected:
+     void GdbCheckC();
+ };
+ 
++class ARMv5;
++// ssrecomp: provided by the recompiler runtime. Runs recompiled code at the current PC if there is any.
++bool RecompRun(ARMv5* cpu);
++
+ class ARMv5 : public ARM
+ {
+ public:
+@@ -251,6 +255,12 @@ public:
+     template <CPUExecuteMode mode>
+     void Execute();
+ 
++    // ssrecomp: when set, the interpreter loop first tries statically recompiled code.
++    bool RecompEnable = false;
++    // ssrecomp: called after every ARM9 instruction (or recompiled chunk), before IRQ handling.
++    void (*TraceHook)(ARMv5* cpu, void* user) = nullptr;
++    void* TraceUser = nullptr;
++
+     // all code accesses are forced nonseq 32bit
+     u32 CodeRead32(u32 addr, bool branch);
+ 
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index e85dd429..b4cbd2f4 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -38,6 +38,7 @@ add_library(core STATIC
+     GPU2D_Soft.cpp
+     GPU3D.cpp
+     GPU3D_Soft.cpp
++    GPU3D_Wide.cpp
+     GPU3D_Texcache.cpp
+     GPU3D_Texcache.h
+     melonDLDI.h
+@@ -235,3 +236,6 @@ endif()
+ #  )
+ #endif()
+ 
++
++# ssrecomp: the widescreen rasteriser is a hot per-pixel loop.
++set_source_files_properties(GPU3D_Wide.cpp PROPERTIES COMPILE_OPTIONS "-O3;-ffast-math;-mavx2;-mfma")
+diff --git a/src/GPU2D_Soft.cpp b/src/GPU2D_Soft.cpp
+index 2f8afcba..3eecc5e9 100644
+--- a/src/GPU2D_Soft.cpp
++++ b/src/GPU2D_Soft.cpp
+@@ -20,6 +20,10 @@
+ #include "GPU.h"
+ #include "GPU3D.h"
+ 
++// ssrecomp: layers (bit 0-3 BG0-BG3, bit 4 sprites) the frontend asks not to be drawn, per 2D engine.
++// Display only; the emulated registers are not touched.
++unsigned rc_hide_layers[2] = { 0, 0 };
++
+ namespace melonDS
+ {
+ namespace GPU2D
+@@ -576,7 +580,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
+ template<u32 bgmode>
+ void SoftRenderer::DrawScanlineBGMode(u32 line)
+ {
+-    u32 dispCnt = CurUnit->DispCnt;
++    u32 dispCnt = CurUnit->DispCnt & ~(rc_hide_layers[CurUnit->Num] << 8);
+     u16* bgCnt = CurUnit->BGCnt;
+     for (int i = 3; i >= 0; i--)
+     {
+@@ -631,7 +635,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
+ 
+ void SoftRenderer::DrawScanlineBGMode6(u32 line)
+ {
+-    u32 dispCnt = CurUnit->DispCnt;
++    u32 dispCnt = CurUnit->DispCnt & ~(rc_hide_layers[CurUnit->Num] << 8);
+     u16* bgCnt = CurUnit->BGCnt;
+     for (int i = 3; i >= 0; i--)
+     {
+@@ -659,7 +663,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
+ 
+ void SoftRenderer::DrawScanlineBGMode7(u32 line)
+ {
+-    u32 dispCnt = CurUnit->DispCnt;
++    u32 dispCnt = CurUnit->DispCnt & ~(rc_hide_layers[CurUnit->Num] << 8);
+     u16* bgCnt = CurUnit->BGCnt;
+     // mode 7 only has text-mode BG0 and BG1
+ 
+@@ -696,6 +700,7 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+     {
+         for (int i = 0; i < 256; i++)
+             BGOBJLine[i] = 0xFF3F3F3F;
++        if (line < 192) memset(&LayerFlags[CurUnit->Num][line * 256], 0x20, 256);
+ 
+         return;
+     }
+@@ -741,11 +746,13 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+ 
+     if (!GPU.GPU3D.IsRendererAccelerated())
+     {
++        u8* layerFlags = line < 192 ? &LayerFlags[CurUnit->Num][line * 256] : nullptr;
+         for (int i = 0; i < 256; i++)
+         {
+             u32 val1 = BGOBJLine[i];
+             u32 val2 = BGOBJLine[256+i];
+ 
++            if (layerFlags) layerFlags[i] = val1 >> 24;
+             BGOBJLine[i] = ColorComposite(i, val1, val2);
+         }
+     }
+diff --git a/src/GPU2D_Soft.h b/src/GPU2D_Soft.h
+index 4beaf8f9..355462fc 100644
+--- a/src/GPU2D_Soft.h
++++ b/src/GPU2D_Soft.h
+@@ -36,6 +36,10 @@ public:
+     void DrawScanline(u32 line, Unit* unit) override;
+     void DrawSprites(u32 line, Unit* unit) override;
+     void VBlankEnd(Unit* unitA, Unit* unitB) override;
++
++    // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
++    // Bits 0-3 are BG0-BG3, 0x20 the backdrop, 0x40 the 3D layer, 0x80 a sprite.
++    u8 LayerFlags[2][256*192] = {};
+ private:
+     melonDS::GPU& GPU;
+     alignas(8) u32 BGOBJLine[256*3];
+diff --git a/src/GPU3D.cpp b/src/GPU3D.cpp
+index 1204741d..b3332a5d 100644
+--- a/src/GPU3D.cpp
++++ b/src/GPU3D.cpp
+@@ -26,8 +26,21 @@
+ #include "Platform.h"
+ #include "GPU3D.h"
+ 
++#include "GPU3D_Wide.h"
++
+ namespace melonDS
+ {
++
++// ssrecomp: implemented in GPU3D_Wide.cpp.
++void WideWait();
++// How many polygons and vertices SubmitPolygon accepts. The hardware's limits, except while
++// the frame is submitted again for the widescreen picture, which shows more of the scene.
++u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
++void WideOnFlush(GPU3D& g);
++void WideOnRender(GPU& gpu, bool showingInterp);
++void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
++    u32& numPolys, u32& matched);
++
+ using Platform::Log;
+ using Platform::LogLevel;
+ 
+@@ -971,6 +984,19 @@ void GPU3D::SubmitPolygon() noexcept
+     // TODO: work out how it works on the real thing
+     // the normalization part is a wild guess
+ 
++    if ((InterpolationEnabled || Wide.Owner == this) && !InReplay)
++    {
++        RawPolygon& raw = RawCurrent.emplace_back();
++        memcpy(raw.Vertices, TempVertexBuffer, sizeof(raw.Vertices));
++        raw.PolygonMode = PolygonMode;
++        raw.PolygonAttr = CurPolygonAttr;
++        raw.TexParam = TexParam;
++        raw.TexPalette = TexPalette;
++        memcpy(raw.Viewport, Viewport, sizeof(raw.Viewport));
++        raw.NumConsecutivePolygons = NumConsecutivePolygons;
++        raw.StripStart = LastStripPolygon == nullptr;
++    }
++
+     Vertex *v0, *v1, *v2, *v3;
+     s64 normalX, normalY, normalZ;
+     s64 dot;
+@@ -1092,7 +1118,7 @@ void GPU3D::SubmitPolygon() noexcept
+ 
+     // reject the polygon if it's not going to fit in polygon/vertex RAM
+ 
+-    if (NumPolygons >= 2048 || NumVertices+nverts > 6144)
++    if (NumPolygons >= SubmitPolygonLimit || NumVertices+nverts > SubmitVertexLimit)
+     {
+         LastStripPolygon = NULL;
+         DispCnt |= (1<<13);
+@@ -1589,6 +1615,15 @@ void GPU3D::BoxTest(const u32* params) noexcept
+         cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
+     }
+ 
++    // ssrecomp: with the widescreen world on, the test is made against the wide view, so
++    // that the game also draws what is only visible beside the DS's own picture. This is
++    // the one place where widescreen changes what the game itself sees.
++    if (Wide.Owner == this && Wide.ViewWidth > 256)
++    {
++        for (int i = 0; i < 8; i++)
++            cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * 256 / (s64)Wide.ViewWidth);
++    }
++
+     // front face (-Z)
+     face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
+     res = ClipPolygon<false>(*this, face, 4, 0);
+@@ -2456,8 +2491,28 @@ bool YSort(Polygon* a, Polygon* b)
+     return a->SortKey < b->SortKey;
+ }
+ 
++// ssrecomp: replays the frame just submitted with every vertex moved halfway back
++// towards where the same polygon was in the previous frame.
++void GPU3D::BuildInterpolatedFrame() noexcept
++{
++    InterpPending = false;
++    if (RawCurrent.empty() || RawPrevious.empty()) return;
++
++    if (InterpVertexRAM.empty())
++    {
++        InterpVertexRAM.resize(6144);
++        InterpPolygonRAM.resize(2048);
++    }
++
++    u32 matched = 0;
++    WideReplay(*this, true, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
++        InterpNumPolygons, matched);
++    InterpPending = InterpNumPolygons && matched * 2 >= RawCurrent.size();
++}
++
+ void GPU3D::VBlank() noexcept
+ {
++    VBlankCount++;
+     if (GeometryEnabled)
+     {
+         if (RenderingEnabled)
+@@ -2487,6 +2542,20 @@ void GPU3D::VBlank() noexcept
+ 
+                 RenderNumPolygons = NumPolygons;
+                 RenderFrameIdentical = false;
++
++                // ssrecomp: interpolate only on a steady every-other-frame cadence, and never
++                // while the 3D image is being captured into video memory.
++                InterpPending = false;
++                InterpShowReal = false;
++                if (InterpolationEnabled || Wide.Owner == this)
++                {
++                    const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;
++                    if (InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing) BuildInterpolatedFrame();
++                    if (Wide.Owner == this) WideOnFlush(*this);
++                    RawPrevious.swap(RawCurrent);
++                    RawCurrent.clear();
++                }
++                LastFlushVBlank = VBlankCount;
+             }
+             else
+             {
+@@ -2499,6 +2568,13 @@ void GPU3D::VBlank() noexcept
+                     && memcmp(RenderEdgeTable, EdgeTable, 8*2) == 0
+                     && memcmp(RenderFogDensityTable + 1, FogDensityTable, 32) == 0
+                     && memcmp(RenderToonTable, ToonTable, 32*2) == 0;
++
++                // ssrecomp: the previous display frame showed the in-between image.
++                if (InterpShowReal)
++                {
++                    RenderFrameIdentical = false;
++                    InterpShowReal = false;
++                }
+             }
+ 
+             RenderDispCnt = DispCnt;
+@@ -2535,7 +2611,27 @@ void GPU3D::VBlank() noexcept
+ 
+ void GPU3D::VCount215(GPU& gpu) noexcept
+ {
++    // ssrecomp: the widescreen picture drawn in the background reads texture memory, which
++    // rendering a frame is about to bring up to date.
++    WideWait();
++    if (InterpPending)
++    {
++        // ssrecomp: draw the in-between frame now; the real one follows on the next display frame.
++        std::array<Polygon*,2048> realList = RenderPolygonRAM;
++        const u32 realCount = RenderNumPolygons;
++        RenderPolygonRAM = InterpRenderPolygonRAM;
++        RenderNumPolygons = InterpNumPolygons;
++        CurrentRenderer->RenderFrame(gpu);
++        RenderPolygonRAM = realList;
++        RenderNumPolygons = realCount;
++        InterpPending = false;
++        InterpShowReal = true;
++        InterpolatedFrames++;
++        if (Wide.Owner == this) WideOnRender(gpu, true);
++        return;
++    }
+     CurrentRenderer->RenderFrame(gpu);
++    if (Wide.Owner == this) WideOnRender(gpu, false);
+ }
+ 
+ void GPU3D::SetRenderXPos(u16 xpos) noexcept
+diff --git a/src/GPU3D.h b/src/GPU3D.h
+index 08c2208c..c0abc14b 100644
+--- a/src/GPU3D.h
++++ b/src/GPU3D.h
+@@ -20,6 +20,7 @@
+ #define GPU3D_H
+ 
+ #include <array>
++#include <vector>
+ #include <memory>
+ 
+ #include "Savestate.h"
+@@ -85,8 +86,11 @@ struct Polygon
+ class Renderer3D;
+ class NDS;
+ 
++struct WideAccess; // ssrecomp: the widescreen renderer (GPU3D_Wide.cpp)
++
+ class GPU3D
+ {
++    friend struct WideAccess;
+ public:
+     GPU3D(melonDS::NDS& nds, std::unique_ptr<Renderer3D>&& renderer = nullptr) noexcept;
+     ~GPU3D() noexcept = default;
+@@ -273,6 +277,12 @@ public:
+ 
+     bool RenderFrameIdentical = false; // not part of the hardware state, don't serialize
+ 
++    // ssrecomp: 3D frame interpolation. Games that update their 3D scene on every second
++    // display frame (30 fps) get an in-between image, built from the previous and the new
++    // geometry, on the first of those two frames. Only what is displayed changes.
++    bool InterpolationEnabled = false;
++    u32 InterpolatedFrames = 0; // statistics
++
+     bool AbortFrame = false;
+ 
+     u64 Timestamp = 0;
+@@ -322,6 +332,28 @@ public:
+     u32 CurRAMBank = 0;
+ 
+     std::array<Polygon*,2048> RenderPolygonRAM {};
++
++    // ssrecomp: everything SubmitPolygon reads, recorded per call so a frame can be replayed
++    // with vertex positions halfway between two frames.
++    struct RawPolygon
++    {
++        Vertex Vertices[4];
++        u32 PolygonMode, PolygonAttr, TexParam, TexPalette;
++        u32 Viewport[6];
++        u32 NumConsecutivePolygons;
++        bool StripStart; // no previous strip polygon to attach to
++    };
++    std::vector<RawPolygon> RawCurrent;   // frame being submitted
++    std::vector<RawPolygon> RawPrevious;  // last frame that was flushed
++    bool InReplay = false;
++    u64 VBlankCount = 0, LastFlushVBlank = 0;
++    bool InterpPending = false;   // an in-between frame is ready to be shown
++    bool InterpShowReal = false;  // the real frame must be drawn on the next display frame
++    std::vector<Vertex> InterpVertexRAM;
++    std::vector<Polygon> InterpPolygonRAM;
++    std::array<Polygon*,2048> InterpRenderPolygonRAM {};
++    u32 InterpNumPolygons = 0;
++    void BuildInterpolatedFrame() noexcept;
+     u32 RenderNumPolygons = 0;
+ 
+     u32 FlushRequest = 0;
+diff --git a/src/GPU3D_Soft.cpp b/src/GPU3D_Soft.cpp
+index 9f6e2d73..bf6abaf7 100644
+--- a/src/GPU3D_Soft.cpp
++++ b/src/GPU3D_Soft.cpp
+@@ -1740,6 +1740,11 @@ void SoftRenderer::VCount144(GPU& gpu)
+         Platform::Semaphore_Wait(Sema_RenderDone);
+ }
+ 
++// ssrecomp: the list the render thread draws. It is a copy, because the 60 fps mod swaps
++// the GPU's list for one call of RenderFrame and puts it back before the thread is done.
++static Polygon* ThreadPolygons[2048];
++static int ThreadNumPolygons = 0;
++
+ void SoftRenderer::RenderFrame(GPU& gpu)
+ {
+     auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(gpu.VRAMMap_Texture, gpu);
+@@ -1752,6 +1757,8 @@ void SoftRenderer::RenderFrame(GPU& gpu)
+ 
+     if (RenderThreadRunning.load(std::memory_order_relaxed))
+     {
++        ThreadNumPolygons = (int)gpu.GPU3D.RenderNumPolygons;
++        memcpy(ThreadPolygons, &gpu.GPU3D.RenderPolygonRAM[0], ThreadNumPolygons * sizeof(Polygon*));
+         // "Render thread, you're up! Get moving."
+         Platform::Semaphore_Post(Sema_RenderStart);
+     }
+@@ -1790,7 +1797,7 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
+         else
+         {
+             ClearBuffers(gpu);
+-            RenderPolygons(gpu, true, &gpu.GPU3D.RenderPolygonRAM[0], gpu.GPU3D.RenderNumPolygons);
++            RenderPolygons(gpu, true, ThreadPolygons, ThreadNumPolygons);
+         }
+ 
+         // Tell the main thread that we're done rendering
+diff --git a/src/GPU3D_Soft.h b/src/GPU3D_Soft.h
+index a201c6a6..0cbc750b 100644
+--- a/src/GPU3D_Soft.h
++++ b/src/GPU3D_Soft.h
+@@ -46,6 +46,7 @@ public:
+     void StopRenderThread();
+ private:
+     friend void GPU3D::DoSavestate(Savestate* file) noexcept;
++    friend struct WideAccess; // ssrecomp: the widescreen renderer shares pixel shading
+     // Notes on the interpolator:
+     //
+     // This is a theory on how the DS hardware interpolates values. It matches hardware output
