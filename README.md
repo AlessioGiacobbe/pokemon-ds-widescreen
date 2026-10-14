@@ -18,6 +18,16 @@ pret or the melonDS project. Pokémon is a trademark of its owners. This project
 was written with the help of an AI coding assistant; do not submit any of it
 to pret, whose contribution rules do not accept such work.
 
+## Screenshots
+
+The overworld drawn across a 16:9 screen, and battles with the touch-screen
+buttons laid out along the bottom (one screen, played with a controller):
+
+| | |
+|---|---|
+| ![Route 29 in widescreen](docs/screenshots/route-widescreen.png) | ![Violet City in widescreen](docs/screenshots/town-widescreen.png) |
+| ![Battle: choosing a command](docs/screenshots/battle-commands.png) | ![Battle: choosing a move](docs/screenshots/battle-moves.png) |
+
 ## Quick start
 
 On Linux, with a copy of Pokémon SoulSilver (US) that you own:
