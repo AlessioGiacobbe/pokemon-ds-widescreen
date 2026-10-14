@@ -15,7 +15,12 @@ import re
 import struct
 import sys
 
-from elftools.elf.elffile import ELFFile
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from elftools.elf.elffile import ELFFile   # only needed with a build directory
+except ImportError:
+    ELFFile = None
 
 CHUNK_MAX = 256        # instructions per chunk function
 FILE_MAX = 24000       # instructions per generated source file
@@ -40,6 +45,50 @@ class Section:
         self.ranges = []   # (start, end, thumb)
 
 
+def autoload_image(main_image, base):
+    """The ITCM block of the main program. Autoload info sits at the end of the main
+    image: (address, size, bss size) per block, with the blocks stored back to back
+    after the static module."""
+    pos = len(main_image) - 0x24
+    entries = [struct.unpack_from('<3I', main_image, pos + i * 12) for i in range(2)]
+    data_off = len(main_image) - 0x24 - sum(e[1] for e in entries)
+    for addr, size, _ in entries:
+        if addr == base:
+            return main_image[data_off:data_off + size]
+        data_off += size
+    raise SystemExit('ITCM autoload block not found')
+
+
+def load_sections_from_layout(layout_path, rom_path):
+    """The same sections, from the player's own ROM: the code bytes come from the ROM,
+    and where code starts and ends (which the decompilation's symbols tell) from the
+    layout file made by tools/make_layout.py, which holds addresses only."""
+    import hashlib
+    import json
+    from ndsrom import read_rom
+    layout = json.load(open(layout_path))
+    main_image, overlays = read_rom(rom_path)
+    sections = []
+    for entry in layout['sections']:
+        src = entry['source']
+        if src == 'main':
+            image = main_image
+        elif src == 'itcm':
+            image = autoload_image(main_image, entry['base'])
+        else:
+            if src not in overlays:
+                raise SystemExit(f'This ROM has no overlay {src}: it is not {layout["game"]}.')
+            image = overlays[src][1]
+        if hashlib.sha1(image).hexdigest() != entry['sha1']:
+            raise SystemExit(f'Section {entry["name"]} of this ROM differs from {layout["game"]}: '
+                             'wrong game, region or revision, or a modified ROM.')
+        sec = Section(entry['name'], entry['base'], image)
+        sec.named = set(entry['named'])
+        sec.ranges = [tuple(r) for r in entry['ranges']]
+        sections.append(sec)
+    return sections
+
+
 def load_sections(build_dir):
     nef = [f for f in os.listdir(build_dir) if f.endswith('.nef')]
     assert len(nef) == 1, nef
@@ -61,18 +110,7 @@ def load_sections(build_dir):
     for idx in sorted(maps):
         name, base = secinfo[idx]
         if name == 'ITCM':
-            # Autoload info sits at the end of main.sbin: (address, size, bss size) per block,
-            # with the blocks stored back to back after the static module.
-            off = None
-            pos = len(main_image) - 0x24
-            entries = [struct.unpack_from('<3I', main_image, pos + i * 12) for i in range(2)]
-            data_off = len(main_image) - 0x24 - sum(e[1] for e in entries)
-            for addr, size, _ in entries:
-                if addr == base:
-                    off = data_off
-                    image = main_image[data_off:data_off + size]
-                data_off += size
-            assert off is not None, 'ITCM autoload block not found'
+            image = autoload_image(main_image, base)
         else:
             path = os.path.join(build_dir, name + '.sbin')
             if not os.path.exists(path):
@@ -148,15 +186,25 @@ def emit_thumb(addr, opc, thumb_tbl, local):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('build_dir')
+    ap = argparse.ArgumentParser(description='Recompile from the decompilation\'s build directory, '
+                                 'or from a ROM with --rom and --layout.')
+    ap.add_argument('build_dir', nargs='?', help='the decompilation\'s build directory (e.g. build/soulsilver.us)')
     ap.add_argument('melonds_src')
     ap.add_argument('out_dir')
+    ap.add_argument('--rom', help='the player\'s own ROM, instead of a build directory')
+    ap.add_argument('--layout', help='with --rom: the layout file made by tools/make_layout.py')
     ap.add_argument('--only', help='comma-separated section names to recompile (default: all)')
     args = ap.parse_args()
 
     arm_tbl, thumb_tbl = parse_instr_tables(os.path.join(args.melonds_src, 'ARM_InstrTable.h'))
-    sections = load_sections(args.build_dir)
+    if args.rom:
+        if not args.layout:
+            ap.error('--rom needs --layout')
+        sections = load_sections_from_layout(args.layout, args.rom)
+    else:
+        if not args.build_dir:
+            ap.error('give a build directory, or --rom and --layout')
+        sections = load_sections(args.build_dir)
     if args.only:
         keep = set(args.only.split(','))
         sections = [s for s in sections if s.name in keep]

@@ -2,6 +2,10 @@
 // is using the CPU about 1000 times a second and records its call stack. tools/samples.py
 // turns the file into a list of the functions the time went to.
 #pragma once
+#if !defined(__linux__)
+// The sampler uses Linux interfaces (SIGPROF, backtrace); elsewhere it does nothing.
+namespace Sampler { inline void Start() {} inline void Stop() {} }
+#else
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -64,3 +68,4 @@ inline void Stop()
     fclose(f);
 }
 }
+#endif

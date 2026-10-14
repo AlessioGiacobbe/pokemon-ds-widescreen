@@ -30,27 +30,47 @@ buttons laid out along the bottom (one screen, played with a controller):
 
 ## Quick start
 
-On Linux, with a copy of Pokémon SoulSilver (US) that you own:
+You need your own copy of Pokémon SoulSilver (US) as a `.nds` file, dumped from
+your cartridge. Nothing of the game is in this repository or its releases.
 
-    git clone <this repository's URL> ssrecomp
-    cd ssrecomp
-    ./setup.sh --desktop
-    ./run.sh --fullscreen
+1. Download this repository (the source code zip of the latest release, or
+   `git clone`).
+2. Start the setup window: `python3 ssrecomp_setup.py`.
+3. Choose your ROM, press **Build**, wait (the first build takes 20–40 minutes),
+   then press **Play**.
 
-`setup.sh` does everything in "Building" below: it offers to install the
-packages it needs, downloads pret's decompilation next to this folder, builds
-the game with it and checks the result is identical to the retail cartridge,
-generates the recompiled code and compiles it. The first run takes about half
-an hour; running it again later only rebuilds what changed. `--desktop` adds a
-menu entry; `--rom your-dump.nds` also checks your own dump against the build
-and plays from it; `./setup.sh --help` lists the rest.
+The window checks that the ROM is the right game and tells you if something
+needed for compiling is missing, with the command to install it:
 
-On an immutable system (Bazzite, Silverblue, SteamOS) run it inside a
-container; the finished program runs outside it:
+- **Linux (Ubuntu, Debian, Mint):** `sudo apt install python3-tk cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev`
+- **Fedora:** `sudo dnf install python3-tkinter cmake ninja-build gcc-c++ pkgconf-pkg-config SDL2-devel libpng-devel zlib-devel`
+- **Arch:** `sudo pacman -S --needed tk cmake ninja gcc pkgconf sdl2 libpng zlib`
+- **Immutable Linux (Bazzite, Silverblue, SteamOS):** run it in a container:
 
-    distrobox create -n ssrecomp -i ubuntu:24.04
-    distrobox enter ssrecomp -- ./setup.sh --deps
-    ./run.sh --fullscreen
+      distrobox create -n ssrecomp -i ubuntu:24.04
+      distrobox enter ssrecomp -- sudo apt install -y python3-tk cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev
+      distrobox enter ssrecomp -- python3 ssrecomp_setup.py
+
+  The finished game also runs outside the container (`./run.sh`).
+- **Windows (untested so far):** install [MSYS2](https://www.msys2.org), open
+  "MSYS2 UCRT64", install the tools with
+
+      pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libpng mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-tk
+
+  then `cd` to this folder and run `python ssrecomp_setup.py`.
+
+Without a display: `python3 ssrecomp_setup.py --rom your-rom.nds` does the same
+in the terminal. After building, `./run.sh --fullscreen` starts the game too.
+
+How it works without the decompilation: the code to recompile is read straight
+from your ROM (`tools/ndsrom.py`). What the decompilation adds, which parts of
+it are ARM or Thumb code and where the functions the frontend watches are, comes
+from `layouts/soulsilver-us.json`, made with `tools/make_layout.py`; that file
+holds addresses and checksums only. The generated code is identical to what the
+decompilation's build gives.
+
+If you want to change the game itself, build from the decompilation instead
+with `./setup.sh` (see "Building").
 
 ## Running
 
@@ -254,9 +274,11 @@ Expect about half an hour for a first build.
 
   On Fedora: `sudo dnf install cmake ninja-build gcc-c++ SDL2-devel libpng-devel zlib-devel python3-pyelftools`.
 
-### Steps
+### Building from the decompilation
 
-`./setup.sh` runs these steps for you; they are here in case you want to do them
+This is for working on the game's source (mods): the recompiled code then comes
+from your build of the decompilation instead of from a ROM. `./setup.sh` runs
+these steps for you; they are here in case you want to do them
 by hand or something goes wrong.
 
 1. **Put both repositories side by side.** `run.sh` and the commands below
