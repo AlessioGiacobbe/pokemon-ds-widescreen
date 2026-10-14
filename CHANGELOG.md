@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.2.0 — build from your own ROM
+
+**No ready-made download.** A built program would contain the game's code, so
+releases are source only. Download the source code, run
+`python3 ssrecomp_setup.py`, choose your own Pokémon SoulSilver (US) ROM and
+press Build; see the README's Quick start.
+
+### New
+
+- **Setup window** (`ssrecomp_setup.py`): pick your ROM, press Build, press
+  Play. It checks the ROM is the right game, says what is missing to compile
+  and how to install it, picks the number of compile jobs from your memory, and
+  shows the progress. `python3 ssrecomp_setup.py --rom <file>` does the same
+  without a window.
+- **No decompilation needed to play.** The code is recompiled straight from
+  your ROM (`tools/ndsrom.py` reads and decompresses it); what the
+  decompilation used to add comes from `layouts/soulsilver-us.json`, which holds
+  addresses and checksums only. The result is identical to building from the
+  decompilation. `setup.sh` remains for working on the game's source.
+- **Windows (untested):** the code compiles with MinGW, and the setup window
+  supports MSYS2 and copies the needed DLLs next to the game. Not yet tried on
+  a Windows machine.
+
+### Known limitations
+
+- Tested on Linux only (Ubuntu 24.04 in a container on Bazzite).
+- Only Pokémon SoulSilver (US).
+- See v0.1.0 for the rest.
+
 ## v0.1.0 — first preview
 
 The first public version. Playable from the start of a new game through the
@@ -7,9 +36,8 @@ early routes, towns and gyms; the rest of the game has not been played through
 with it yet.
 
 **No ready-made download.** A built program would contain the game's code, so
-releases are source only. Download the source code, run
-`python3 ssrecomp_setup.py`, choose your own Pokémon SoulSilver (US) ROM and
-press Build; see the README's Quick start.
+releases are source only: run `./setup.sh` with your own copy of Pokémon
+SoulSilver (US) as described in the README.
 
 ### What's in it
 
@@ -32,18 +60,14 @@ press Build; see the README's Quick start.
   button or Esc) holds the settings, save states and fast forward.
 - **Runs well:** about 9 ms of a 16.7 ms frame at 2560×1440 on a 6-core desktop
   CPU; the picture is composed on the graphics card.
-- **Setup window** (`ssrecomp_setup.py`): pick your ROM, press Build, press
-  Play. The code is recompiled straight from your ROM; the decompilation is not
-  needed. It checks the ROM is the right game and says what is missing to
-  compile and how to install it.
-- **`setup.sh`** for working on the game's source: builds the game with
-  pret's decompilation and recompiles from that build instead.
+- **`setup.sh`** installs what is missing, builds the game with the
+  decompilation, checks it against the retail ROM's SHA-1 and compiles
+  everything in one step.
 
 ### Known limitations
 
-- Tested on Linux only (Ubuntu 24.04 in a container on Bazzite). The Windows
-  route through MSYS2 is prepared but has not been tried on Windows yet; macOS
-  and Android are not supported.
+- Linux only so far (tested on Ubuntu 24.04 in a container on Bazzite).
+  Windows, macOS and Android builds do not exist yet.
 - Only Pokémon SoulSilver (US). HeartGold and other regions are not supported.
 - Later parts of the game, and some screens (radio, contests, the Pokéathlon,
   wireless features), have not been checked and may show a generic two-screen
