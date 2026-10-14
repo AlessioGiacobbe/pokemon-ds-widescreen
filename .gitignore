@@ -15,3 +15,5 @@
 ssrecomp.cfg
 /test/
 __pycache__/
+/ssrecomp.rom
+/gen.new/

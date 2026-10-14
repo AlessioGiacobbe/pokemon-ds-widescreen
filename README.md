@@ -18,6 +18,30 @@ pret or the melonDS project. Pokémon is a trademark of its owners. This project
 was written with the help of an AI coding assistant; do not submit any of it
 to pret, whose contribution rules do not accept such work.
 
+## Quick start
+
+On Linux, with a copy of Pokémon SoulSilver (US) that you own:
+
+    git clone <this repository's URL> ssrecomp
+    cd ssrecomp
+    ./setup.sh --desktop
+    ./run.sh --fullscreen
+
+`setup.sh` does everything in "Building" below: it offers to install the
+packages it needs, downloads pret's decompilation next to this folder, builds
+the game with it and checks the result is identical to the retail cartridge,
+generates the recompiled code and compiles it. The first run takes about half
+an hour; running it again later only rebuilds what changed. `--desktop` adds a
+menu entry; `--rom your-dump.nds` also checks your own dump against the build
+and plays from it; `./setup.sh --help` lists the rest.
+
+On an immutable system (Bazzite, Silverblue, SteamOS) run it inside a
+container; the finished program runs outside it:
+
+    distrobox create -n ssrecomp -i ubuntu:24.04
+    distrobox enter ssrecomp -- ./setup.sh --deps
+    ./run.sh --fullscreen
+
 ## Running
 
     ./run.sh                 # windowed
@@ -221,6 +245,9 @@ Expect about half an hour for a first build.
   On Fedora: `sudo dnf install cmake ninja-build gcc-c++ SDL2-devel libpng-devel zlib-devel python3-pyelftools`.
 
 ### Steps
+
+`./setup.sh` runs these steps for you; they are here in case you want to do them
+by hand or something goes wrong.
 
 1. **Put both repositories side by side.** `run.sh` and the commands below
    assume this layout:

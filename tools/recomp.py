@@ -7,6 +7,8 @@ a labelled statement inside a "chunk" function. The melonDS core supplies the
 hardware and the cycle model; see runtime/recomp_gen.h for the macros.
 """
 import argparse
+import filecmp
+import shutil
 import collections
 import os
 import re
@@ -158,10 +160,13 @@ def main():
     if args.only:
         keep = set(args.only.split(','))
         sections = [s for s in sections if s.name in keep]
-    os.makedirs(args.out_dir, exist_ok=True)
-    for f in os.listdir(args.out_dir):
-        if f.startswith('rc_') or f == 'sources.cmake':
-            os.remove(os.path.join(args.out_dir, f))
+    # Everything is written to a scratch directory first and only files whose contents
+    # changed are moved into place, so running this again does not make the build
+    # recompile 1.7 million unchanged instructions.
+    final_dir = args.out_dir
+    args.out_dir = final_dir + '.new'
+    shutil.rmtree(args.out_dir, ignore_errors=True)
+    os.makedirs(args.out_dir)
 
     files = []
     cur_lines = []
@@ -260,7 +265,29 @@ def main():
             f.write(f'    ${{CMAKE_CURRENT_LIST_DIR}}/{name}\n')
         f.write(')\n')
 
-    print(f'{len(sections)} sections, {len(chunk_rows)} chunks, {total} instructions, {len(files)} files')
+    changed = sync_dir(args.out_dir, final_dir)
+    print(f'{len(sections)} sections, {len(chunk_rows)} chunks, {total} instructions, {len(files)} files '
+          f'({changed} changed)')
+
+
+def sync_dir(src, dst):
+    """Moves the files of src into dst where they differ, removes generated files of dst
+    that src no longer has, and deletes src. Returns the number of files changed."""
+    os.makedirs(dst, exist_ok=True)
+    fresh = set(os.listdir(src))
+    changed = 0
+    for f in os.listdir(dst):
+        if (f.startswith('rc_') or f == 'sources.cmake') and f not in fresh:
+            os.remove(os.path.join(dst, f))
+            changed += 1
+    for f in fresh:
+        a, b = os.path.join(src, f), os.path.join(dst, f)
+        if os.path.exists(b) and filecmp.cmp(a, b, shallow=False):
+            continue
+        os.replace(a, b)
+        changed += 1
+    shutil.rmtree(src)
+    return changed
 
 
 if __name__ == '__main__':
