@@ -36,6 +36,23 @@ BUILD = os.path.join(HERE, 'build')
 EXE = os.path.join(BUILD, 'ssrecomp.exe' if WINDOWS else 'ssrecomp')
 ROM_NOTE = os.path.join(HERE, 'ssrecomp.rom')
 
+# The Android build: Google's NDK (compilers for Android) and SDL2's source are downloaded
+# into ANDROID_DIR the first time; the result is the APK at ANDROID_APK.
+ANDROID_DIR = os.path.join(HERE, 'android')
+ANDROID_APK = os.path.join(HERE, 'SoulSilver-ssrecomp.apk')
+ANDROID_ABI = 'arm64-v8a'          # phones and handhelds from the last ten years
+ANDROID_PLATFORM = 'android-24'    # Android 7.0 and later
+NDK_NAME = 'android-ndk-r27c'
+NDK_DOWNLOADS = {   # host -> (url, sha1, size), from Google's repository listing
+    'linux': ('https://dl.google.com/android/repository/android-ndk-r27c-linux.zip',
+              '090e8083a715fdb1a3e402d0763c388abb03fb4e', 663987688),
+    'windows': ('https://dl.google.com/android/repository/android-ndk-r27c-windows.zip',
+                'ac5f7762764b1f15341094e148ad4f847d050c38', 781511249),
+}
+SDL2_NAME = 'SDL2-2.32.10'
+SDL2_DOWNLOAD = ('https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz',
+                 '5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165')
+
 
 # ---------------------------------------------------------------------------
 # The steps, usable without the window.
@@ -198,9 +215,88 @@ def default_jobs():
     return max(1, int(jobs))
 
 
-def run_steps(rom, jobs, log, progress):
-    """Generates and compiles. log(text) reports a line, progress(fraction, label) the
-    progress. Raises RuntimeError with a message for the user on failure."""
+def download(url, digest, path, log, progress, label, algo='sha1'):
+    """Downloads url to path (resuming a partial file) and checks its digest."""
+    import urllib.request
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    part = path + '.part'
+    if not os.path.exists(path):
+        have = os.path.getsize(part) if os.path.exists(part) else 0
+        req = urllib.request.Request(url, headers={'Range': 'bytes=%d-' % have} if have else {})
+        log('Downloading ' + url)
+        context = None
+        try:
+            # Packaged, Python may not find this system's certificates; certifi brings its own.
+            import certifi
+            import ssl
+            context = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            pass
+        with urllib.request.urlopen(req, context=context) as r, open(part, 'ab' if have and r.status == 206 else 'wb') as f:
+            if r.status != 206:
+                have = 0
+            total = have + int(r.headers.get('Content-Length') or 0)
+            done, last = have, -1
+            while True:
+                block = r.read(1 << 20)
+                if not block:
+                    break
+                f.write(block)
+                done += len(block)
+                if total and done * 100 // total != last:
+                    last = done * 100 // total
+                    progress(None, '%s: %d of %d MB' % (label, done >> 20, total >> 20))
+        os.replace(part, path)
+    h = hashlib.new(algo)
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1 << 20), b''):
+            h.update(block)
+    if h.hexdigest() != digest:
+        os.remove(path)
+        raise RuntimeError('The download of %s was damaged (checksum mismatch). Try again.' % url)
+
+
+def extract_zip(path, dest):
+    """Unzips, keeping executable bits and symbolic links (Python's zipfile writes a
+    link as a small file holding its target, and drops the bits)."""
+    import stat
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        for info in z.infolist():
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode) and not WINDOWS:
+                out = os.path.join(dest, info.filename)
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                if os.path.lexists(out):
+                    os.remove(out)
+                os.symlink(z.read(info).decode(), out)
+                continue
+            out = z.extract(info, dest)
+            if mode and not WINDOWS:
+                os.chmod(out, mode & 0o7777)
+
+
+def android_ndk(log, progress):
+    """The NDK: from ANDROID_NDK_HOME or ANDROID_NDK_ROOT when set, else downloaded."""
+    for var in ('ANDROID_NDK_HOME', 'ANDROID_NDK_ROOT'):
+        ndk = os.environ.get(var)
+        if ndk and os.path.exists(os.path.join(ndk, 'build', 'cmake', 'android.toolchain.cmake')):
+            return ndk
+    ndk = os.path.join(ANDROID_DIR, NDK_NAME)
+    if not os.path.exists(os.path.join(ndk, 'build', 'cmake', 'android.toolchain.cmake')):
+        url, sha1, size = NDK_DOWNLOADS['windows' if WINDOWS else 'linux']
+        zip_path = os.path.join(ANDROID_DIR, 'downloads', os.path.basename(url))
+        download(url, sha1, zip_path, log, progress, "Downloading Google's Android NDK (%d MB, once)" % (size >> 20))
+        progress(None, 'Unpacking the NDK')
+        extract_zip(zip_path, ANDROID_DIR)
+        os.remove(zip_path)
+    return ndk
+
+
+def run_steps(rom, jobs, log, progress, android=False):
+    """Generates and compiles (for Android: and makes the APK). log(text) reports a line,
+    progress(fraction, label) the progress (fraction None: only the label changes).
+    Raises RuntimeError with a message for the user on failure."""
     def run(cmd, parse_ninja=False):
         log('$ ' + ' '.join(cmd))
         proc = subprocess.Popen(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -254,6 +350,8 @@ def run_steps(rom, jobs, log, progress):
     progress(0.0, 'Checking your ROM and recompiling its code')
     tool('recomp.py', '--rom', rom, '--layout', LAYOUT, os.path.join(HERE, 'melonDS', 'src'), GEN)
     tool('apps.py', '--layout', LAYOUT, GEN)
+    if android:
+        return android_steps(rom, jobs, log, progress, run)
     progress(0.08, 'Configuring the build')
     if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
         prefix = windows_prefix()
@@ -272,6 +370,58 @@ def run_steps(rom, jobs, log, progress):
     with open(ROM_NOTE, 'w') as f:
         f.write(os.path.abspath(rom) + '\n')
     progress(1.0, 'Done')
+
+
+def android_steps(rom, jobs, log, progress, run):
+    import tarfile
+    ndk = android_ndk(log, progress)
+    toolchain = os.path.join(ndk, 'build', 'cmake', 'android.toolchain.cmake').replace('\\', '/')
+    android_args = ['-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_TOOLCHAIN_FILE=' + toolchain,
+                    '-DANDROID_ABI=' + ANDROID_ABI, '-DANDROID_PLATFORM=' + ANDROID_PLATFORM]
+
+    # SDL2, built for Android and installed into a folder of its own.
+    sdl_prefix = os.path.join(ANDROID_DIR, 'sdl2-' + ANDROID_ABI)
+    sdl_lib = os.path.join(sdl_prefix, 'lib', 'libSDL2.so')
+    if not os.path.exists(sdl_lib):
+        tar_path = os.path.join(ANDROID_DIR, 'downloads', SDL2_NAME + '.tar.gz')
+        download(SDL2_DOWNLOAD[0], SDL2_DOWNLOAD[1], tar_path, log, progress, 'Downloading SDL2', 'sha256')
+        with tarfile.open(tar_path) as t:
+            t.extractall(ANDROID_DIR)
+        progress(0.1, 'Compiling SDL2 for Android')
+        sdl_build = os.path.join(ANDROID_DIR, 'build-sdl2-' + ANDROID_ABI)
+        run(['cmake', '-S', os.path.join(ANDROID_DIR, SDL2_NAME), '-B', sdl_build, *android_args,
+             '-DCMAKE_INSTALL_PREFIX=' + sdl_prefix.replace('\\', '/'), '-DSDL_STATIC=OFF', '-DSDL_TEST=OFF'])
+        run(['ninja', '-C', sdl_build, '-j', str(jobs), 'install'])
+
+    # The game, as libmain.so.
+    build = os.path.join(HERE, 'build-android-' + ANDROID_ABI)
+    progress(0.12, 'Configuring the Android build')
+    if not os.path.exists(os.path.join(build, 'build.ninja')):
+        prefix = sdl_prefix.replace('\\', '/')
+        # Named directly: the NDK's toolchain only searches its own folders.
+        run(['cmake', '-S', '.', '-B', build, *android_args,
+             '-DSDL2_DIR=' + prefix + '/lib/cmake/SDL2', '-DSSR_SDL2_HEADERS=' + prefix + '/include'])
+    progress(0.14, 'Compiling for Android (the first time takes 20-40 minutes)')
+    run(['ninja', '-C', build, '-j', str(jobs)], parse_ninja=True)
+
+    progress(0.98, 'Packing the APK')
+    sys.path.insert(0, os.path.join(HERE, 'tools', 'android'))
+    import apk
+    apk.build(os.path.join(HERE, 'tools', 'android', 'skeleton.apk'), ANDROID_ABI, os.path.join(build, 'libmain.so'),
+              sdl_lib, rom, os.path.join(ANDROID_DIR, 'signing-key.json'), ANDROID_APK)
+    with open(ROM_NOTE, 'w') as f:
+        f.write(os.path.abspath(rom) + '\n')
+    log('Made ' + ANDROID_APK)
+    progress(1.0, 'Done: ' + ANDROID_APK)
+
+
+ANDROID_HELP = (
+    'Made ' + ANDROID_APK + '\n\n'
+    'To install it: copy it to your phone or handheld (USB cable, cloud drive...), open it there '
+    'and allow your file manager to install apps when asked. It holds your copy of the game: '
+    'do not share it.\n\n'
+    'Updates install over it as long as they are built on this computer (with the key in ' +
+    os.path.join(ANDROID_DIR, 'signing-key.json') + '). Uninstalling the app deletes its save.')
 
 
 def play(extra=()):
@@ -347,6 +497,8 @@ def gui():
     play_btn.pack(side='left', padx=6)
     windowed_btn = ttk.Button(buttons, text='Play in a window', command=lambda: play())
     windowed_btn.pack(side='left')
+    android_btn = ttk.Button(buttons, text='Build for Android')
+    android_btn.pack(side='right')
 
     def update_checks():
         lines = []
@@ -371,22 +523,28 @@ def gui():
             copy_btn.pack_forget()
         ready = bool(rom) and os.path.isfile(rom) and not missing
         build_btn.state(['!disabled'] if ready else ['disabled'])
+        # Android needs only CMake and Ninja here: its compiler and libraries are downloaded.
+        android_ready = bool(rom) and os.path.isfile(rom) and shutil.which('cmake') and shutil.which('ninja')
+        android_btn.state(['!disabled'] if android_ready else ['disabled'])
         built = os.path.exists(EXE) and os.path.exists(ROM_NOTE)
         for b in (play_btn, windowed_btn):
             b.state(['!disabled'] if built else ['disabled'])
 
-    def start():
+    def start(android=False):
         build_btn.state(['disabled'])
+        android_btn.state(['disabled'])
         rom, jobs = rom_var.get().strip(), jobs_var.get()
 
         def worker():
             try:
-                run_steps(rom, jobs, lambda t: events.put(('log', t)), lambda f, l: events.put(('progress', f, l)))
-                events.put(('done', None))
+                run_steps(rom, jobs, lambda t: events.put(('log', t)), lambda f, l: events.put(('progress', f, l)),
+                          android=android)
+                events.put(('done', None, android))
             except Exception as e:  # shown to the user
-                events.put(('done', str(e)))
+                events.put(('done', str(e), android))
         threading.Thread(target=worker, daemon=True).start()
     build_btn.config(command=start)
+    android_btn.config(command=lambda: start(android=True))
 
     def pump():
         try:
@@ -398,13 +556,16 @@ def gui():
                     log_box.see('end')
                     log_box.config(state='disabled')
                 elif ev[0] == 'progress':
-                    bar['value'] = ev[1]
+                    if ev[1] is not None:
+                        bar['value'] = ev[1]
                     status.config(text=ev[2])
                 elif ev[0] == 'done':
                     update_checks()
                     if ev[1]:
                         status.config(text='Failed')
                         messagebox.showerror('Build failed', ev[1])
+                    elif ev[2]:
+                        messagebox.showinfo('Android build ready', ANDROID_HELP)
                     else:
                         messagebox.showinfo('Ready', 'The game is built. Press Play to start it.')
         except queue.Empty:
@@ -426,17 +587,26 @@ def main():
         problem = check_rom(rom)
         if problem:
             print(problem)
-        missing = missing_tools()
+        android = '--android' in args
+        missing = [t for t in ('cmake', 'ninja') if not shutil.which(t)] if android else missing_tools()
         if missing:
             sys.exit('Missing: ' + ', '.join(missing) + '\n' + install_hint())
         try:
             # Straight to the terminal: while the recompiler runs, print() itself is
             # redirected into this log.
             out = sys.__stdout__
-            run_steps(rom, jobs, lambda t: print(t, file=out, flush=True),
-                      lambda f, l: print(f'[{int(f * 100):3d}%] {l}', file=out, flush=True))
+            last = [0.0]
+
+            def progress(f, label):
+                if f is not None:
+                    last[0] = f
+                print(f'[{int(last[0] * 100):3d}%] {label}', file=out, flush=True)
+            run_steps(rom, jobs, lambda t: print(t, file=out, flush=True), progress, android=android)
         except RuntimeError as e:
             sys.exit(str(e))
+        if android:
+            print(ANDROID_HELP)
+            return
         print('Built. Start the game by running this program again (without --rom) and pressing Play' +
               ('.' if FROZEN else ', or with ./run.sh --fullscreen.'))
         return

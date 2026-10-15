@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.3 — Android (experimental)
+
+**Downloads:** the same three setup programs; use these instead of the earlier
+ones. There is no APK to download: the Android version contains the game's code,
+so it is built from your own ROM on your PC, like the PC version.
+
+### New
+
+- **Build for Android** in the setup program (`--android` without a window).
+  It downloads Google's Android NDK and SDL2 (once, checked against their
+  published checksums), compiles the game for 64-bit ARM Android 7.0+, and makes
+  a signed APK to copy to the phone or handheld and install. No Java or Android
+  Studio is needed: the APK is packed and signed by `tools/android/apk.py`.
+- **On Android:** full screen in landscape; on-screen buttons (D-pad, A/B/X/Y,
+  L/R, Start, Select, Menu), hidden while a controller is being used and back at
+  a touch; fingers on the picture touch the game's touch screen, several at
+  once; Back opens the pause menu; the save is written when the app goes to the
+  background; messages and frame timings go to `log.txt` in the app's storage.
+- **Tested in Google's Android emulator** (Android 14): installs, updates over
+  itself, loads a save, plays with the on-screen buttons and touch, pause menu.
+  **Not yet tried on a real phone or handheld**: reports welcome, with
+  `log.txt` if something is wrong.
+
 ## v0.2.2 — Windows fixes
 
 **Downloads:** the same three setup programs as before; use these instead of the

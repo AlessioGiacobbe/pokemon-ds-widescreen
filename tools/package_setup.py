@@ -4,7 +4,7 @@ PyInstaller (dist/ssrecomp-setup, or dist/ssrecomp-setup.exe on Windows). It hol
 game code: the game is still recompiled from the player's own ROM and compiled on
 their machine. Run it on the system the executable is for.
 
-usage: pip install pyinstaller && python tools/package_setup.py
+usage: pip install pyinstaller certifi && python tools/package_setup.py
 """
 import hashlib
 import os
@@ -49,6 +49,9 @@ PyInstaller.__main__.run([
     # Modules only the recompiler scripts use (they are run from the unpacked source).
     '--hidden-import', 'argparse', '--hidden-import', 'filecmp', '--hidden-import', 'collections',
     '--hidden-import', 'struct', '--hidden-import', 'runpy', '--hidden-import', 'io',
+    # The Android build: tools/android/apk.py and the downloads.
+    '--hidden-import', 'secrets', '--hidden-import', 'zipfile', '--hidden-import', 'tarfile',
+    '--hidden-import', 'urllib.request', '--hidden-import', 'ssl', '--hidden-import', 'certifi',
     *(['--windowed'] if sys.platform == 'win32' else []),
 ])
 shutil.rmtree(stage)

@@ -20,7 +20,12 @@
 #include <deque>
 
 #include <SDL2/SDL.h>
+#ifdef __ANDROID__
+#include <unistd.h>
+#endif
+#ifndef SSR_NO_PNG
 #include <png.h>
+#endif
 
 #include "NDS.h"
 #include "NDSCart.h"
@@ -90,6 +95,8 @@ struct PadState
     bool btn[PAD_COUNT] = {};
     float lx = 0, ly = 0, rx = 0, ry = 0, lt = 0, rt = 0;
 };
+
+#include "touchpad.h"
 
 static int PadButtonFromName(const std::string& n)
 {
@@ -184,6 +191,10 @@ static bool WritePNG(const std::string& path, const uint32_t* pixels, int w, int
         rgb[i * 3 + 1] = (pixels[i] >> 8) & 0xFF;
         rgb[i * 3 + 2] = pixels[i] & 0xFF;
     }
+#ifdef SSR_NO_PNG
+    (void)path;
+    return false;
+#else
     png_image img;
     memset(&img, 0, sizeof(img));
     img.version = PNG_IMAGE_VERSION;
@@ -191,11 +202,26 @@ static bool WritePNG(const std::string& path, const uint32_t* pixels, int w, int
     img.height = h;
     img.format = PNG_FORMAT_RGB;
     return png_image_write_to_file(&img, path.c_str(), 0, rgb.data(), 0, nullptr) != 0;
+#endif
 }
 
 static std::vector<uint8_t> ReadFile(const std::string& path)
 {
     std::vector<uint8_t> data;
+#ifdef __ANDROID__
+    // Relative paths are files packed in the APK (the ROM); SDL reads both kinds.
+    if (SDL_RWops* rw = SDL_RWFromFile(path.c_str(), "rb"))
+    {
+        Sint64 len = SDL_RWsize(rw);
+        if (len > 0)
+        {
+            data.resize((size_t)len);
+            if (SDL_RWread(rw, data.data(), 1, (size_t)len) != (size_t)len) data.clear();
+        }
+        SDL_RWclose(rw);
+    }
+    return data;
+#endif
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) return data;
     fseek(f, 0, SEEK_END);
@@ -751,6 +777,27 @@ static bool ReadSnapshot(NDS& nds, const std::string& path, uint32_t* frame)
 int main(int argc, char** argv)
 {
     Options opt;
+#ifdef __ANDROID__
+    // Started from the app icon: the ROM is packed in the APK, the save and the settings
+    // go in the app's own storage.
+    std::vector<std::string> androidArgs;
+    std::vector<char*> androidArgv;
+    if (argc < 2)
+    {
+        const char* dir = SDL_AndroidGetInternalStoragePath();
+        // Files the emulator core keeps by relative name go there too.
+        if (dir) chdir(dir);
+        // Messages go to log.txt there (Android drops them otherwise), with the frame
+        // timing, for bug reports.
+        freopen("log.txt", "w", stderr);
+        setvbuf(stderr, nullptr, _IOLBF, 0);
+        setenv("SSR_PERF", "1", 0);
+        androidArgs = { "ssrecomp", "rom.nds", "--save", std::string(dir ? dir : ".") + "/soulsilver.sav", "--fullscreen" };
+        for (auto& a : androidArgs) androidArgv.push_back(a.data());
+        argc = (int)androidArgv.size();
+        argv = androidArgv.data();
+    }
+#endif
     if (!ParseArgs(argc, argv, opt))
     {
         Usage();
@@ -766,6 +813,7 @@ int main(int argc, char** argv)
     }
 
     std::vector<uint8_t> sav = ReadFile(opt.save);
+    fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
     auto nds = MakeConsole(rom, sav, opt.headless);
     if (!nds) return 1;
     nds->ARM9.RecompEnable = opt.recomp;
@@ -854,6 +902,14 @@ int main(int argc, char** argv)
 
     if (!opt.headless)
     {
+#ifdef __ANDROID__
+        SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+        SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+        // Fingers are handled one by one (on-screen controls and the touch screen).
+        SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+        // Tilting the phone must not move the player.
+        SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+#endif
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0)
         {
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -1695,6 +1751,12 @@ int main(int argc, char** argv)
     bool running = true;
     bool mouseDown = false;
     int mouseX = 0, mouseY = 0;
+    // On-screen controls (touch screens): shown while no controller is connected.
+    TouchPad touchPad;
+    bool touchPadUsed = false, touchMenuHeld = false, prevTouchMenu = false;
+#ifdef __ANDROID__
+    touchPadUsed = true;
+#endif
     // Touch cursor for devices without a touchscreen: moved with the right stick or IJKL,
     // pressed with the right trigger or Space.
     float cursorX = 128, cursorY = 96;
@@ -1752,13 +1814,36 @@ int main(int argc, char** argv)
         if (!opt.headless)
         {
             SDL_Event ev;
+            touchPad.NextFrame();
             while (SDL_PollEvent(&ev))
             {
                 if (ev.type == SDL_QUIT) running = false;
+                else if (ev.type == SDL_APP_WILLENTERBACKGROUND || ev.type == SDL_APP_TERMINATING)
+                {
+                    // A phone may close the app at any time once it is in the background.
+                    if (!opt.noSave) FlushSave(opt.save);
+                    cfg.Save(opt.config);
+                }
+                else if (touchPadUsed && (ev.type == SDL_FINGERDOWN || ev.type == SDL_FINGERMOTION || ev.type == SDL_FINGERUP))
+                {
+                    int ow = 0, oh = 0;
+                    SDL_GetRendererOutputSize(renderer, &ow, &oh);
+                    touchPad.Layout(ow, oh);
+                    float fx = ev.tfinger.x * ow, fy = ev.tfinger.y * oh;
+                    if (ev.type == SDL_FINGERDOWN)
+                    {
+                        // A finger on the screen brings the controls back (that finger only
+                        // touches the picture, see Down).
+                        touchPad.Down(ev.tfinger.fingerId, fx, fy);
+                        touchPad.visible = true;
+                    }
+                    else if (ev.type == SDL_FINGERMOTION) touchPad.Move(ev.tfinger.fingerId, fx, fy);
+                    else touchPad.Up(ev.tfinger.fingerId);
+                }
                 else if (ev.type == SDL_KEYDOWN && !ev.key.repeat)
                 {
                     SDL_Keycode k = ev.key.keysym.sym;
-                    if (k == SDLK_ESCAPE)
+                    if (k == SDLK_ESCAPE || k == SDLK_AC_BACK)
                     {
                         if (menu.open) nav.back = true;
                         else toggleMenu = true;
@@ -1804,6 +1889,34 @@ int main(int argc, char** argv)
             SDL_GetMouseState(&mouseX, &mouseY);
             SDL_GetRendererOutputSize(renderer, &outW, &outH);
             ps = ReadPad(pad);
+            if (touchPadUsed)
+            {
+                touchPad.Layout(outW, outH);
+                // Using a controller hides them: a connected one is not proof enough, as
+                // Android reports some built-in keys as one.
+                bool padUsed = fabsf(ps.lx) > 0.5f || fabsf(ps.ly) > 0.5f;
+                for (int i = 0; i < PAD_COUNT; i++) padUsed |= ps.btn[i];
+                if (padUsed) touchPad.visible = false;
+                // A finger on the picture touches the game's touch screen, like the mouse.
+                float fx, fy;
+                mouseDown = touchPad.ScreenFinger(fx, fy);
+                if (mouseDown)
+                {
+                    mouseX = (int)fx;
+                    mouseY = (int)fy;
+                }
+                // The on-screen buttons go by their labels: the one marked A is the DS's A.
+                bool held[PAD_COUNT] = {};
+                touchPad.Apply(held, touchMenuHeld);
+                if (!cfg.byLabel)
+                {
+                    std::swap(held[PAD_A], held[PAD_B]);
+                    std::swap(held[PAD_X], held[PAD_Y]);
+                }
+                for (int i = 0; i < PAD_COUNT; i++) ps.btn[i] |= held[i];
+                if (touchMenuHeld && !prevTouchMenu) toggleMenu = true;
+                prevTouchMenu = touchMenuHeld;
+            }
 
             const Uint8* kb = SDL_GetKeyboardState(nullptr);
             if (!menu.open)
@@ -2631,6 +2744,14 @@ int main(int argc, char** argv)
                     snprintf(name, sizeof(name), "/window_%06u.png", frame);
                     WritePNG(opt.shotDir + name, back.data(), outW, outH);
                 }
+            }
+            if (touchPadUsed && touchPad.visible)
+            {
+                // Lit by what the fingers hold (by label, as drawn).
+                bool held[PAD_COUNT] = {};
+                bool menuHeld = false;
+                touchPad.Apply(held, menuHeld);
+                touchPad.Draw(renderer, held, menuHeld);
             }
             SDL_RenderPresent(renderer);
             perfMark(4);

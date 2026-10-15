@@ -45,6 +45,28 @@ your cartridge. Nothing of the game is in this repository or its releases.
 3. Choose your ROM, press **Build**, wait (the first build takes 20–40 minutes),
    then press **Play**.
 
+### Android (experimental)
+
+The Android version is built on your PC by the same setup program, from your
+ROM, and installed on the phone or handheld (64-bit ARM, Android 7.0 or later):
+
+1. In the setup program, choose your ROM and press **Build for Android**. It
+   needs only CMake and Ninja on the PC (see below); the first time it downloads
+   Google's Android NDK (about 650 MB on Linux, 750 MB on Windows) and SDL2.
+   The build takes about as long as the PC one.
+2. Copy `SoulSilver-ssrecomp.apk` (in the setup program's folder) to the
+   device, open it there and allow installing it when asked.
+
+The APK contains your copy of the game: never share it. It is signed with a key
+kept next to it (`android/signing-key.json`); builds made later with the same
+key install over it and keep the save. Uninstalling the app deletes its save.
+
+On the device: the touch screen works on the touch-screen parts of the picture,
+and on-screen buttons are shown over it. Using a controller (Bluetooth, USB, or a
+handheld's built-in controls) hides them; touching the screen brings them back.
+The **MENU** button or Back opens the pause menu. Messages and frame timings go
+to `log.txt` in the app's storage, which helps with bug reports.
+
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
 Windows), where the game is built and its save is kept. It contains nothing of
@@ -77,9 +99,10 @@ needed for compiling is missing, with the command to install it (with
   `mingw-w64-ucrt-x86_64-tk` and start it from that window.)
 
 Without a display: `ssrecomp-setup-linux-x86_64 --rom your-rom.nds` (or
-`python3 ssrecomp_setup.py --rom ...`) does the same in the terminal.
+`python3 ssrecomp_setup.py --rom ...`) does the same in the terminal; add
+`--android` for the Android build.
 
-Making the setup programs: `pip install pyinstaller && python tools/package_setup.py`
+Making the setup programs: `pip install pyinstaller certifi && python tools/package_setup.py`
 on the system they are for; `tools/make_appimage.sh` wraps the Linux one into an
 AppImage. `.github/workflows/release.yml` does all three on GitHub's machines
 when started by hand from the Actions tab.
@@ -432,3 +455,8 @@ on. `melonDS/` is melonDS 1.1 with changes for this project: recompiled-code
 dispatch in the ARM9 loop, per-pixel layer flags in the 2D renderer, the 60 fps
 in-between frames and the widescreen renderer (`src/GPU3D_Wide.cpp`, new). The
 changes to existing melonDS files are listed in `melonDS-ssrecomp.patch`.
+
+`tools/android/skeleton.apk` contains SDL 2.32.10's Android Java code
+(`org.libsdl.app`, zlib license, copyright Sam Lantinga and contributors),
+compiled by `tools/android/make_skeleton.sh`. The Android build also downloads
+and builds SDL2 and uses Google's Android NDK under their own licenses.

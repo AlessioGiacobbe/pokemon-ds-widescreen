@@ -238,9 +238,10 @@ endif()
 
 
 # ssrecomp: the widescreen rasteriser is a hot per-pixel loop. AVX2 only on x86 machines
-# that have it (the game is compiled on the machine it runs on); ARM gets NEON by default.
+# that have it (the game is compiled on the machine it runs on; not when building for
+# another device, e.g. Android); ARM gets NEON by default.
 set(SSR_WIDE_FLAGS -O3 -ffast-math)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND NOT CMAKE_CROSSCOMPILING)
     include(CheckCXXSourceRuns)
     set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma")
     check_cxx_source_runs("int main() { return __builtin_cpu_supports(\"avx2\") && __builtin_cpu_supports(\"fma\") ? 0 : 1; }"
