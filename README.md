@@ -6,6 +6,12 @@ build output; the melonDS core (GPLv3, vendored in `melonDS/` at tag 1.1 with a
 few patches) provides the DS hardware: graphics, sound, cartridge, save memory
 and the ARM7.
 
+**Made with heavy use of AI.** Nearly all of the code, documentation and
+testing in this project was done by an AI coding assistant (Anthropic's Claude,
+through Claude Code), directed and play-tested by the maintainer. Expect bugs a
+person would not have made, and review the code with that in mind before
+reusing it.
+
 **This repository contains no game code or data.** It holds the recompiler,
 the runtime and the frontend. The game-specific part (`gen/`) is generated on
 your own machine from your own build of
@@ -14,9 +20,9 @@ your own copy of the game; see "Building". Do not commit `gen/`, ROMs, saves or
 save states to this repository.
 
 Not affiliated with or endorsed by Nintendo, Game Freak, The Pokémon Company,
-pret or the melonDS project. Pokémon is a trademark of its owners. This project
-was written with the help of an AI coding assistant; do not submit any of it
-to pret, whose contribution rules do not accept such work.
+pret or the melonDS project. Pokémon is a trademark of its owners. Because it is
+AI-written, do not submit any of it to pret, whose contribution rules do not
+accept such work.
 
 ## Screenshots
 

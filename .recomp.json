@@ -12,6 +12,6 @@
   "approach": "Static recompilation of the ARM9 code to C++, melonDS core as hardware runtime, SDL2 frontend",
   "maintainers": [{ "name": "ClickingMaster", "link": "https://github.com/ClickingMaster" }],
   "help": ["Testing on Windows", "Testing on ARM Linux hardware", "Android port", "Playtesting later-game screens"],
-  "tags": ["single-screen", "widescreen", "60fps", "controller"],
-  "notes": "Plays on one screen: the two DS screens are merged into one 16:9 layout per situation (overworld, battles, menus), with a widescreen 3D renderer and 60 fps frame interpolation. A setup program recompiles and builds the game on the player's machine using their own copy; no game code is distributed."
+  "tags": ["single-screen", "widescreen", "60fps", "controller", "ai-assisted"],
+  "notes": "Plays on one screen: the two DS screens are merged into one 16:9 layout per situation (overworld, battles, menus), with a widescreen 3D renderer and 60 fps frame interpolation. A setup program recompiles and builds the game on the player's machine using their own copy; no game code is distributed. Made with heavy use of AI: nearly all of the code was written by an AI coding assistant (Claude), directed and play-tested by the maintainer."
 }
