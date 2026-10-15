@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <thread>
 #include <vector>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 // Layer classes, derived from the 2D renderer's per-pixel flags.
 enum : uint8_t

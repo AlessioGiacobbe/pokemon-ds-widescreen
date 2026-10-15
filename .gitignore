@@ -17,8 +17,15 @@
 *.nef
 # Per-user settings and test output
 ssrecomp.cfg
+/build.log
+/game.log
 /test/
 __pycache__/
 /ssrecomp.rom
 /gen.new/
 /dist/
+.DS_Store
+
+# Local macOS port planning and validation notes
+/docs/macos-port-plan.md
+/docs/macos-validation.md

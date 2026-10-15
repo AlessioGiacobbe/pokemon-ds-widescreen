@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
+# Set the SDK floor before compiler detection, including melonDS and generated ASM.
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    if(DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "$ENV{MACOSX_DEPLOYMENT_TARGET}" CACHE STRING "Minimum macOS version")
+    else()
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+    endif()
+endif()
 project(ssrecomp LANGUAGES C CXX)
+set(SSR_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/gen" CACHE PATH "Generated game sources")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,25 +24,30 @@ set(ENABLE_GDBSTUB OFF CACHE BOOL "" FORCE)
 set(ENABLE_LTO_RELEASE OFF CACHE BOOL "" FORCE)
 add_subdirectory(melonDS EXCLUDE_FROM_ALL)
 
-find_package(SDL2 REQUIRED)
-if(NOT ANDROID)
-    find_package(PNG REQUIRED)
+option(SSR_MACOS_SOURCE_DEPS "Build SDL2 and libpng for the selected macOS target" ${APPLE})
+if(APPLE AND NOT ANDROID AND SSR_MACOS_SOURCE_DEPS)
+    include(cmake/MacDependencies.cmake)
+else()
+    find_package(SDL2 REQUIRED)
+    if(NOT ANDROID)
+        find_package(PNG REQUIRED)
+    endif()
 endif()
 
 enable_language(ASM)
 
 # Recompiled game code, produced by tools/recomp.py.
-include(${CMAKE_CURRENT_SOURCE_DIR}/gen/sources.cmake)
+include("${SSR_GENERATED_DIR}/sources.cmake")
 add_library(gamecode OBJECT ${RC_GENERATED_SOURCES})
-target_include_directories(gamecode PRIVATE melonDS/src runtime gen)
+target_include_directories(gamecode PRIVATE melonDS/src runtime "${SSR_GENERATED_DIR}")
 # Generated code is huge and uniform; -O1 keeps build times reasonable.
-target_compile_options(gamecode PRIVATE -O1 -g0 -fno-exceptions -fno-rtti -Wa,-I${CMAKE_CURRENT_SOURCE_DIR}/gen)
+target_compile_options(gamecode PRIVATE -O1 -g0 -fno-exceptions -fno-rtti "$<$<COMPILE_LANGUAGE:ASM>:-Wa,-I${SSR_GENERATED_DIR}>")
 
 set(SSRECOMP_SOURCES
     frontend/main.cpp
     frontend/platform.cpp
     runtime/recomp_rt.cpp
-    gen/apps_table.cpp
+    "${SSR_GENERATED_DIR}/apps_table.cpp"
     $<TARGET_OBJECTS:gamecode>)
 if(ANDROID)
     # On Android the game is the library libmain.so that SDL's Java activity loads
@@ -41,12 +55,20 @@ if(ANDROID)
     # (CMAKE_PREFIX_PATH); no libpng: screenshots are a desktop test aid.
     add_library(ssrecomp SHARED ${SSRECOMP_SOURCES})
     set_target_properties(ssrecomp PROPERTIES OUTPUT_NAME main)
-    find_path(SSR_SDL2_HEADERS SDL2/SDL.h REQUIRED)
-    target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime ${SSR_SDL2_HEADERS})
+    target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime)
     target_compile_definitions(ssrecomp PRIVATE SSR_NO_PNG)
     target_link_libraries(ssrecomp PRIVATE core SDL2::SDL2 android log)
 else()
     add_executable(ssrecomp ${SSRECOMP_SOURCES})
     target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime ${SDL2_INCLUDE_DIRS})
-    target_link_libraries(ssrecomp PRIVATE core ${SDL2_LIBRARIES} PNG::PNG pthread)
+    find_package(Threads REQUIRED)
+    if(TARGET SDL2::SDL2)
+        if(TARGET SDL2::SDL2main)
+            target_link_libraries(ssrecomp PRIVATE SDL2::SDL2main)
+        endif()
+        target_link_libraries(ssrecomp PRIVATE SDL2::SDL2)
+    else()
+        target_link_libraries(ssrecomp PRIVATE ${SDL2_LIBRARIES})
+    endif()
+    target_link_libraries(ssrecomp PRIVATE core PNG::PNG Threads::Threads)
 endif()

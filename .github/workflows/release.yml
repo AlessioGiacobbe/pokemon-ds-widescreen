@@ -1,5 +1,5 @@
 # Builds the setup executables (no game code in them) for Linux (x86_64 and arm64)
-# and Windows. Started by hand (Actions tab -> Setup executables -> Run workflow); the
+# Windows and macOS. Started by hand (Actions tab -> Setup executables -> Run workflow); the
 # files are then under the run's artifacts. Add "release: types: [published]" to
 # attach them to every published release automatically.
 name: Setup executables
@@ -22,6 +22,14 @@ jobs:
             file: dist/ssrecomp-setup
             asset: ssrecomp-setup-linux-aarch64.AppImage
             appimage: aarch64
+          - os: macos-15
+            file: dist/ssrecomp-setup.app
+            asset: ssrecomp-setup-macos-arm64.zip
+            mac: true
+          - os: macos-15-intel
+            file: dist/ssrecomp-setup.app
+            asset: ssrecomp-setup-macos-x86_64.zip
+            mac: true
           - os: windows-latest
             file: dist/ssrecomp-setup.exe
             asset: ssrecomp-setup-windows-x86_64.exe
@@ -31,8 +39,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install pyinstaller
+      - run: python -m pip install "pyinstaller>=6" certifi pillow
       - run: python tools/package_setup.py
+      - name: Audit and archive the Mac app
+        if: matrix.mac
+        run: |
+          python tools/macos/audit_bundle.py "${{ matrix.file }}"
+          codesign --verify --deep --strict "${{ matrix.file }}"
+          ditto -c -k --sequesterRsrc --keepParent "${{ matrix.file }}" "${{ matrix.asset }}"
       - name: Make the AppImage
         if: matrix.appimage
         run: |
@@ -40,7 +54,7 @@ jobs:
           chmod +x appimagetool
           APPIMAGETOOL=./appimagetool tools/make_appimage.sh "${{ matrix.file }}" ${{ matrix.appimage }} "${{ matrix.asset }}"
       - name: Rename
-        if: ${{ !matrix.appimage }}
+        if: ${{ !matrix.appimage && !matrix.mac }}
         shell: bash
         run: mv "${{ matrix.file }}" "${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4

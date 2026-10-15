@@ -51,6 +51,38 @@ your cartridge. Nothing of the game is in this repository or its releases.
 3. Choose your ROM, press **Build**, wait (the first build takes 20–40 minutes),
    then press **Play**.
 
+### macOS (experimental)
+
+Apple Silicon and Intel builds target **macOS 11 (Big Sur) or later**. Install
+[Xcode Command Line Tools](https://developer.apple.com/xcode/resources/) and
+[Python 3 with Tk](https://www.python.org/downloads/macos/), then run from this
+repository:
+
+    xcode-select --install
+    python3 -m pip install "cmake>=3.21,<4" ninja
+    python3 ssrecomp_setup.py
+
+Choose your ROM, press **Build**, then **Play**. Without the setup window:
+
+    python3 ssrecomp_setup.py --rom "/path/to/your SoulSilver.nds"
+    ./run.sh --fullscreen
+
+Setup downloads and builds SDL2 and libpng automatically; Homebrew libraries
+are not needed. The first build needs an internet connection. Builds resume
+when setup is run again; add `--jobs N` to choose the number of compile jobs.
+Use native arm64 Python on Apple Silicon or x86_64 Python on Intel.
+
+The Mac setup download, when available, is a `.zip` containing
+`ssrecomp-setup.app`; unpack it and open the app. Python/Tk is included, but
+Command Line Tools, CMake and Ninja are still required. Development builds are
+ad-hoc signed and may need approval in **System Settings → Privacy & Security**.
+
+The frontend uses Metal and supports Retina displays. Control-Command-F or F11
+toggles fullscreen. Full builds and boot/intro instruction comparisons have
+passed on Apple Silicon; older macOS releases and Intel gameplay still need
+hardware testing. Android builds and `setup.sh`'s decompilation route are
+currently unavailable on macOS.
+
 ### Android (experimental)
 
 The Android version is built on your PC by the same setup program, from your
@@ -75,8 +107,8 @@ to `log.txt` in the app's storage, which helps with bug reports.
 
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
-Windows), where the game is built and its save is kept. It contains nothing of
-the game. Instead of the download you can also run `python3 ssrecomp_setup.py`
+Windows, `~/Library/Application Support/ssrecomp` on macOS), where the game is
+built and its save is kept. It contains nothing of the game. Instead of the download you can also run `python3 ssrecomp_setup.py`
 from a copy of this repository (then the game is built in that folder).
 
 The window checks that the ROM is the right game and tells you if something
@@ -106,12 +138,21 @@ needed for compiling is missing, with the command to install it (with
 
 Without a display: `ssrecomp-setup-linux-x86_64 --rom your-rom.nds` (or
 `python3 ssrecomp_setup.py --rom ...`) does the same in the terminal; add
-`--android` for the Android build.
+`--android` for the Android build on Linux or Windows.
 
-Making the setup programs: `pip install pyinstaller certifi && python tools/package_setup.py`
+Making the setup programs: `pip install "pyinstaller>=6" certifi pillow && python tools/package_setup.py`
 on the system they are for; `tools/make_appimage.sh` wraps the Linux one into an
-AppImage. `.github/workflows/release.yml` does all three on GitHub's machines
-when started by hand from the Actions tab.
+AppImage. On macOS it creates `dist/ssrecomp-setup.app` with Python/Tk included.
+`.github/workflows/release.yml` packages Linux, Windows and separate Mac architectures
+when started by hand from the Actions tab. Mac bundles are checked for dependency
+paths and minimum OS versions before archiving. Set `SSRECOMP_CODESIGN_IDENTITY`
+when packaging with a Developer ID; public distribution also needs notarization.
+
+Mac builds compile pinned SDL2/libpng sources for the selected deployment target,
+using the SDK's zlib. Advanced CMake builds can use installed libraries with
+`-DSSR_MACOS_SOURCE_DEPS=OFF`; those libraries must support the chosen architecture
+and OS version. `MACOSX_DEPLOYMENT_TARGET` (default `11.0`) selects the minimum OS
+for direct CMake builds. The setup workflow uses 11.0.
 
 How it works without the decompilation: the code to recompile is read straight
 from your ROM (`tools/ndsrom.py`). What the decompilation adds, which parts of
@@ -304,7 +345,8 @@ In a window, `--shot-dir` with `--shot-at`/`--shot-every` also writes
 ## Building
 
 Tested on Linux (Ubuntu 24.04 inside a distrobox on Fedora/Bazzite). Other
-Linux distributions should work the same way; Windows and macOS are untested.
+Linux distributions should work the same way; Windows gameplay is untested.
+For the macOS direct-ROM workflow, see the macOS section above. The decompilation route below is Linux-only.
 Expect about half an hour for a first build.
 
 ### What you need

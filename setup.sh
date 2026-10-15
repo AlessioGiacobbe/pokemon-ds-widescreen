@@ -11,6 +11,12 @@
 #   ./setup.sh --desktop       add a menu entry for the game
 set -euo pipefail
 
+if [ "$(uname -s)" = Darwin ]; then
+    echo 'On macOS use: python3 ssrecomp_setup.py --rom /path/to/your-rom.nds' >&2
+    echo 'See README.md for Xcode Command Line Tools and Homebrew prerequisites.' >&2
+    exit 1
+fi
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
