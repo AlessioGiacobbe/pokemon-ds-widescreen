@@ -23,3 +23,6 @@ TouchscreenHitbox_TouchHeldIsIn
 TouchscreenHitbox_TouchNewIsIn
 # The overworld map is being drawn.
 FieldMap_Main
+# Writing the save to flash: the screen does not change meanwhile, so the layout is held.
+HandleWriteSaveAsync_NormalData
+HandleWriteSaveAsync_PCBoxes

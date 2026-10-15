@@ -13,6 +13,7 @@ import json
 import os
 import queue
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -74,15 +75,24 @@ def unpack():
 
 
 def find_msys2():
-    """On Windows, the compiler from MSYS2 is used even when this was not started from
-    an MSYS2 window."""
-    if not WINDOWS or shutil.which('g++'):
+    """On Windows, the compiler, CMake and libraries from MSYS2 are used even when this
+    was not started from an MSYS2 window, and ahead of other copies of CMake or a
+    compiler on the PATH (those cannot find MSYS2's libraries)."""
+    if not WINDOWS:
         return
     for root in (os.environ.get('MSYS2_ROOT', ''), r'C:\msys64', r'C:\tools\msys64'):
         bindir = os.path.join(root, 'ucrt64', 'bin')
         if root and os.path.exists(os.path.join(bindir, 'g++.exe')):
             os.environ['PATH'] = bindir + os.pathsep + os.environ['PATH']
             return
+
+
+def windows_prefix():
+    """The MSYS2 environment (e.g. C:\\msys64\\ucrt64) the compiler belongs to, or None."""
+    gxx = shutil.which('g++')
+    if not WINDOWS or not gxx:
+        return None
+    return os.path.dirname(os.path.dirname(os.path.abspath(gxx)))
 
 
 def check_rom(path):
@@ -113,7 +123,24 @@ def missing_tools():
                 missing.append(name + ' (development files)')
     elif not WINDOWS:
         missing.append('pkg-config')
+    prefix = windows_prefix()
+    if prefix:
+        for path, name in ((os.path.join('lib', 'cmake', 'SDL2'), 'SDL2'), (os.path.join('include', 'png.h'), 'libpng'),
+                           (os.path.join('include', 'zlib.h'), 'zlib')):
+            if not os.path.exists(os.path.join(prefix, path)):
+                missing.append(name)
     return missing
+
+
+def os_id():
+    """The Linux distribution's ID from /etc/os-release (e.g. 'steamos', 'arch'), or ''."""
+    try:
+        for line in open('/etc/os-release'):
+            if line.startswith('ID='):
+                return line[3:].strip().strip('"')
+    except OSError:
+        pass
+    return ''
 
 
 def install_hint():
@@ -123,20 +150,24 @@ def install_hint():
                 'mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libpng '
                 'mingw-w64-ucrt-x86_64-zlib' + ('' if FROZEN else ' mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-tk') +
                 '\nthen start this program again.')
-    if os.path.exists('/run/ostree-booted'):
-        return ('This is an immutable system (Bazzite, Silverblue, SteamOS...). Run this inside a container:\n'
+    if os.path.exists('/run/ostree-booted') or os_id() == 'steamos':
+        return ('This is an immutable system (Bazzite, Silverblue, SteamOS...), where programs are not installed '
+                'directly. Open a terminal (Konsole on a Steam Deck or KDE) and set up a container with:\n'
                 '  distrobox create -n ssrecomp -i ubuntu:24.04\n'
                 '  distrobox enter ssrecomp -- sudo apt install -y ' + ('' if FROZEN else 'python3-tk ') + 'cmake ninja-build g++ '
                 'pkg-config libsdl2-dev libpng-dev zlib1g-dev\n'
-                '  distrobox enter ssrecomp -- ' + (sys.executable if FROZEN else 'python3 ssrecomp_setup.py') + '\n'
+                '  distrobox enter ssrecomp -- ' + (shlex.quote(os.environ.get('APPIMAGE', sys.executable)) if FROZEN
+                                                    else 'python3 ssrecomp_setup.py') + '\n'
                 'The finished game also runs outside the container.')
     tk_apt, tk_dnf, tk_pac = ('', '', '') if FROZEN else ('python3-tk ', 'python3-tkinter ', 'tk ')
+    how = ('Open a terminal, run this command (it asks for your password), then close and start this '
+           'program again:\n  ')
     if shutil.which('apt-get'):
-        return 'sudo apt install ' + tk_apt + 'cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev'
+        return how + 'sudo apt install ' + tk_apt + 'cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev'
     if shutil.which('dnf'):
-        return 'sudo dnf install ' + tk_dnf + 'cmake ninja-build gcc-c++ pkgconf-pkg-config SDL2-devel libpng-devel zlib-devel'
+        return how + 'sudo dnf install ' + tk_dnf + 'cmake ninja-build gcc-c++ pkgconf-pkg-config SDL2-devel libpng-devel zlib-devel'
     if shutil.which('pacman'):
-        return 'sudo pacman -S --needed ' + tk_pac + 'cmake ninja gcc pkgconf sdl2 libpng zlib'
+        return how + 'sudo pacman -S --needed ' + tk_pac + 'cmake ninja gcc pkgconf sdl2 libpng zlib'
     return 'Install CMake, Ninja, a C++ compiler, pkg-config and the SDL2, libpng and zlib development files.'
 
 
@@ -225,7 +256,9 @@ def run_steps(rom, jobs, log, progress):
     tool('apps.py', '--layout', LAYOUT, GEN)
     progress(0.08, 'Configuring the build')
     if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
-        run(['cmake', '-S', '.', '-B', 'build', '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=RelWithDebInfo'])
+        prefix = windows_prefix()
+        run(['cmake', '-S', '.', '-B', 'build', '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
+             *(['-DCMAKE_PREFIX_PATH=' + prefix.replace('\\', '/')] if prefix else [])])
     progress(0.1, 'Compiling (the first time takes 20-40 minutes)')
     run(['ninja', '-C', 'build', '-j', str(jobs)], parse_ninja=True)
     if WINDOWS:
@@ -283,6 +316,13 @@ def gui():
 
     checks = ttk.Label(frame, wraplength=600, justify='left')
     checks.pack(anchor='w', pady=8)
+    commands = []
+
+    def copy_commands():
+        root.clipboard_clear()
+        root.clipboard_append('\n'.join(commands))
+        copy_btn.config(text='Copied - paste into a terminal')
+    copy_btn = ttk.Button(frame, text='Copy the commands', command=copy_commands)
 
     jobs_row = ttk.Frame(frame)
     jobs_row.pack(fill='x')
@@ -322,6 +362,13 @@ def gui():
         else:
             lines.append('Compiler and libraries: found.')
         checks.config(text='\n'.join(lines))
+        # The install commands are the indented lines of the hint.
+        commands[:] = [l.strip() for l in '\n'.join(lines).splitlines() if l.startswith('  ')]
+        if missing and commands:
+            copy_btn.config(text='Copy the commands')
+            copy_btn.pack(anchor='w', after=checks, pady=(0, 8))
+        else:
+            copy_btn.pack_forget()
         ready = bool(rom) and os.path.isfile(rom) and not missing
         build_btn.state(['!disabled'] if ready else ['disabled'])
         built = os.path.exists(EXE) and os.path.exists(ROM_NOTE)

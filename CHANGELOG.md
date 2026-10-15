@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.2.2 — Windows fixes
+
+**Downloads:** the same three setup programs as before; use these instead of the
+earlier ones. Already built? Start the new setup program and press **Build**
+once: only the changed files are recompiled and your save is kept.
+
+### Fixed
+
+- **Windows: progress was not saved** (#2). Only the first save ever reached
+  `soulsilver.sav`; later ones were left in `soulsilver.sav.tmp`, because
+  Windows does not let a file be renamed over an existing one. Saves now replace
+  the file. If you lost progress this way, see the note below.
+- **Windows: the build stopped with "junk at end of line"** in `rc_images.S`
+  (#3). The generated assembly ended with a Linux-only line.
+- **Windows: "Could not find a package configuration file provided by SDL2"**
+  (#3). The setup program now uses MSYS2's CMake ahead of any other copy on the
+  PATH, tells CMake where MSYS2's libraries are, and says when SDL2, libpng or
+  zlib are missing.
+- **Screen jumping around while saving** (#1). During "Saving a lot of
+  data…" the layout fell back to the X menu's (the save card beside the
+  overworld) and the picture flipped between widescreen and 4:3, because the
+  game hardly runs anything else while it writes. The save screen now stays as
+  it is until the save is written.
+- **Clearer install instructions** in the setup program (#4): it says to open a
+  terminal, has a button to copy the commands, and on SteamOS (Steam Deck)
+  gives the container steps, as there programs cannot be installed directly.
+
+### Getting back lost progress on Windows (#2)
+
+Close the game, open `%LOCALAPPDATA%\ssrecomp`, rename `soulsilver.sav` to
+`soulsilver.sav.old`, then rename `soulsilver.sav.tmp` to `soulsilver.sav`. The
+`.tmp` file holds your latest save.
+
+### Tested
+
+- The whole game cross-compiled for Windows with MinGW and run under Wine:
+  identical to the Linux build frame for frame, and saving in the game replaces
+  the save file. Still not tried on a real Windows PC.
+
 ## v0.2.1 — 64-bit ARM Linux
 
 **Downloads:** `ssrecomp-setup-linux-x86_64`,

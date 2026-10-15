@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <map>
@@ -212,9 +213,18 @@ static void FlushSave(const std::string& path)
     std::string tmp = path + ".tmp";
     FILE* f = fopen(tmp.c_str(), "wb");
     if (!f) return;
-    fwrite(Host::SaveData.data(), 1, Host::SaveData.size(), f);
-    fclose(f);
-    rename(tmp.c_str(), path.c_str());
+    bool ok = fwrite(Host::SaveData.data(), 1, Host::SaveData.size(), f) == Host::SaveData.size();
+    ok = fclose(f) == 0 && ok;
+    if (!ok) return;
+    // std::filesystem::rename replaces an existing file on Windows too (plain rename()
+    // fails there when the target exists, which kept every save after the first).
+    std::error_code err;
+    std::filesystem::rename(tmp, path, err);
+    if (err)
+    {
+        fprintf(stderr, "cannot write save %s: %s\n", path.c_str(), err.message().c_str());
+        return;
+    }
     Host::SaveIsDirty = false;
 }
 
@@ -804,7 +814,8 @@ int main(int argc, char** argv)
         }
     }
 
-    std::string dir = opt.save.find('/') == std::string::npos ? "." : opt.save.substr(0, opt.save.rfind('/'));
+    const size_t slash = opt.save.find_last_of("/\\");
+    std::string dir = slash == std::string::npos ? "." : opt.save.substr(0, slash);
     if (opt.config.empty()) opt.config = dir + "/ssrecomp.cfg";
     const std::string quickState = opt.save + ".state";
 
@@ -912,16 +923,31 @@ int main(int argc, char** argv)
         focusProbe("TouchscreenHitbox_FindHitboxAtTouchNew"), focusProbe("TouchscreenHitbox_FindHitboxAtTouchHeld"),
         focusProbe("TouchscreenHitbox_TouchHeldIsIn"), focusProbe("TouchscreenHitbox_TouchNewIsIn") };
     const int probeFieldMap = focusProbe("FieldMap_Main");
+    // Writing the save: for the seconds this takes the game sits in its flash write loop
+    // and the code of the screen it shows (the save question, the overworld) runs only now
+    // and then, so nothing on screen changes but the probes go quiet.
+    const int probeSaveWrite[] = { focusProbe("HandleWriteSaveAsync_NormalData"), focusProbe("HandleWriteSaveAsync_PCBoxes") };
     auto probeActive = [&](int probe) {
         unsigned last = rc_probe_last_frame(probe);
         return last && last + 3 >= rc_current_frame();
     };
+    auto saveWriting = [&]() {
+        for (int probe : probeSaveWrite)
+        {
+            unsigned last = rc_probe_last_frame(probe);
+            if (last && last + 8 >= rc_current_frame()) return true;
+        }
+        return false;
+    };
+    // Whether the overworld was running when the save write began: it counts as running
+    // until the write ends, so the widescreen picture does not drop out meanwhile.
+    bool fieldHeldBySave = false;
     // The overworld's main function is not entered for stretches of about ten frames while
     // some scripts run (a nurse bowing, for one), so it gets a longer memory than the rest:
     // otherwise the widescreen picture and the menu layout drop out for those frames.
     auto fieldActive = [&]() {
         unsigned last = rc_probe_last_frame(probeFieldMap);
-        return last && last + 16 >= rc_current_frame();
+        return (last && last + 16 >= rc_current_frame()) || fieldHeldBySave;
     };
     // Coming back from the Bag, the Pokegear and so on, the game fades the overworld in with
     // the X menu already drawn, a little before the menu's task runs again. The strip it
@@ -1303,7 +1329,10 @@ int main(int argc, char** argv)
                 // The lower right corner only ever holds a "touch to continue" hint.
                 sc.items.push_back(el);
         }
-        else if (std::any_of(std::begin(probeSave), std::end(probeSave), probeActive))
+        else if (std::any_of(std::begin(probeSave), std::end(probeSave), probeActive) &&
+                 // Closing, the X menu's save step runs on for a few frames after the save
+                 // screen is gone and the menu is back.
+                 (sectionActive("touch_save_app") || !probeActive(probeStartMenu)))
             only("save", 1);
         else if (probeActive(probeMart))
             // Poke Mart: the item's description from the other screen above the list of goods.
@@ -2310,6 +2339,8 @@ int main(int argc, char** argv)
             // one on screen, so that the frames of a transition in which the game is between
             // two states do not flash a third layout. The battle panel stays longer: the
             // game stops polling it while its buttons animate between menus.
+            const bool writing = saveWriting();
+            fieldHeldBySave = writing && fieldActive();
             Scene picked = pickScene(frame < cursorShownUntil, view.width, screenImages);
             // With the X menu open the game covers the bottom of the overworld with a strip
             // that points at the other screen. It means nothing here, so the layers it is
@@ -2334,7 +2365,10 @@ int main(int argc, char** argv)
             }
             static std::string shownName, pendingName;
             static int pending = 0;
-            if (shownName.empty() || shownName == picked.name)
+            if (writing && !shownName.empty())
+                // The layout on screen stays until the save is written (see probeSaveWrite).
+                pending = 0;
+            else if (shownName.empty() || shownName == picked.name)
             {
                 scene = picked;
                 shownName = picked.name;
