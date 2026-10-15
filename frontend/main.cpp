@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -407,6 +408,25 @@ static bool ParseArgs(int argc, char** argv, Options& o)
     return !o.rom.empty();
 }
 
+// The DS clock. The game lights the overworld by the time of day (dark blue at night,
+// orange in the evening), so it follows the computer's clock as on a real DS; the tests
+// use a fixed noon so their pictures do not depend on when they run.
+// SSR_CLOCK="YYYY-MM-DD HH:MM" overrides it.
+static void SetClock(NDS& nds, bool fixed)
+{
+    int y = 2026, mo = 1, d = 1, h = 12, mi = 0, sec = 0;
+    if (const char* c = getenv("SSR_CLOCK"))
+        sscanf(c, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi);
+    else if (!fixed)
+    {
+        time_t now = time(nullptr);
+        struct tm t = *localtime(&now);
+        y = t.tm_year + 1900; mo = t.tm_mon + 1; d = t.tm_mday;
+        h = t.tm_hour; mi = t.tm_min; sec = t.tm_sec;
+    }
+    nds.RTC.SetDateTime(y, mo, d, h, mi, sec);
+}
+
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
     NDSCart::NDSCartArgs cartArgs;
@@ -428,7 +448,7 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
     nds->SetNDSCart(std::move(cart));
     nds->Reset();
     nds->SetupDirectBoot("game.nds");
-    if (fixedClock) nds->RTC.SetDateTime(2026, 1, 1, 12, 0, 0);
+    SetClock(*nds, fixedClock);
     nds->Start();
     return nds;
 }
@@ -861,6 +881,8 @@ int main(int argc, char** argv)
             }
         }
     }
+    // A snapshot carries the clock of when it was made; play goes on at the current time.
+    if (!opt.headless || getenv("SSR_CLOCK")) SetClock(*nds, opt.headless);
 
     const size_t slash = opt.save.find_last_of("/\\");
     std::string dir = slash == std::string::npos ? "." : opt.save.substr(0, slash);
@@ -922,7 +944,11 @@ int main(int argc, char** argv)
             SDL_WINDOW_RESIZABLE | (cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
         // The OpenGL ES renderer uploads the picture several times faster than SDL's default
         // (desktop OpenGL) on the machines this was measured on. SDL_RENDER_DRIVER overrides.
+        // Not on Windows: there OpenGL ES can come with a framebuffer that converts to sRGB,
+        // which washes the colours out (seen on AMD), and SDL's default is Direct3D anyway.
+#ifndef _WIN32
         if (!getenv("SDL_RENDER_DRIVER")) SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
+#endif
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
         if (!renderer)
         {
@@ -1861,7 +1887,11 @@ int main(int argc, char** argv)
                     else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
                     else if (k == SDLK_F2) focus.mode = (focus.mode + 1) % 3;
                     else if (k == SDLK_F5) say(WriteSnapshot(*nds, quickState, frame) ? "STATE SAVED" : "SAVE STATE FAILED");
-                    else if (k == SDLK_F8) say(ReadSnapshot(*nds, quickState, nullptr) ? "STATE LOADED" : "NO STATE TO LOAD");
+                    else if (k == SDLK_F8)
+                    {
+                        say(ReadSnapshot(*nds, quickState, nullptr) ? "STATE LOADED" : "NO STATE TO LOAD");
+                        SetClock(*nds, false);
+                    }
                     else if (k == SDLK_F11)
                     {
                         cfg.fullscreen = !cfg.fullscreen;
@@ -2157,6 +2187,7 @@ int main(int argc, char** argv)
                 break;
             case M_LOADSTATE:
                 say(ReadSnapshot(*nds, quickState, nullptr) ? "STATE LOADED" : "NO STATE TO LOAD");
+                SetClock(*nds, false);
                 menu.open = false;
                 swallowMenuButtons = true;
                 break;

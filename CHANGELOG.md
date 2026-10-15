@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.4 — Colour fixes
+
+### Fixed
+
+- **Washed-out colours on Windows** (#5): the game asked SDL for its OpenGL ES
+  renderer, which on Windows (seen with AMD graphics) can convert every pixel
+  as if it were linear light, so the whole picture looked pale. Windows now uses
+  SDL's default, Direct3D.
+- **The game was always at night.** The DS clock started at midnight on
+  1 January 2000 on every launch, so the overworld always had night lighting.
+  It now follows the computer's clock, as on a real DS, including after loading
+  a quick save.
+
 ## v0.2.3 — Android (experimental)
 
 **Downloads:** the same three setup programs; use these instead of the earlier
