@@ -695,6 +695,13 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
 
 void SoftRenderer::DrawScanline_BGOBJ(u32 line)
 {
+    if (line < 192)
+        for (int i = 0; i < 4; i++)
+        {
+            LineScroll[CurUnit->Num][line][i][0] = CurUnit->BGXPos[i];
+            LineScroll[CurUnit->Num][line][i][1] = CurUnit->BGYPos[i];
+        }
+
     // forced blank disables BG/OBJ compositing
     if (CurUnit->DispCnt & (1<<7))
     {
@@ -747,12 +754,15 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
     if (!GPU.GPU3D.IsRendererAccelerated())
     {
         u8* layerFlags = line < 192 ? &LayerFlags[CurUnit->Num][line * 256] : nullptr;
+        u8* objPrio = line < 192 ? &ObjPrio[CurUnit->Num][line * 256] : nullptr;
+        const u32* objLine = OBJLine[CurUnit->Num];
         for (int i = 0; i < 256; i++)
         {
             u32 val1 = BGOBJLine[i];
             u32 val2 = BGOBJLine[256+i];
 
             if (layerFlags) layerFlags[i] = val1 >> 24;
+            if (objPrio) objPrio[i] = (objLine[i] & 0x40000) ? (objLine[i] >> 16) & 3 : 4;
             BGOBJLine[i] = ColorComposite(i, val1, val2);
         }
     }
@@ -1606,6 +1616,10 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
 
         CurUnit->OBJMosaicY = 0;
         CurUnit->OBJMosaicYCount = 0;
+
+        // ssrecomp: the sprites of the frame being drawn (the game changes OAM for the next
+        // one before this frame is shown).
+        memcpy(OAMSnap[CurUnit->Num], &GPU.OAM[CurUnit->Num ? 0x400 : 0], 0x400);
     }
 
     if (CurUnit->Num == 0)

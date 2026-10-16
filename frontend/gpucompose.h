@@ -38,8 +38,10 @@ public:
         for (const Element& item : scene.items)
         {
             Element el = item;
-            if (useWide && first) el.drop |= LAYER_3D;
+            const bool isFirst = first;
             first = false;
+            if (useWide && isFirst && wide->placed) continue;
+            if (useWide && isFirst) el.drop |= LAYER_3D;
             const float s = v.unit * el.scale;
             SDL_Rect dst;
             dst.x = (int)(v.originX + el.dx * v.unit);
@@ -159,6 +161,14 @@ private:
         SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
         SDL_SetTextureScaleMode(tex, smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
         SDL_UpdateTexture(tex, nullptr, wide.pixels, wide.w * 4);
+        if (wide.placed)
+        {
+            // The widened top screen, at its place in the view.
+            SDL_SetTextureColorMod(tex, 255, 255, 255);
+            const SDL_FRect dst = { v.originX + wide.baseX * v.unit, v.originY, wide.w * v.unit, wide.h * v.unit };
+            SDL_RenderCopyF(R, tex, nullptr, &dst);
+            return;
+        }
         int k = 255;
         if (wide.fadeMode == 2) k = 255 * (16 - wide.fade) / 16;
         SDL_SetTextureColorMod(tex, k, k, k);

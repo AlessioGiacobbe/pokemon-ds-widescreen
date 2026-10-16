@@ -41,6 +41,7 @@
 #include "ui.h"
 #include "merged.h"
 #include "gpucompose.h"
+#include "battlewide.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
@@ -647,19 +648,131 @@ static uint32_t KeyboardKeys()
     return k;
 }
 
-static PadState ReadPad(SDL_GameController* pad)
+// The controllers in use: all of them at once, as which one is first is not to be relied on
+// (Windows often lists a virtual or idle one first: Steam's, DS4Windows', a wheel's). Those
+// SDL knows the layout of are game controllers; any other joystick (a generic USB pad) is
+// read with the usual layout: the first buttons as A B X Y, L R, Select Start, the hat and
+// the first two axes as the D-pad and the left stick.
+struct Pads
+{
+    std::vector<SDL_GameController*> controllers;
+    std::vector<SDL_Joystick*> joysticks;
+    // Per joystick, whether its first two axes rest in the middle (1), not (2) or not known
+    // yet (0, until half a second after it was opened, when its state has surely arrived):
+    // some keyboards, mice and wheels report themselves as joysticks with an axis resting at
+    // an end, which would walk the player on its own. And when it was opened.
+    std::vector<int> axesUsable;
+    std::vector<Uint32> openedAt;
+
+    bool Has(SDL_JoystickID id) const
+    {
+        for (SDL_GameController* c : controllers)
+            if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c)) == id) return true;
+        for (SDL_Joystick* j : joysticks)
+            if (SDL_JoystickInstanceID(j) == id) return true;
+        return false;
+    }
+    bool Empty() const { return controllers.empty() && joysticks.empty(); }
+
+    // Opens the device at `index` unless already open; its name, or null.
+    const char* Open(int index)
+    {
+        if (getenv("SSR_NO_PAD") || Has(SDL_JoystickGetDeviceInstanceID(index))) return nullptr; // tests must not hear a real controller
+        if (SDL_IsGameController(index))
+        {
+            SDL_GameController* c = SDL_GameControllerOpen(index);
+            if (!c) return nullptr;
+            controllers.push_back(c);
+            const char* name = SDL_GameControllerName(c);
+            fprintf(stderr, "controller: %s\n", name ? name : "?");
+            return name ? name : "";
+        }
+#ifdef __ANDROID__
+        // Android reports some of a device's own keys as a joystick, and using one hides the
+        // on-screen controls.
+        return nullptr;
+#endif
+        SDL_Joystick* j = SDL_JoystickOpen(index);
+        if (!j) return nullptr;
+        // Not one without buttons (an accelerometer, a wheel's pedals alone).
+        if (SDL_JoystickNumButtons(j) < 2)
+        {
+            SDL_JoystickClose(j);
+            return nullptr;
+        }
+        joysticks.push_back(j);
+        axesUsable.push_back(SDL_JoystickNumAxes(j) >= 2 ? 0 : 2);
+        openedAt.push_back(SDL_GetTicks());
+        const char* name = SDL_JoystickName(j);
+        fprintf(stderr, "joystick without a known layout: %s (%d buttons, %d axes, %d hats)\n", name ? name : "?",
+            SDL_JoystickNumButtons(j), SDL_JoystickNumAxes(j), SDL_JoystickNumHats(j));
+        return name ? name : "";
+    }
+
+    // Closes the device with instance `id`; whether it was open.
+    bool Close(SDL_JoystickID id)
+    {
+        for (size_t i = 0; i < controllers.size(); i++)
+            if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controllers[i])) == id)
+            {
+                SDL_GameControllerClose(controllers[i]);
+                controllers.erase(controllers.begin() + i);
+                return true;
+            }
+        for (size_t i = 0; i < joysticks.size(); i++)
+            if (SDL_JoystickInstanceID(joysticks[i]) == id)
+            {
+                SDL_JoystickClose(joysticks[i]);
+                joysticks.erase(joysticks.begin() + i);
+                axesUsable.erase(axesUsable.begin() + i);
+                openedAt.erase(openedAt.begin() + i);
+                return true;
+            }
+        return false;
+    }
+};
+
+static PadState ReadPad(Pads& pads)
 {
     PadState st;
-    if (!pad) return st;
-    for (int i = 0; i < PAD_COUNT; i++)
-        st.btn[i] = SDL_GameControllerGetButton(pad, (SDL_GameControllerButton)i) != 0;
-    auto axis = [&](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(pad, a) / 32767.0f; };
-    st.lx = axis(SDL_CONTROLLER_AXIS_LEFTX);
-    st.ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
-    st.rx = axis(SDL_CONTROLLER_AXIS_RIGHTX);
-    st.ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
-    st.lt = axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-    st.rt = axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+    // Each button pressed on any of them; each stick as far as on the one pushed furthest.
+    auto merge = [](float& to, float v) { if (fabsf(v) > fabsf(to)) to = v; };
+    for (SDL_GameController* pad : pads.controllers)
+    {
+        for (int i = 0; i < PAD_COUNT; i++)
+            st.btn[i] |= SDL_GameControllerGetButton(pad, (SDL_GameControllerButton)i) != 0;
+        auto axis = [&](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(pad, a) / 32767.0f; };
+        merge(st.lx, axis(SDL_CONTROLLER_AXIS_LEFTX));
+        merge(st.ly, axis(SDL_CONTROLLER_AXIS_LEFTY));
+        merge(st.rx, axis(SDL_CONTROLLER_AXIS_RIGHTX));
+        merge(st.ry, axis(SDL_CONTROLLER_AXIS_RIGHTY));
+        merge(st.lt, axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT));
+        merge(st.rt, axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
+    }
+    for (size_t k = 0; k < pads.joysticks.size(); k++)
+    {
+        SDL_Joystick* j = pads.joysticks[k];
+        static const int order[] = { PAD_A, PAD_B, PAD_X, PAD_Y, PAD_LB, PAD_RB, PAD_BACK, PAD_START };
+        const int n = std::min(SDL_JoystickNumButtons(j), (int)(sizeof(order) / sizeof(order[0])));
+        for (int i = 0; i < n; i++)
+            st.btn[order[i]] |= SDL_JoystickGetButton(j, i) != 0;
+        if (SDL_JoystickNumHats(j) > 0)
+        {
+            const Uint8 h = SDL_JoystickGetHat(j, 0);
+            st.btn[PAD_UP] |= (h & SDL_HAT_UP) != 0;
+            st.btn[PAD_DOWN] |= (h & SDL_HAT_DOWN) != 0;
+            st.btn[PAD_LEFT] |= (h & SDL_HAT_LEFT) != 0;
+            st.btn[PAD_RIGHT] |= (h & SDL_HAT_RIGHT) != 0;
+        }
+        int& usable = pads.axesUsable[k];
+        if (usable == 0 && SDL_GetTicks() - pads.openedAt[k] >= 500)
+            usable = (abs(SDL_JoystickGetAxis(j, 0)) < 8000 && abs(SDL_JoystickGetAxis(j, 1)) < 8000) ? 1 : 2;
+        if (usable == 1)
+        {
+            merge(st.lx, SDL_JoystickGetAxis(j, 0) / 32767.0f);
+            merge(st.ly, SDL_JoystickGetAxis(j, 1) / 32767.0f);
+        }
+    }
     return st;
 }
 
@@ -909,7 +1022,7 @@ int main(int argc, char** argv)
     SDL_Texture* overlayTex = nullptr;
     int overlayTexW = 0, overlayTexH = 0;
     SDL_AudioDeviceID audio = 0;
-    SDL_GameController* pad = nullptr;
+    Pads pads;
     Layout layout = LayoutFromName(cfg.layout);
     AutoFocus focus;
     focus.mode = cfg.focusMode;
@@ -932,6 +1045,9 @@ int main(int argc, char** argv)
         // Tilting the phone must not move the player.
         SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #endif
+        // The controller keeps working while another window has the focus (on Windows SDL
+        // otherwise ignores it then, as when the game was started from the setup window).
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0)
         {
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -987,11 +1103,7 @@ int main(int argc, char** argv)
         if (audio) SDL_PauseAudioDevice(audio, 0);
 
         for (int i = 0; i < SDL_NumJoysticks(); i++)
-            if (SDL_IsGameController(i) && !getenv("SSR_NO_PAD")) // tests must not hear a real controller
-            {
-                pad = SDL_GameControllerOpen(i);
-                break;
-            }
+            pads.Open(i);
     }
 
     // Functions whose activity selects the merged scene.
@@ -1045,6 +1157,10 @@ int main(int argc, char** argv)
     // Frames in a row in which the battle's touch screen showed something that is neither
     // of the menus with a layout of their own nor the idle backdrop.
     int battleUnknown = 0;
+    // The frame until which the battle strip stays up while its buttons are not recognised:
+    // between the commands and the moves the game slides one set out and the other in, and
+    // the strip would otherwise vanish for those frames, uncovering the message box.
+    uint32_t battleStripUntil = 0;
     // The button chosen in a battle strip (see the input handling before the frame runs).
     int battleSel = 0;
     // One probe per game application, to know which one is running.
@@ -1467,7 +1583,10 @@ int main(int argc, char** argv)
         else if (sectionActive("OVY_8"))
             // In-battle bag and party screens (overlay 8) fill the bottom screen.
             only("battle-submenu", 1);
-        else if (probeActive(probeBattleInput))
+        else if (probeActive(probeBattleInput) ||
+            // While the commands slide out and the moves in, the game stops reading the touch
+            // screen for a few frames; the strip stays up meanwhile (see battleStripUntil).
+            (frame < battleStripUntil && sectionActive("OVY_12") && !AutoFocus::Blank(screens[1].pixels)))
         {
             // Battle, choosing a command or a move. On a wide view the buttons are taken off
             // the touch screen one by one and laid out as a strip along the bottom, in place
@@ -1490,13 +1609,18 @@ int main(int argc, char** argv)
             const bool moves = !cmd && blue(40, 166) && blue(128, 166) && blue(216, 166);
             const bool idle = AutoFocus::Blank(screens[1].pixels) || (!blue(128, 166) && !red(128, 60));
             battleUnknown = (cmd || moves || idle) ? 0 : battleUnknown + 1;
+            // Only after the commands (FIGHT): after a move is chosen the battle goes on and
+            // its messages must not be covered.
+            if (cmd) battleStripUntil = frame + 20;
+            else if (moves || idle) battleStripUntil = 0;
             const float L = 128 - viewWidth / 2;
             auto put = [&](int sx, int sy, int sw, int sh, float x, float y, float scale) {
                 sc.items.push_back({ 1, sx, sy, sw, sh, x, y, scale, 0, 255, false });
             };
-            if (viewWidth >= 300 && (cmd || moves))
+            if (viewWidth >= 300 && (cmd || moves || frame < battleStripUntil))
             {
-                sc.name = cmd ? "battle-cmd" : "battle-moves";
+                // (Neither: the strip without buttons, while the next ones slide in.)
+                sc.name = cmd ? "battle-cmd" : moves ? "battle-moves" : "battle-strip";
                 // The strip: the first line of the message box ("What will X do?") as a
                 // label at the top, the buttons under it.
                 sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 55, 0x20242C));
@@ -1529,7 +1653,7 @@ int main(int argc, char** argv)
                         x += c.sw * sb + gap;
                     }
                 }
-                else
+                else if (moves)
                 {
                     // The four moves in a row, each its whole button with its frame; the touch
                     // screen's background around the rounded corners is left out so the button
@@ -1611,6 +1735,7 @@ int main(int argc, char** argv)
     std::vector<uint32_t> mergedImage;
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
+    BattleWide battleWide;
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
 
@@ -1913,18 +2038,16 @@ int main(int argc, char** argv)
                     mouseDown = false;
                 else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) mouseDown = true;
                 else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) mouseDown = false;
-                else if (ev.type == SDL_CONTROLLERDEVICEADDED && !pad && !getenv("SSR_NO_PAD"))
+                // (Every joystick is announced by SDL_JOYDEVICEADDED, game controllers also
+                // by SDL_CONTROLLERDEVICEADDED; Open takes each once.)
+                else if (ev.type == SDL_JOYDEVICEADDED || ev.type == SDL_CONTROLLERDEVICEADDED)
                 {
-                    pad = SDL_GameControllerOpen(ev.cdevice.which);
-                    if (pad) say("CONTROLLER CONNECTED");
+                    if (pads.Open(ev.jdevice.which)) say("CONTROLLER CONNECTED");
                 }
-                else if (ev.type == SDL_CONTROLLERDEVICEREMOVED && pad &&
-                    ev.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pad)))
+                else if (ev.type == SDL_JOYDEVICEREMOVED && pads.Close(ev.jdevice.which))
                 {
-                    SDL_GameControllerClose(pad);
-                    pad = nullptr;
                     // Pause rather than leave the game running with nobody at the controls.
-                    if (!menu.open) toggleMenu = true;
+                    if (pads.Empty() && !menu.open) toggleMenu = true;
                     say("CONTROLLER DISCONNECTED");
                 }
             }
@@ -1942,7 +2065,7 @@ int main(int argc, char** argv)
             }
             mouseX = int(double(mouseX) * outW / windowW);
             mouseY = int(double(mouseY) * outH / windowH);
-            ps = ReadPad(pad);
+            ps = ReadPad(pads);
             if (touchPadUsed)
             {
                 touchPad.Layout(outW, outH);
@@ -2270,7 +2393,8 @@ int main(int argc, char** argv)
                 ww = ww * cfg.wideLines / wh;
                 wh = cfg.wideLines;
             }
-            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (fieldActive() || menuReturn > 0);
+            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 &&
+                (fieldActive() || menuReturn > 0 || scene.edgeFill);
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
             melonDS::Wide.Width = ww;
@@ -2281,6 +2405,28 @@ int main(int argc, char** argv)
         WideImage wideImage;
         auto takeWideImage = [&]() {
             wideImage = WideImage();
+            // A battle on a wide view: the screen widened (battlewide.h) instead of the bars.
+            if (scene.edgeFill && cfg.wide && !opt.noWide)
+            {
+                WideImage world;
+                if (wideFrames > 3 && !melonDS::Wide.Front.empty())
+                {
+                    world.pixels = melonDS::Wide.Front.data();
+                    world.w = melonDS::Wide.FrontW;
+                    world.h = melonDS::Wide.FrontH;
+                }
+                const float vw = MergedMakeView(outW, outH).width;
+                const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+                const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(),
+                    static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
+                if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage))
+                {
+                    scene.wide = true;
+                    return;
+                }
+            }
+            else
+                battleWide.Reset();
             if (wideFrames > 3 && !melonDS::Wide.Front.empty())
             {
                 wideImage.pixels = melonDS::Wide.Front.data();

@@ -8,6 +8,7 @@
 #pragma once
 #include <cstdint>
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <thread>
@@ -133,6 +134,11 @@ struct WideImage
     int w = 0, h = 0;
     int fadeMode = 0;   // 0 none, 1 towards white, 2 towards black
     int fade = 0;       // 0..16
+    // Instead of the 3D world across the whole view: the whole top screen widened (see
+    // battlewide.h), in base pixels from base x `baseX`, already with its fades. It replaces
+    // the first piece, which is not drawn.
+    bool placed = false;
+    int baseX = 0;
 };
 
 struct ScreenImage
@@ -325,11 +331,13 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     out.resize((size_t)outW * outH);
     const MergedView v = MergedMakeView(outW, outH);
 
+    const bool placed = useWide && wide->placed;
     std::vector<int> wcol;
     if (useWide)
     {
         wcol.resize(outW);
-        for (int x = 0; x < outW; x++) wcol[x] = (int)((int64_t)x * wide->w / outW);
+        for (int x = 0; x < outW; x++)
+            wcol[x] = placed ? (int)std::floor((x + 0.5f - v.originX) / v.unit) - wide->baseX : (int)((int64_t)x * wide->w / outW);
     }
 
     // Each piece with its place in the output and, for nearest-pixel drawing, the source
@@ -346,10 +354,11 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     pieces.reserve(scene.items.size());
     for (const Element& item : scene.items)
     {
+        if (placed && &item == &scene.items[0]) continue;
         Piece p;
         p.el = item;
         // Over a widescreen world only the 2D parts of the top screen are drawn.
-        if (useWide && pieces.empty()) p.el.drop |= LAYER_3D;
+        if (useWide && !placed && pieces.empty()) p.el.drop |= LAYER_3D;
         p.s = v.unit * p.el.scale;
         p.x0 = (int)(v.originX + p.el.dx * v.unit);
         p.y0 = (int)(v.originY + p.el.dy * v.unit);
@@ -402,6 +411,25 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                         }
                     }
                 }
+        }
+        else if (placed)
+        {
+            for (int y = ya; y < yb; y++)
+            {
+                uint32_t* dst = &out[(size_t)y * outW];
+                const int sy = (int)std::floor((y + 0.5f - v.originY) / v.unit);
+                if (sy < 0 || sy >= wide->h)
+                {
+                    std::fill(dst, dst + outW, 0xFF000000);
+                    continue;
+                }
+                const uint32_t* row = wide->pixels + (size_t)sy * wide->w;
+                for (int x = 0; x < outW; x++)
+                {
+                    const int c = wcol[x];
+                    dst[x] = (c >= 0 && c < wide->w) ? (0xFF000000 | row[c]) : 0xFF000000;
+                }
+            }
         }
         else
         {
