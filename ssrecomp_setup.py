@@ -23,7 +23,13 @@ WINDOWS = os.name == 'nt'
 # Packaged as a single executable (tools/package_setup.py), the project's source travels
 # inside it and is unpacked into a folder of its own, where the game is then built.
 FROZEN = getattr(sys, 'frozen', False)
-if FROZEN:
+# Portable mode: with a file portable.txt next to the executable (the AppImage on Linux),
+# everything is kept in the folder ssrecomp-data beside it instead of the user's profile.
+EXE_DIR = os.path.dirname(os.path.abspath(os.environ.get('APPIMAGE') or sys.executable)) if FROZEN else None
+PORTABLE = FROZEN and os.path.exists(os.path.join(EXE_DIR, 'portable.txt'))
+if PORTABLE:
+    HERE = os.path.join(EXE_DIR, 'ssrecomp-data')
+elif FROZEN:
     if WINDOWS:
         HERE = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ssrecomp')
     else:
@@ -89,6 +95,25 @@ def unpack():
             shutil.copy2(src, dst)
     with open(stamp_path, 'w') as f:
         f.write(stamp)
+
+
+def read_rom_note():
+    """The ROM recorded by the last build. In portable mode it is kept relative to HERE
+    when it can be, so that it is still found when the folder moves (another drive letter)."""
+    with open(ROM_NOTE) as f:
+        rom = f.read().strip()
+    return os.path.normpath(os.path.join(HERE, rom)) if rom and not os.path.isabs(rom) else rom
+
+
+def write_rom_note(rom):
+    rom = os.path.abspath(rom)
+    if PORTABLE:
+        try:
+            rom = os.path.relpath(rom, HERE)
+        except ValueError:   # on another drive than HERE: only an absolute path works
+            pass
+    with open(ROM_NOTE, 'w') as f:
+        f.write(rom + '\n')
 
 
 def find_msys2():
@@ -293,6 +318,22 @@ def android_ndk(log, progress):
     return ndk
 
 
+def forget_moved_build(build):
+    """CMake refuses a build folder that was configured somewhere else (the portable
+    folder moved, or got another drive letter). Its configuration is then removed and made
+    again; the game that is already built still runs without this."""
+    cache = os.path.join(build, 'CMakeCache.txt')
+    if not os.path.exists(cache):
+        return
+    with open(cache, errors='replace') as f:
+        m = re.search(r'^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$', f.read(), re.M)
+    if m and os.path.normcase(os.path.normpath(m.group(1))) != os.path.normcase(os.path.normpath(build)):
+        os.remove(cache)
+        shutil.rmtree(os.path.join(build, 'CMakeFiles'), ignore_errors=True)
+        if os.path.exists(os.path.join(build, 'build.ninja')):
+            os.remove(os.path.join(build, 'build.ninja'))
+
+
 def run_steps(rom, jobs, log, progress, android=False):
     """Generates and compiles (for Android: and makes the APK). log(text) reports a line,
     progress(fraction, label) the progress (fraction None: only the label changes).
@@ -353,6 +394,7 @@ def run_steps(rom, jobs, log, progress, android=False):
     if android:
         return android_steps(rom, jobs, log, progress, run)
     progress(0.08, 'Configuring the build')
+    forget_moved_build(BUILD)
     if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
         prefix = windows_prefix()
         run(['cmake', '-S', '.', '-B', 'build', '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
@@ -367,8 +409,7 @@ def run_steps(rom, jobs, log, progress, android=False):
                     'libwinpthread-1.dll'):
             if bindir and os.path.exists(os.path.join(bindir, dll)):
                 shutil.copy2(os.path.join(bindir, dll), BUILD)
-    with open(ROM_NOTE, 'w') as f:
-        f.write(os.path.abspath(rom) + '\n')
+    write_rom_note(rom)
     progress(1.0, 'Done')
 
 
@@ -396,6 +437,7 @@ def android_steps(rom, jobs, log, progress, run):
     # The game, as libmain.so.
     build = os.path.join(HERE, 'build-android-' + ANDROID_ABI)
     progress(0.12, 'Configuring the Android build')
+    forget_moved_build(build)
     if not os.path.exists(os.path.join(build, 'build.ninja')):
         prefix = sdl_prefix.replace('\\', '/')
         # Named directly: the NDK's toolchain only searches its own folders.
@@ -409,8 +451,7 @@ def android_steps(rom, jobs, log, progress, run):
     import apk
     apk.build(os.path.join(HERE, 'tools', 'android', 'skeleton.apk'), ANDROID_ABI, os.path.join(build, 'libmain.so'),
               sdl_lib, rom, os.path.join(ANDROID_DIR, 'signing-key.json'), ANDROID_APK)
-    with open(ROM_NOTE, 'w') as f:
-        f.write(os.path.abspath(rom) + '\n')
+    write_rom_note(rom)
     log('Made ' + ANDROID_APK)
     progress(1.0, 'Done: ' + ANDROID_APK)
 
@@ -425,7 +466,7 @@ ANDROID_HELP = (
 
 
 def play(extra=()):
-    rom = open(ROM_NOTE).read().strip()
+    rom = read_rom_note()
     return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'), *extra], cwd=HERE,
                             env=child_env())
 
@@ -453,7 +494,7 @@ def gui():
     row = ttk.Frame(frame)
     row.pack(fill='x')
     ttk.Label(row, text='Your ROM:').pack(side='left')
-    rom_var = tk.StringVar(value=open(ROM_NOTE).read().strip() if os.path.exists(ROM_NOTE) else '')
+    rom_var = tk.StringVar(value=read_rom_note() if os.path.exists(ROM_NOTE) else '')
     ttk.Entry(row, textvariable=rom_var).pack(side='left', fill='x', expand=True, padx=6)
 
     def browse():
