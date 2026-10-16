@@ -41,6 +41,7 @@
 #include "ui.h"
 #include "merged.h"
 #include "gpucompose.h"
+#include "battlewide.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
@@ -1039,6 +1040,10 @@ int main(int argc, char** argv)
     // Frames in a row in which the battle's touch screen showed something that is neither
     // of the menus with a layout of their own nor the idle backdrop.
     int battleUnknown = 0;
+    // The frame until which the battle strip stays up while its buttons are not recognised:
+    // between the commands and the moves the game slides one set out and the other in, and
+    // the strip would otherwise vanish for those frames, uncovering the message box.
+    uint32_t battleStripUntil = 0;
     // The button chosen in a battle strip (see the input handling before the frame runs).
     int battleSel = 0;
     // One probe per game application, to know which one is running.
@@ -1461,7 +1466,10 @@ int main(int argc, char** argv)
         else if (sectionActive("OVY_8"))
             // In-battle bag and party screens (overlay 8) fill the bottom screen.
             only("battle-submenu", 1);
-        else if (probeActive(probeBattleInput))
+        else if (probeActive(probeBattleInput) ||
+            // While the commands slide out and the moves in, the game stops reading the touch
+            // screen for a few frames; the strip stays up meanwhile (see battleStripUntil).
+            (frame < battleStripUntil && sectionActive("OVY_12") && !AutoFocus::Blank(screens[1].pixels)))
         {
             // Battle, choosing a command or a move. On a wide view the buttons are taken off
             // the touch screen one by one and laid out as a strip along the bottom, in place
@@ -1484,13 +1492,18 @@ int main(int argc, char** argv)
             const bool moves = !cmd && blue(40, 166) && blue(128, 166) && blue(216, 166);
             const bool idle = AutoFocus::Blank(screens[1].pixels) || (!blue(128, 166) && !red(128, 60));
             battleUnknown = (cmd || moves || idle) ? 0 : battleUnknown + 1;
+            // Only after the commands (FIGHT): after a move is chosen the battle goes on and
+            // its messages must not be covered.
+            if (cmd) battleStripUntil = frame + 20;
+            else if (moves || idle) battleStripUntil = 0;
             const float L = 128 - viewWidth / 2;
             auto put = [&](int sx, int sy, int sw, int sh, float x, float y, float scale) {
                 sc.items.push_back({ 1, sx, sy, sw, sh, x, y, scale, 0, 255, false });
             };
-            if (viewWidth >= 300 && (cmd || moves))
+            if (viewWidth >= 300 && (cmd || moves || frame < battleStripUntil))
             {
-                sc.name = cmd ? "battle-cmd" : "battle-moves";
+                // (Neither: the strip without buttons, while the next ones slide in.)
+                sc.name = cmd ? "battle-cmd" : moves ? "battle-moves" : "battle-strip";
                 // The strip: the first line of the message box ("What will X do?") as a
                 // label at the top, the buttons under it.
                 sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 55, 0x20242C));
@@ -1523,7 +1536,7 @@ int main(int argc, char** argv)
                         x += c.sw * sb + gap;
                     }
                 }
-                else
+                else if (moves)
                 {
                     // The four moves in a row, each its whole button with its frame; the touch
                     // screen's background around the rounded corners is left out so the button
@@ -1605,6 +1618,7 @@ int main(int argc, char** argv)
     std::vector<uint32_t> mergedImage;
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
+    BattleWide battleWide;
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
 
@@ -2246,7 +2260,8 @@ int main(int argc, char** argv)
                 ww = ww * cfg.wideLines / wh;
                 wh = cfg.wideLines;
             }
-            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (fieldActive() || menuReturn > 0);
+            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 &&
+                (fieldActive() || menuReturn > 0 || scene.edgeFill);
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
             melonDS::Wide.Width = ww;
@@ -2257,6 +2272,28 @@ int main(int argc, char** argv)
         WideImage wideImage;
         auto takeWideImage = [&]() {
             wideImage = WideImage();
+            // A battle on a wide view: the screen widened (battlewide.h) instead of the bars.
+            if (scene.edgeFill && cfg.wide && !opt.noWide)
+            {
+                WideImage world;
+                if (wideFrames > 3 && !melonDS::Wide.Front.empty())
+                {
+                    world.pixels = melonDS::Wide.Front.data();
+                    world.w = melonDS::Wide.FrontW;
+                    world.h = melonDS::Wide.FrontH;
+                }
+                const float vw = MergedMakeView(outW, outH).width;
+                const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+                const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(),
+                    static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
+                if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage))
+                {
+                    scene.wide = true;
+                    return;
+                }
+            }
+            else
+                battleWide.Reset();
             if (wideFrames > 3 && !melonDS::Wide.Front.empty())
             {
                 wideImage.pixels = melonDS::Wide.Front.data();

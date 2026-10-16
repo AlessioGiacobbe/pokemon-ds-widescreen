@@ -40,6 +40,12 @@ public:
     // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
     // Bits 0-3 are BG0-BG3, 0x20 the backdrop, 0x40 the 3D layer, 0x80 a sprite.
     u8 LayerFlags[2][256*192] = {};
+    // ssrecomp: each line's background scroll registers (BG0-3 x and y), per 2D engine.
+    u16 LineScroll[2][192][4][2] = {};
+    // ssrecomp: OAM as it was when the frame being drawn started.
+    alignas(8) u8 OAMSnap[2][0x400] = {};
+    // ssrecomp: the priority of the sprite pixel at each point of the frame (4: none).
+    u8 ObjPrio[2][256*192] = {};
 private:
     melonDS::GPU& GPU;
     alignas(8) u32 BGOBJLine[256*3];

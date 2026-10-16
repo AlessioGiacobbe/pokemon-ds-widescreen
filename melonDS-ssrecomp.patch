@@ -85,7 +85,7 @@ index e85dd429..8e23d538 100644
 +endif()
 +set_source_files_properties(GPU3D_Wide.cpp PROPERTIES COMPILE_OPTIONS "${SSR_WIDE_FLAGS}")
 diff --git a/src/GPU2D_Soft.cpp b/src/GPU2D_Soft.cpp
-index 2f8afcba..3eecc5e9 100644
+index 2f8afcba..e484bd1d 100644
 --- a/src/GPU2D_Soft.cpp
 +++ b/src/GPU2D_Soft.cpp
 @@ -20,6 +20,10 @@
@@ -126,7 +126,19 @@ index 2f8afcba..3eecc5e9 100644
      u16* bgCnt = CurUnit->BGCnt;
      // mode 7 only has text-mode BG0 and BG1
  
-@@ -696,6 +700,7 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -691,11 +695,19 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
+ 
+ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+ {
++    if (line < 192)
++        for (int i = 0; i < 4; i++)
++        {
++            LineScroll[CurUnit->Num][line][i][0] = CurUnit->BGXPos[i];
++            LineScroll[CurUnit->Num][line][i][1] = CurUnit->BGYPos[i];
++        }
++
+     // forced blank disables BG/OBJ compositing
+     if (CurUnit->DispCnt & (1<<7))
      {
          for (int i = 0; i < 256; i++)
              BGOBJLine[i] = 0xFF3F3F3F;
@@ -134,25 +146,39 @@ index 2f8afcba..3eecc5e9 100644
  
          return;
      }
-@@ -741,11 +746,13 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -741,11 +753,16 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  
      if (!GPU.GPU3D.IsRendererAccelerated())
      {
 +        u8* layerFlags = line < 192 ? &LayerFlags[CurUnit->Num][line * 256] : nullptr;
++        u8* objPrio = line < 192 ? &ObjPrio[CurUnit->Num][line * 256] : nullptr;
++        const u32* objLine = OBJLine[CurUnit->Num];
          for (int i = 0; i < 256; i++)
          {
              u32 val1 = BGOBJLine[i];
              u32 val2 = BGOBJLine[256+i];
  
 +            if (layerFlags) layerFlags[i] = val1 >> 24;
++            if (objPrio) objPrio[i] = (objLine[i] & 0x40000) ? (objLine[i] >> 16) & 3 : 4;
              BGOBJLine[i] = ColorComposite(i, val1, val2);
          }
      }
+@@ -1599,6 +1616,10 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+ 
+         CurUnit->OBJMosaicY = 0;
+         CurUnit->OBJMosaicYCount = 0;
++
++        // ssrecomp: the sprites of the frame being drawn (the game changes OAM for the next
++        // one before this frame is shown).
++        memcpy(OAMSnap[CurUnit->Num], &GPU.OAM[CurUnit->Num ? 0x400 : 0], 0x400);
+     }
+ 
+     if (CurUnit->Num == 0)
 diff --git a/src/GPU2D_Soft.h b/src/GPU2D_Soft.h
-index 4beaf8f9..355462fc 100644
+index 4beaf8f9..780770f4 100644
 --- a/src/GPU2D_Soft.h
 +++ b/src/GPU2D_Soft.h
-@@ -36,6 +36,10 @@ public:
+@@ -36,6 +36,16 @@ public:
      void DrawScanline(u32 line, Unit* unit) override;
      void DrawSprites(u32 line, Unit* unit) override;
      void VBlankEnd(Unit* unitA, Unit* unitB) override;
@@ -160,6 +186,12 @@ index 4beaf8f9..355462fc 100644
 +    // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
 +    // Bits 0-3 are BG0-BG3, 0x20 the backdrop, 0x40 the 3D layer, 0x80 a sprite.
 +    u8 LayerFlags[2][256*192] = {};
++    // ssrecomp: each line's background scroll registers (BG0-3 x and y), per 2D engine.
++    u16 LineScroll[2][192][4][2] = {};
++    // ssrecomp: OAM as it was when the frame being drawn started.
++    alignas(8) u8 OAMSnap[2][0x400] = {};
++    // ssrecomp: the priority of the sprite pixel at each point of the frame (4: none).
++    u8 ObjPrio[2][256*192] = {};
  private:
      melonDS::GPU& GPU;
      alignas(8) u32 BGOBJLine[256*3];

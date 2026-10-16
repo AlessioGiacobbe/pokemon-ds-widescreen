@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.2.5 — Widescreen battles
+
+**Downloads:** the same three setup programs; use these instead of the earlier
+ones and run the setup again to rebuild the game (and the APK, on Android).
+
+### New
+
+- **Battles fill the wide screen** instead of having stretched sides. The
+  battle scene is drawn wider than the DS screen: the background and the
+  platforms continue past its edges, the HP boxes move out to the sides of the
+  view, and the wild Pokémon slides over to the right as your own Pokémon is on
+  the left. The trainer throwing the Poké Ball walks all the way off screen.
+- Move effects stay with the Pokémon they belong to, and the message box is
+  left where it is.
+
+### Fixed
+
+- **The battle strip vanished for a moment** between choosing FIGHT and the
+  moves appearing, showing the message box under it.
+
+### Known limitations
+
+- Tried on 16:9 only; wider phone screens (20:9) are untested in battles.
+- A move effect crossing the gap between the two Pokémon can look stretched
+  there for a moment.
+
 ## v0.2.4 — Colour fixes
 
 ### Fixed
