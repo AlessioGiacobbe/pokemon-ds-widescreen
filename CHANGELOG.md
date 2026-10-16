@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.2.6 — Controller fixes (prerelease)
+
+**Downloads:** the same three setup programs; use these instead of the earlier
+ones and run the setup again to rebuild the game.
+
+### Fixed
+
+- **Controllers not working** (#8). Only the first controller found was used;
+  on Windows that is often a virtual or idle device (from Steam, DS4Windows,
+  vJoy, a racing wheel...), and then nothing pressed on any controller worked.
+  Every connected controller now works at once.
+- **Generic USB pads** that SDL does not know the layout of were ignored. They
+  are now read with the usual layout: the first buttons as A, B, X, Y, then L,
+  R, Select, Start, with the D-pad and the left stick. A device whose stick
+  rests at one end (some keyboards and mice report themselves as joysticks) has
+  its stick ignored, so the player does not walk on their own.
+- The controller now also works while the game window is not focused, as when
+  it was started from the setup window.
+
+### Tested
+
+- On Linux with a real Xbox Series controller and virtual ones (an Xbox 360
+  pad, a generic USB pad, one with a stuck stick). Compiled for Windows, not yet
+  tried with a controller there.
+
 ## v0.2.5 — Widescreen battles
 
 **Downloads:** the same three setup programs; use these instead of the earlier
