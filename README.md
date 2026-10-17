@@ -210,6 +210,14 @@ Everything can be done from a controller:
 The pause menu also has the view, 60 FPS, smooth scaling, button mapping by
 label or by position, reset and quit.
 
+`run.sh` also writes what the game prints to `game.log` next to it; a bug report
+about a controller should include it (it lists every controller SDL sees).
+
+**Steam Deck / SteamOS:** add `run.sh` to Steam as a non-Steam game. If a
+controller does nothing that way, setting the shortcut's compatibility tool to
+Proton Experimental (Properties → Compatibility) has been reported to make it
+work.
+
 ### Single-screen view
 
 The default view (`merged`) shows one picture, with no second screen beside it

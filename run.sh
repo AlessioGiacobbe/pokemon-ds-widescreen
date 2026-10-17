@@ -15,4 +15,5 @@ if [ ! -x "$BUILD/ssrecomp" ] || [ ! -f "$ROM" ]; then
     fi
     exit 1
 fi
-exec "$BUILD/ssrecomp" "$ROM" --save "$HERE/soulsilver.sav" "$@"
+"$BUILD/ssrecomp" "$ROM" --save "$HERE/soulsilver.sav" "$@" 2>&1 | tee "$HERE/game.log"
+exit "${PIPESTATUS[0]}"

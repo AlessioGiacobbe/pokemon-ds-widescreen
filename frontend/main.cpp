@@ -20,8 +20,12 @@
 #include <tuple>
 #include <deque>
 
+#ifdef __APPLE__
 #include <SDL.h>
-#ifdef __ANDROID__
+#else
+#include <SDL2/SDL.h>
+#endif
+#if defined(__linux__) // (Android too)
 #include <unistd.h>
 #endif
 #ifndef SSR_NO_PNG
@@ -681,7 +685,11 @@ struct Pads
         if (SDL_IsGameController(index))
         {
             SDL_GameController* c = SDL_GameControllerOpen(index);
-            if (!c) return nullptr;
+            if (!c)
+            {
+                fprintf(stderr, "controller %d could not be opened: %s\n", index, SDL_GetError());
+                return nullptr;
+            }
             controllers.push_back(c);
             const char* name = SDL_GameControllerName(c);
             fprintf(stderr, "controller: %s\n", name ? name : "?");
@@ -693,7 +701,11 @@ struct Pads
         return nullptr;
 #endif
         SDL_Joystick* j = SDL_JoystickOpen(index);
-        if (!j) return nullptr;
+        if (!j)
+        {
+            fprintf(stderr, "joystick %d could not be opened: %s\n", index, SDL_GetError());
+            return nullptr;
+        }
         // Not one without buttons (an accelerometer, a wheel's pedals alone).
         if (SDL_JoystickNumButtons(j) < 2)
         {
@@ -1107,8 +1119,26 @@ int main(int argc, char** argv)
         audio = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
         if (audio) SDL_PauseAudioDevice(audio, 0);
 
+        // For bug reports about controllers: what SDL sees, and what may hide a device from it
+        // (Steam sets these variables for the games it starts; a container may lack udev).
+        SDL_version sdlv;
+        SDL_GetVersion(&sdlv);
+        fprintf(stderr, "SDL %d.%d.%d, %d joystick device(s)\n", sdlv.major, sdlv.minor, sdlv.patch, SDL_NumJoysticks());
+#ifdef __linux__
+        if (access("/run/.containerenv", F_OK) == 0 || access("/.dockerenv", F_OK) == 0)
+            fprintf(stderr, "running in a container\n");
+#endif
+        for (const char* var : {"SteamGameId", "SDL_GAMECONTROLLER_IGNORE_DEVICES", "SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT",
+                                "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "SDL_JOYSTICK_DISABLE_UDEV", "SDL_GAMECONTROLLERCONFIG"})
+            if (const char* v = getenv(var))
+                fprintf(stderr, "  %s=%.200s\n", var, v);
         for (int i = 0; i < SDL_NumJoysticks(); i++)
+        {
+            const char* name = SDL_JoystickNameForIndex(i);
+            fprintf(stderr, "  device %d: %s, %04x:%04x, %s\n", i, name ? name : "?", SDL_JoystickGetDeviceVendor(i),
+                SDL_JoystickGetDeviceProduct(i), SDL_IsGameController(i) ? "known layout" : "no known layout");
             pads.Open(i);
+        }
     }
 
     // Functions whose activity selects the merged scene.

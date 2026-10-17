@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `run.sh` writes `game.log` next to it, as the setup window's Play button does.
+- The log lists every controller SDL sees (name, USB IDs, whether its layout is
+  known), the SDL version, and the Steam and container settings that can hide a
+  controller, for reports like #8.
+
 ## v0.3.0 — Faster, updates, logs
 
 **Downloads:** the same three setup programs; use these instead of the earlier
