@@ -1,7 +1,7 @@
 // Single-display layouts for the two DS screens.
 #pragma once
 #include <string>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 enum class LayoutMode
 {

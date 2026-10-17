@@ -241,7 +241,9 @@ endif()
 # that have it (the game is compiled on the machine it runs on; not when building for
 # another device, e.g. Android); ARM gets NEON by default.
 set(SSR_WIDE_FLAGS -O3 -ffast-math)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND NOT CMAKE_CROSSCOMPILING)
+option(SSR_PORTABLE_X86 "Avoid host-specific AVX2/FMA instructions" OFF)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND NOT CMAKE_CROSSCOMPILING
+   AND NOT SSR_PORTABLE_X86)
     include(CheckCXXSourceRuns)
     set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma")
     check_cxx_source_runs("int main() { return __builtin_cpu_supports(\"avx2\") && __builtin_cpu_supports(\"fma\") ? 0 : 1; }"

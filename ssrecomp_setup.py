@@ -9,9 +9,15 @@ libpng and zlib development files; the window says what is missing and how to ge
 Without a display: python3 ssrecomp_setup.py --rom <file> [--jobs N]
 The packaged program updates itself with --update.
 """
+import glob
 import hashlib
 import json
 import os
+import platform
+import site
+import sysconfig
+import tempfile
+from functools import lru_cache
 import queue
 import re
 import shlex
@@ -21,7 +27,10 @@ import sys
 import threading
 
 WINDOWS = os.name == 'nt'
-# Packaged as a single executable (tools/package_setup.py), the project's source travels
+DARWIN = sys.platform == 'darwin'
+MAC_ARCH = platform.machine() if DARWIN else None
+ANDROID_MAC_NOTE = 'Android builds from macOS are not supported yet; use a Linux or Windows host.'
+# Packaged with tools/package_setup.py, the project's source travels
 # inside it and is unpacked into a folder of its own, where the game is then built.
 FROZEN = getattr(sys, 'frozen', False)
 # Portable mode: with a file portable.txt next to the executable (the AppImage on Linux),
@@ -33,13 +42,15 @@ if PORTABLE:
 elif FROZEN:
     if WINDOWS:
         HERE = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ssrecomp')
+    elif DARWIN:
+        HERE = os.path.expanduser('~/Library/Application Support/ssrecomp')
     else:
         HERE = os.path.join(os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share')), 'ssrecomp')
 else:
     HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = os.path.join(HERE, 'layouts', 'soulsilver-us.json')
 GEN = os.path.join(HERE, 'gen')
-BUILD = os.path.join(HERE, 'build')
+BUILD = os.path.join(HERE, 'build-macos-' + MAC_ARCH if DARWIN else 'build')
 EXE = os.path.join(BUILD, 'ssrecomp.exe' if WINDOWS else 'ssrecomp')
 ROM_NOTE = os.path.join(HERE, 'ssrecomp.rom')
 
@@ -84,9 +95,12 @@ def unpack():
     if not FROZEN:
         return
     stamp_path = os.path.join(HERE, '.bundle')
-    stamp = open(os.path.join(sys._MEIPASS, 'bundle.id')).read()
-    if os.path.exists(stamp_path) and open(stamp_path).read() == stamp:
-        return
+    with open(os.path.join(sys._MEIPASS, 'bundle.id')) as f:
+        stamp = f.read()
+    if os.path.exists(stamp_path):
+        with open(stamp_path) as f:
+            if f.read() == stamp:
+                return
     for item in os.listdir(os.path.join(sys._MEIPASS, 'project')):
         src, dst = os.path.join(sys._MEIPASS, 'project', item), os.path.join(HERE, item)
         if os.path.isdir(src):
@@ -130,6 +144,47 @@ def find_msys2():
             return
 
 
+def find_macos_tools():
+    """Finder does not inherit a terminal's Homebrew PATH; prefer this process's arch."""
+    if not DARWIN:
+        return
+    prefixes = ['/opt/homebrew', '/usr/local'] if MAC_ARCH == 'arm64' else ['/usr/local', '/opt/homebrew']
+    # Honor an explicit PATH first, then add both standard Homebrew installations.
+    paths = os.environ.get('PATH', os.defpath).split(os.pathsep)
+    paths += [sysconfig.get_path('scripts'), os.path.join(site.getuserbase(), 'bin')]
+    paths += ['/Library/Frameworks/Python.framework/Versions/Current/bin']
+    paths += sorted(glob.glob(os.path.expanduser('~/Library/Python/*/bin')), reverse=True)
+    paths += [p + '/bin' for p in prefixes] + ['/usr/bin', '/bin', '/usr/sbin', '/sbin']
+    os.environ['PATH'] = os.pathsep.join(dict.fromkeys(paths))
+    os.environ.setdefault('CC', 'clang')
+    os.environ.setdefault('CXX', 'clang++')
+
+
+@lru_cache(maxsize=4)
+def macos_toolchain_problem(path, cxx):
+    """Check the compiler and SDK before generating the game.
+
+    Cache by tool environment so the UI can refresh without repeatedly invoking clang.
+    """
+    try:
+        compiler = shlex.split(cxx) if cxx else ['xcrun', 'clang++']
+        with tempfile.TemporaryDirectory(prefix='ssrecomp-toolchain-') as tmp:
+            source = os.path.join(tmp, 'probe.cpp')
+            with open(source, 'w') as f:
+                f.write('#include <thread>\n#include <zlib.h>\n'
+                        'int main() { std::thread t([] {}); t.join(); return zlibVersion() == nullptr; }\n')
+            cmd = [*compiler, '-std=c++17', '-arch', MAC_ARCH, '-mmacosx-version-min=11.0', source,
+                   '-lz', '-o', os.path.join(tmp, 'probe')]
+            result = subprocess.run(cmd, env=child_env(), text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, timeout=30)
+            if result.returncode:
+                return ('macOS compiler/SDK check failed for ' + MAC_ARCH +
+                        ':\n' + result.stdout[-2500:])
+    except (OSError, subprocess.SubprocessError) as e:
+        return 'macOS compiler/SDK check failed: ' + str(e)
+    return None
+
+
 def windows_prefix():
     """The MSYS2 environment (e.g. C:\\msys64\\ucrt64) the compiler belongs to, or None."""
     gxx = shutil.which('g++')
@@ -160,11 +215,11 @@ def missing_tools():
             missing.append(tool)
     if not (shutil.which('c++') or shutil.which('g++') or shutil.which('clang++')):
         missing.append('a C++ compiler')
-    if not WINDOWS and shutil.which('pkg-config'):
+    if not WINDOWS and not DARWIN and shutil.which('pkg-config'):
         for lib, name in (('sdl2', 'SDL2'), ('libpng', 'libpng'), ('zlib', 'zlib')):
             if subprocess.run(['pkg-config', '--exists', lib], env=child_env()).returncode != 0:
                 missing.append(name + ' (development files)')
-    elif not WINDOWS:
+    elif not WINDOWS and not DARWIN:
         missing.append('pkg-config')
     prefix = windows_prefix()
     if prefix:
@@ -172,6 +227,10 @@ def missing_tools():
                            (os.path.join('include', 'zlib.h'), 'zlib')):
             if not os.path.exists(os.path.join(prefix, path)):
                 missing.append(name)
+    if DARWIN and not missing:
+        problem = macos_toolchain_problem(os.environ.get('PATH', ''), os.environ.get('CXX', ''))
+        if problem:
+            missing.append(problem)
     return missing
 
 
@@ -187,6 +246,14 @@ def os_id():
 
 
 def install_hint():
+    if DARWIN:
+        return ('Install Xcode Command Line Tools and Python 3 with Tk from https://www.python.org/downloads/macos/, '
+                'then run:\n'
+                '  xcode-select --install\n'
+                '  python3 -m pip install "cmake>=3.21,<4" ninja\n'
+                'CMake and Ninja can also be installed with Homebrew. '
+                'SDL2 and libpng are downloaded and built automatically for macOS 11 or later; '
+                'no Homebrew libraries or pkg-config are needed. Use native ' + MAC_ARCH + ' Python and tools.')
     if WINDOWS:
         return ('Install MSYS2 (https://www.msys2.org), open "MSYS2 UCRT64" and run:\n'
                 '  pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake '
@@ -232,12 +299,17 @@ def default_jobs():
             status.dwLength = ctypes.sizeof(MemoryStatus)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
             jobs = min(jobs, max(1, status.ullAvailPhys // (1500 * 1024 * 1024)))
+        elif DARWIN:
+            # Unified memory is shared with the GPU: reserve half and budget 2 GiB/job.
+            memory = int(subprocess.check_output(['/usr/sbin/sysctl', '-n', 'hw.memsize'], text=True, stderr=subprocess.DEVNULL))
+            jobs = min(jobs, max(1, memory // (4 * 1024**3)))
         else:
             for line in open('/proc/meminfo'):
                 if line.startswith('MemAvailable:'):
                     jobs = min(jobs, max(1, int(line.split()[1]) // 1500000))
-    except (OSError, AttributeError, ValueError):
-        pass
+    except (OSError, AttributeError, ValueError, subprocess.SubprocessError):
+        if DARWIN:
+            jobs = min(jobs, 2)
     return max(1, int(jobs))
 
 
@@ -304,6 +376,8 @@ def extract_zip(path, dest):
 
 def android_ndk(log, progress):
     """The NDK: from ANDROID_NDK_HOME or ANDROID_NDK_ROOT when set, else downloaded."""
+    if DARWIN:
+        raise RuntimeError(ANDROID_MAC_NOTE)
     for var in ('ANDROID_NDK_HOME', 'ANDROID_NDK_ROOT'):
         ndk = os.environ.get(var)
         if ndk and os.path.exists(os.path.join(ndk, 'build', 'cmake', 'android.toolchain.cmake')):
@@ -339,8 +413,14 @@ def run_steps(rom, jobs, log, progress, android=False):
     """Generates and compiles (for Android: and makes the APK). log(text) reports a line,
     progress(fraction, label) the progress (fraction None: only the label changes).
     Raises RuntimeError with a message for the user on failure."""
+    if DARWIN and android:
+        raise RuntimeError(ANDROID_MAC_NOTE)
+    if jobs < 1:
+        raise RuntimeError('Parallel compile jobs must be at least 1.')
+    os.makedirs(HERE, exist_ok=True)
+
     def run(cmd, parse_ninja=False):
-        log('$ ' + ' '.join(cmd))
+        log('$ ' + shlex.join(cmd))
         proc = subprocess.Popen(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                 errors='replace', env=child_env())
         tail = []
@@ -396,12 +476,13 @@ def run_steps(rom, jobs, log, progress, android=False):
         return android_steps(rom, jobs, log, progress, run)
     progress(0.08, 'Configuring the build')
     forget_moved_build(BUILD)
-    if not os.path.exists(os.path.join(BUILD, 'build.ninja')):
-        prefix = windows_prefix()
-        run(['cmake', '-S', '.', '-B', 'build', '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
-             *(['-DCMAKE_PREFIX_PATH=' + prefix.replace('\\', '/')] if prefix else [])])
+    prefix = windows_prefix()
+    # Reconfigure every time: source updates and dependency changes must reach Ninja.
+    run(['cmake', '-S', HERE, '-B', BUILD, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
+         *(['-DCMAKE_PREFIX_PATH=' + prefix.replace('\\', '/')] if prefix else []),
+         *(['-DCMAKE_OSX_ARCHITECTURES=' + MAC_ARCH, '-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0', '-DSSR_MACOS_SOURCE_DEPS=ON'] if DARWIN else [])])
     progress(0.1, 'Compiling (the first time takes 20-40 minutes)')
-    run(['ninja', '-C', 'build', '-j', str(jobs)], parse_ninja=True)
+    run(['ninja', '-C', BUILD, '-j', str(jobs)], parse_ninja=True)
     if WINDOWS:
         # So that the game also starts outside the MSYS2 window: the libraries it uses go
         # next to it.
@@ -445,7 +526,7 @@ def android_steps(rom, jobs, log, progress, run):
         prefix = sdl_prefix.replace('\\', '/')
         # Named directly: the NDK's toolchain only searches its own folders.
         run(['cmake', '-S', '.', '-B', build, *android_args,
-             '-DSDL2_DIR=' + prefix + '/lib/cmake/SDL2', '-DSSR_SDL2_HEADERS=' + prefix + '/include'])
+             '-DSDL2_DIR=' + prefix + '/lib/cmake/SDL2'])
     progress(0.14, 'Compiling for Android (the first time takes 20-40 minutes)')
     run(['ninja', '-C', build, '-j', str(jobs)], parse_ninja=True)
 
@@ -474,7 +555,8 @@ def play(extra=()):
     # the game's messages go to game.log, made new each time, for bug reports (beside the
     # build log, build.log).
     with open(os.path.join(HERE, 'game.log'), 'w') as log:
-        return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'), *extra], cwd=HERE,
+        return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'),
+                                 '--config', os.path.join(HERE, 'ssrecomp.cfg'), *extra], cwd=HERE,
                                 stdout=log, stderr=subprocess.STDOUT, env=child_env())
 
 
@@ -734,7 +816,10 @@ def gui():
         if missing:
             lines.append('Missing to compile: ' + ', '.join(missing) + '.\nTo install them:\n' + install_hint())
         else:
-            lines.append('Compiler and libraries: found.')
+            lines.append('Build tools: found. SDL2 and libpng will be built automatically.' if DARWIN
+                         else 'Compiler and libraries: found.')
+        if DARWIN:
+            lines.append(ANDROID_MAC_NOTE)
         checks.config(text='\n'.join(lines))
         # The install commands are the indented lines of the hint.
         commands[:] = [l.strip() for l in '\n'.join(lines).splitlines() if l.startswith('  ')]
@@ -746,7 +831,7 @@ def gui():
         ready = bool(rom) and os.path.isfile(rom) and not missing
         build_btn.state(['!disabled'] if ready else ['disabled'])
         # Android needs only CMake and Ninja here: its compiler and libraries are downloaded.
-        android_ready = bool(rom) and os.path.isfile(rom) and shutil.which('cmake') and shutil.which('ninja')
+        android_ready = not DARWIN and bool(rom) and os.path.isfile(rom) and shutil.which('cmake') and shutil.which('ninja')
         android_btn.state(['!disabled'] if android_ready else ['disabled'])
         built = os.path.exists(EXE) and os.path.exists(ROM_NOTE)
         for b in (play_btn, windowed_btn):
@@ -839,7 +924,10 @@ def main():
     remove_old_copy()
     unpack()
     find_msys2()
+    find_macos_tools()
     args = sys.argv[1:]
+    if DARWIN and '--android' in args:
+        sys.exit(ANDROID_MAC_NOTE)
     if '--update' in args:
         # Without the window: replace this program with the newest release's.
         if not FROZEN:
@@ -888,6 +976,8 @@ def main():
     try:
         import tkinter  # noqa: F401
     except ImportError:
+        if DARWIN:
+            sys.exit('This needs Python with Tk support.\n' + install_hint())
         sys.exit('This needs Python\'s Tk support for its window. ' + (
             'Install it (python3-tk on Ubuntu/Debian, python3-tkinter on Fedora, tk on Arch) '
             'or run: python3 ssrecomp_setup.py --rom <your ROM>'))

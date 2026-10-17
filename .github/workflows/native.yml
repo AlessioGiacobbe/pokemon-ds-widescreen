@@ -1,0 +1,49 @@
+# All fixtures are synthetic; never add ROMs, generated game code or saves to CI.
+name: Native portability
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ clang pkg-config libsdl2-dev libpng-dev zlib1g-dev
+      - name: Mac prerequisites
+        if: runner.os == 'macOS'
+        run: python -m pip install "cmake>=3.21,<4" ninja
+      - run: python -m unittest discover -s tests -v
+      - run: python tests/native_smoke.py --build-dir '${{ runner.temp }}/ssrecomp smoke'
+      - name: Check Mac minimum OS and library dependencies
+        if: runner.os == 'macOS'
+        run: python tools/macos/check_binary.py '${{ runner.temp }}/ssrecomp smoke/native/ssrecomp' --max-macos 11.0 --system-libraries-only
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-pkgconf
+      - run: python -m unittest discover -s tests -v
+      - run: python tests/native_smoke.py --build-dir "$RUNNER_TEMP/ssrecomp smoke"

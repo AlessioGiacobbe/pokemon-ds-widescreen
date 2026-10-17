@@ -17,10 +17,11 @@
 *.nef
 # Per-user settings and test output
 ssrecomp.cfg
+/build.log
+/game.log
 /test/
 __pycache__/
 /ssrecomp.rom
 /gen.new/
 /dist/
-/game.log
-/build.log
+.DS_Store

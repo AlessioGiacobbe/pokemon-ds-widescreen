@@ -20,8 +20,12 @@
 #include <tuple>
 #include <deque>
 
+#ifdef __APPLE__
+#include <SDL.h>
+#else
 #include <SDL2/SDL.h>
-#ifdef __linux__ // (Android too)
+#endif
+#if defined(__linux__) // (Android too)
 #include <unistd.h>
 #endif
 #ifndef SSR_NO_PNG
@@ -1069,17 +1073,24 @@ int main(int argc, char** argv)
         LayoutNativeSize(layout, w, h);
         window = SDL_CreateWindow("Pokemon SoulSilver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             w * opt.scale, h * opt.scale,
-            SDL_WINDOW_RESIZABLE | (cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+            SDL_WINDOW_RESIZABLE |
+#ifdef __APPLE__
+            SDL_WINDOW_ALLOW_HIGHDPI |
+#endif
+            (cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
         // The OpenGL ES renderer uploads the picture several times faster than SDL's default
         // (desktop OpenGL) on the machines this was measured on. SDL_RENDER_DRIVER overrides.
         // Not on Windows: there OpenGL ES can come with a framebuffer that converts to sRGB,
         // which washes the colours out (seen on AMD), and SDL's default is Direct3D anyway.
-#ifndef _WIN32
+#if defined(__APPLE__)
+        if (!getenv("SDL_RENDER_DRIVER")) SDL_SetHint(SDL_HINT_RENDER_DRIVER, "metal");
+#elif !defined(_WIN32)
         if (!getenv("SDL_RENDER_DRIVER")) SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
 #endif
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
         if (!renderer)
         {
+            fprintf(stderr, "SDL accelerated renderer failed: %s; trying fallback\n", SDL_GetError());
             SDL_SetHint(SDL_HINT_RENDER_DRIVER, "");
             renderer = SDL_CreateRenderer(window, -1, 0);
         }
@@ -2047,13 +2058,19 @@ int main(int argc, char** argv)
                         say(ReadSnapshot(*nds, quickState, nullptr) ? "STATE LOADED" : "NO STATE TO LOAD");
                         SetClock(*nds, false);
                     }
-                    else if (k == SDLK_F11)
+                    else if (k == SDLK_F11
+#ifdef __APPLE__
+                        || (k == SDLK_f && (ev.key.keysym.mod & KMOD_GUI) && (ev.key.keysym.mod & KMOD_CTRL))
+#endif
+                    )
                     {
                         cfg.fullscreen = !cfg.fullscreen;
                         SDL_SetWindowFullscreen(window, cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                         SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
                     }
                 }
+                else if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+                    mouseDown = false;
                 else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) mouseDown = true;
                 else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) mouseDown = false;
                 // (Every joystick is announced by SDL_JOYDEVICEADDED, game controllers also
@@ -2071,6 +2088,18 @@ int main(int argc, char** argv)
             }
             SDL_GetMouseState(&mouseX, &mouseY);
             SDL_GetRendererOutputSize(renderer, &outW, &outH);
+            // SDL mouse positions are window points; layout, cursor and touch use output pixels.
+            // Refresh each frame for resize and movement between Retina/external displays.
+            int windowW = 0, windowH = 0;
+            SDL_GetWindowSize(window, &windowW, &windowH);
+            if (outW <= 0 || outH <= 0 || windowW <= 0 || windowH <= 0 ||
+                (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED))
+            {
+                SDL_Delay(16);
+                continue;
+            }
+            mouseX = int(double(mouseX) * outW / windowW);
+            mouseY = int(double(mouseY) * outH / windowH);
             ps = ReadPad(pads);
             if (touchPadUsed)
             {
