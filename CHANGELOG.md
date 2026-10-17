@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.1 — Android controllers and update notice
+
+**Downloads:** the same setup programs as v0.4.0. Android players: build the app
+again from the setup window and install it over the old one (your save is kept).
+
+- **Android: controllers such as the Backbone One work.** SDL's own USB drivers
+  took over some pads (the Backbone One, PlayStation pads) from Android's
+  input, and lost them when they could not open them themselves. All controllers
+  now come through Android, which knows them.
+- **Android: the app says when there is a new version.** At start it asks
+  GitHub for the newest release; when that is newer, a message at the top of the
+  screen says to build the app again on the PC (the app holds your own game, so
+  it cannot download itself). It is the only thing the app uses the internet for.
+- **Lower world detail for slower devices.** WORLD DETAIL in the pause menu now
+  also offers 384, 288 and 192 (the DS's own sharpness) as well as 540 to 1440;
+  fewer lines draw faster. Left and right go down and up through the choices.
+- **FPS counter.** FPS COUNTER in the pause menu shows the frames shown per
+  second in the top right corner.
+
 ## v0.4.0 — Faster again, cleaner menus
 
 **Downloads:** the setup programs for Linux (x86_64 and arm64), Windows and now

@@ -31,6 +31,10 @@
 #ifndef SSR_NO_PNG
 #include <png.h>
 #endif
+#ifdef __ANDROID__
+#include <atomic>
+#include <jni.h>
+#endif
 
 #include "NDS.h"
 #include "NDSCart.h"
@@ -49,6 +53,101 @@
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
+
+#ifdef __ANDROID__
+// The app holds the player's own game, so it cannot update itself as the setup window does:
+// at start it asks GitHub for the newest release, and if that is newer than this build
+// (SSR_VERSION, from CHANGELOG.md) the game says so, to rebuild it on the PC.
+namespace UpdateCheck {
+static std::atomic<bool> g_done{false};
+static std::string g_newer; // set before g_done
+
+// The body of an HTTPS GET through Java (the NDK has no TLS of its own); empty on failure.
+static std::string Get(JNIEnv* env, const char* address)
+{
+    std::string body;
+    auto failed = [&]() {
+        if (!env->ExceptionCheck()) return false;
+        env->ExceptionClear();
+        return true;
+    };
+    jclass urlClass = env->FindClass("java/net/URL");
+    jclass connClass = env->FindClass("java/net/URLConnection");
+    jclass streamClass = env->FindClass("java/io/InputStream");
+    if (failed() || !urlClass || !connClass || !streamClass) return body;
+    jobject url = env->NewObject(urlClass, env->GetMethodID(urlClass, "<init>", "(Ljava/lang/String;)V"), env->NewStringUTF(address));
+    if (failed()) return body;
+    jobject conn = env->CallObjectMethod(url, env->GetMethodID(urlClass, "openConnection", "()Ljava/net/URLConnection;"));
+    if (failed() || !conn) return body;
+    env->CallVoidMethod(conn, env->GetMethodID(connClass, "setConnectTimeout", "(I)V"), 10000);
+    env->CallVoidMethod(conn, env->GetMethodID(connClass, "setReadTimeout", "(I)V"), 10000);
+    env->CallVoidMethod(conn, env->GetMethodID(connClass, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"),
+        env->NewStringUTF("Accept"), env->NewStringUTF("application/vnd.github+json"));
+    if (failed()) return body;
+    jobject in = env->CallObjectMethod(conn, env->GetMethodID(connClass, "getInputStream", "()Ljava/io/InputStream;"));
+    if (failed() || !in) return body;
+    jmethodID read = env->GetMethodID(streamClass, "read", "([BII)I");
+    jbyteArray buf = env->NewByteArray(4096);
+    while (body.size() < (1 << 20))
+    {
+        jint n = env->CallIntMethod(in, read, buf, 0, 4096);
+        if (failed()) { body.clear(); break; }
+        if (n < 0) break;
+        const size_t at = body.size();
+        body.resize(at + n);
+        env->GetByteArrayRegion(buf, 0, n, (jbyte*)&body[at]);
+    }
+    env->CallVoidMethod(in, env->GetMethodID(streamClass, "close", "()V"));
+    failed();
+    return body;
+}
+
+static std::vector<int> Key(const std::string& v)
+{
+    std::vector<int> key;
+    std::stringstream ss(v);
+    std::string part;
+    while (std::getline(ss, part, '.'))
+    {
+        if (part.empty() || part.find_first_not_of("0123456789") != std::string::npos) return {};
+        key.push_back(atoi(part.c_str()));
+    }
+    return key;
+}
+
+static void Start()
+{
+    const std::string current = SSR_VERSION;
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    JavaVM* vm = nullptr;
+    if (current.empty() || !env || env->GetJavaVM(&vm) != JNI_OK) return;
+    std::thread([vm, current]() {
+        JNIEnv* env = nullptr;
+        if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+        const std::string body = Get(env, "https://api.github.com/repos/ClickingMaster/ssrecomp/releases/latest");
+        vm->DetachCurrentThread();
+        // "tag_name": "v1.2.3"
+        std::string latest;
+        size_t at = body.find("\"tag_name\"");
+        if (at != std::string::npos && (at = body.find('"', body.find(':', at))) != std::string::npos)
+        {
+            const size_t end = body.find('"', at + 1);
+            if (end != std::string::npos) latest = body.substr(at + 1, end - at - 1);
+        }
+        if (!latest.empty() && latest[0] == 'v') latest.erase(0, 1);
+        const std::vector<int> a = Key(latest), b = Key(current);
+        if (latest.empty() || a.empty())
+            fprintf(stderr, "update check: no answer from GitHub\n");
+        else
+        {
+            fprintf(stderr, "update check: this is %s, the newest release is %s\n", current.c_str(), latest.c_str());
+            if (!b.empty() && a > b) g_newer = latest;
+        }
+        g_done = true;
+    }).detach();
+}
+}
+#endif
 
 // With --log-sections and a shot directory, a screenshot is taken around every change of merged scene.
 static std::set<uint32_t> g_sceneShots;
@@ -832,6 +931,7 @@ struct Settings
     // Right stick as a touch cursor, right trigger as the press, and the stick clicks that
     // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
     bool padTouch = false;
+    bool showFps = false; // frames shown per second, in a corner
 
     void Load(const std::string& path)
     {
@@ -852,6 +952,7 @@ struct Settings
             else if (k == "buttons") byLabel = v != "positions";
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
+            else if (k == "show_fps") showFps = v == "1";
         }
     }
 
@@ -867,6 +968,7 @@ struct Settings
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
+        f << "show_fps=" << (showFps ? 1 : 0) << "\n";
     }
 };
 
@@ -1070,6 +1172,10 @@ int main(int argc, char** argv)
         SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
         // Tilting the phone must not move the player.
         SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+        // Controllers come through Android's own input, which knows every gamepad. With SDL's
+        // HIDAPI drivers on, a pad one of them claims (a Backbone One, a PlayStation pad) is
+        // left out of Android's list, and is lost if SDL cannot open it over USB itself.
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "0");
 #endif
         // The controller keeps working while another window has the focus (on Windows SDL
         // otherwise ignores it then, as when the game was started from the setup window).
@@ -2113,9 +2219,17 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
+    // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
+    static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440 };
+    const int detailCount = (int)(sizeof(detailLines) / sizeof(detailLines[0]));
+    auto detailIndex = [&]() {
+        int i = 0;
+        while (i + 1 < detailCount && detailLines[i + 1] <= cfg.wideLines) i++;
+        return i;
+    };
     auto buildMenu = [&]() {
         static const char* large[] = { "AUTO", "TOP", "BOTTOM" };
         menu.items = {
@@ -2126,7 +2240,8 @@ int main(int argc, char** argv)
             { "FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
-            { "WORLD DETAIL", cfg.wideLines >= 1440 ? "1440" : cfg.wideLines >= 1080 ? "1080" : cfg.wideLines >= 720 ? "720" : "540" },
+            { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
+            { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
@@ -2140,10 +2255,16 @@ int main(int argc, char** argv)
 
     std::string toast;
     uint32_t toastUntil = 0;
+    int shownFps = 0;
+    uint32_t presented = 0, fpsSince = 0;
     auto say = [&](const std::string& msg) {
         toast = msg;
         toastUntil = frame + 120;
     };
+#ifdef __ANDROID__
+    bool updateSaid = false;
+    UpdateCheck::Start();
+#endif
 
     std::vector<uint32_t> shot;
     std::vector<int16_t> audioBuf(48000 * 2);
@@ -2558,7 +2679,10 @@ int main(int argc, char** argv)
                 cfg.wide = !cfg.wide;
                 break;
             case M_WIDELINES:
-                cfg.wideLines = cfg.wideLines >= 1440 ? 540 : cfg.wideLines >= 1080 ? 1440 : cfg.wideLines >= 720 ? 1080 : 720;
+                cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
+                break;
+            case M_SHOWFPS:
+                cfg.showFps = !cfg.showFps;
                 break;
             case M_BUTTONS:
                 cfg.byLabel = !cfg.byLabel;
@@ -3071,17 +3195,46 @@ int main(int argc, char** argv)
             canvas.Fill(cx - t, cy - arm, t * 2 + 1, arm * 2 + 1, curPress ? 0xFFFFD75E : 0xFFFFFFFF);
             overlayUsed = true;
         }
+        // The top right corner, below the on-screen R button when those controls are shown
+        // (their top row ends at 12% of the height).
+        int cornerY = touchPadUsed && touchPad.visible ? outH * 13 / 100 : 0;
+        if (cfg.showFps && !opt.headless)
+        {
+            int sc = outH / 240 < 1 ? 1 : outH / 240;
+            const std::string text = std::to_string(shownFps) + " FPS";
+            const int tw = Canvas::TextWidth(text, sc) + 8 * sc;
+            canvas.Fill(outW - tw, cornerY, tw, 13 * sc, 0xC0000000);
+            canvas.Text(outW - tw + 4 * sc, cornerY + 3 * sc, text, sc, 0xFFFFFFFF);
+            cornerY += 13 * sc;
+            overlayUsed = true;
+        }
         if (speed > 1)
         {
             int sc = outH / 240 < 1 ? 1 : outH / 240;
-            canvas.Text(outW - Canvas::TextWidth(">>", sc) - 4 * sc, 4 * sc, ">>", sc, 0xFFFFFFFF);
+            canvas.Text(outW - Canvas::TextWidth(">>", sc) - 4 * sc, cornerY + 4 * sc, ">>", sc, 0xFFFFFFFF);
             overlayUsed = true;
         }
+#ifdef __ANDROID__
+        if (!updateSaid && UpdateCheck::g_done)
+        {
+            updateSaid = true;
+            if (!UpdateCheck::g_newer.empty())
+            {
+                say("VERSION " + UpdateCheck::g_newer + " IS OUT - REBUILD THE APP ON YOUR PC");
+                toastUntil = frame + 600;
+            }
+        }
+#endif
         if (frame < toastUntil)
         {
             int sc = outH / 240 < 1 ? 1 : outH / 240;
-            canvas.Fill(0, 0, Canvas::TextWidth(toast, sc) + 8 * sc, 13 * sc, 0xC0000000);
-            canvas.Text(4 * sc, 3 * sc, toast, sc, 0xFFFFFFFF);
+            const int tw = Canvas::TextWidth(toast, sc) + 8 * sc;
+            // With on-screen controls, centred below their top row (L, MENU and R end at
+            // 12% of the height) instead of under the L button.
+            const bool controls = touchPadUsed && touchPad.visible;
+            const int tx = controls ? (outW - tw) / 2 : 0, ty = controls ? outH * 13 / 100 : 0;
+            canvas.Fill(tx, ty, tw, 13 * sc, 0xC0000000);
+            canvas.Text(tx + 4 * sc, ty + 3 * sc, toast, sc, 0xFFFFFFFF);
             overlayUsed = true;
         }
         if (menu.open)
@@ -3246,6 +3399,15 @@ int main(int argc, char** argv)
             }
             SDL_RenderPresent(renderer);
             perfMark(4);
+            // Frames shown in the last whole second, for the FPS counter.
+            presented++;
+            const uint32_t ms = SDL_GetTicks();
+            if (ms - fpsSince >= 1000)
+            {
+                shownFps = (int)(presented * 1000 / (ms - fpsSince));
+                presented = 0;
+                fpsSince = ms;
+            }
 
             nextTick += (uint64_t)(frameTime * perfFreq);
             uint64_t now = SDL_GetPerformanceCounter();
