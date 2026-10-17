@@ -42,8 +42,16 @@ public:
     u8 LayerFlags[2][256*192] = {};
     // ssrecomp: each line's background scroll registers (BG0-3 x and y), per 2D engine.
     u16 LineScroll[2][192][4][2] = {};
+    // ssrecomp: each line's colour effect and master brightness registers (BLDCNT, BLDY,
+    // MASTER_BRIGHT), per 2D engine: what the line was drawn with, not what the game has
+    // set for the next frame by the time it is finished.
+    u16 LineBlend[2][192][3] = {};
     // ssrecomp: OAM as it was when the frame being drawn started.
     alignas(8) u8 OAMSnap[2][0x400] = {};
+    // ssrecomp: the palettes (BG, then sprites) as they were when the frame being drawn
+    // started: fades are often made by changing them, for the next frame, before this one
+    // is shown.
+    alignas(8) u8 PalSnap[2][0x400] = {};
     // ssrecomp: the priority of the sprite pixel at each point of the frame (4: none).
     u8 ObjPrio[2][256*192] = {};
 private:

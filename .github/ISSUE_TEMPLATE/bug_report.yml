@@ -1,0 +1,103 @@
+name: Bug report
+description: Something doesn't work (the build, the game, controls, the picture...).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in everything below; without the log, most problems can't be tracked down.
+        **Never attach or link your ROM, a save file, an APK or the `gen` folder** — they contain the game.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you downloaded (e.g. v0.2.6), or the version shown in the setup window.
+      placeholder: v0.2.6
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows
+        - Linux
+        - Steam Deck / SteamOS
+        - Android
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: system_details
+    attributes:
+      label: System details
+      description: "OS version, and for game or picture problems the CPU and GPU (Android: phone or handheld model)."
+      placeholder: Windows 11, Ryzen 5 5600, RX 6600
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How do you start the game?
+      options:
+        - Setup program (Play button)
+        - run.sh or the game executable from a terminal
+        - Through Steam (as a non-Steam game)
+        - Android app
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it go wrong?
+      options:
+        - Building (setup program or setup.sh)
+        - Starting the game
+        - In the game
+        - Controls / controller
+        - Picture / screen layout
+        - Sound
+        - Saving
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what did you expect?
+      description: Screenshots or a short video help a lot for picture and layout problems.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      description: Where in the game you are and what you do, so it can be tried here.
+      placeholder: |
+        1. Load the save at New Bark Town
+        2. Walk into the tall grass and start a battle
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Paste the whole file. Where to find it:
+        - **Setup program (Windows/Linux):** press **Open logs folder** in the setup window. `game.log` is from the last time the game was started, `build.log` from the last build. (They are in `%LOCALAPPDATA%\ssrecomp` on Windows, `~/.local/share/ssrecomp` on Linux, or `ssrecomp-data` beside the setup program in portable mode.)
+        - **From a terminal (`./run.sh`):** copy what the terminal printed.
+        - **Android:** `log.txt` in `Android/data/io.github.clickingmaster.ssrecomp/files` (with a file manager, or from a PC over USB).
+        On v0.2.6 and older the setup program doesn't save `game.log`: start the game from a terminal instead (Windows: run the game's `ssrecomp.exe` from the `build` folder in a Command Prompt) and copy what it prints.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and this hasn't been reported yet.
+          required: true
+        - label: I'm using my own copy of Pokémon SoulSilver (US) and the setup window said the ROM is correct.
+          required: true

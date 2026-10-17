@@ -1,0 +1,34 @@
+name: Feature request
+description: An idea or something you'd like the game or setup to do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why? What would it help with?
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Which systems is it for?
+      multiple: true
+      options:
+        - Windows
+        - Linux
+        - Steam Deck / SteamOS
+        - Android
+        - All
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and this hasn't been requested yet.
+          required: true

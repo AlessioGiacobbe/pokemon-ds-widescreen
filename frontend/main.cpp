@@ -920,9 +920,13 @@ int main(int argc, char** argv)
         const char* dir = SDL_AndroidGetInternalStoragePath();
         // Files the emulator core keeps by relative name go there too.
         if (dir) chdir(dir);
-        // Messages go to log.txt there (Android drops them otherwise), with the frame
-        // timing, for bug reports.
-        freopen("log.txt", "w", stderr);
+        // Messages go to log.txt (Android drops them otherwise), with the frame timing,
+        // for bug reports: in the app's folder on the shared storage
+        // (Android/data/io.github.clickingmaster.ssrecomp/files), which a file manager or
+        // a PC over USB can open, or else beside the save.
+        const char* ext = SDL_AndroidGetExternalStoragePath();
+        if (!ext || !freopen((std::string(ext) + "/log.txt").c_str(), "w", stderr))
+            freopen("log.txt", "w", stderr);
         setvbuf(stderr, nullptr, _IOLBF, 0);
         setenv("SSR_PERF", "1", 0);
         androidArgs = { "ssrecomp", "rom.nds", "--save", std::string(dir ? dir : ".") + "/soulsilver.sav", "--fullscreen" };
@@ -1084,6 +1088,7 @@ int main(int argc, char** argv)
             return 1;
         }
         {
+            // In every log: bug reports about the picture need to know this.
             SDL_RendererInfo info;
             if (SDL_GetRendererInfo(renderer, &info) == 0)
                 fprintf(stderr, "SDL renderer %s, video driver %s\n", info.name, SDL_GetCurrentVideoDriver());

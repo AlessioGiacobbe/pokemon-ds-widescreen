@@ -47,6 +47,7 @@ set(SSRECOMP_SOURCES
     frontend/main.cpp
     frontend/platform.cpp
     runtime/recomp_rt.cpp
+    runtime/recomp_mem.cpp
     "${SSR_GENERATED_DIR}/apps_table.cpp"
     $<TARGET_OBJECTS:gamecode>)
 if(ANDROID)

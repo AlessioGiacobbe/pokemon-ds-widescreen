@@ -701,6 +701,16 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
             LineScroll[CurUnit->Num][line][i][0] = CurUnit->BGXPos[i];
             LineScroll[CurUnit->Num][line][i][1] = CurUnit->BGYPos[i];
         }
+    // (Not where OAMSnap is taken: sprites are drawn a line ahead, so that is at the end of
+    // the previous frame, after the game has set the palettes for this one.)
+    if (line == 0)
+        memcpy(PalSnap[CurUnit->Num], &GPU.Palette[CurUnit->Num ? 0x400 : 0], 0x400);
+    if (line < 192)
+    {
+        LineBlend[CurUnit->Num][line][0] = CurUnit->BlendCnt;
+        LineBlend[CurUnit->Num][line][1] = CurUnit->EVY;
+        LineBlend[CurUnit->Num][line][2] = CurUnit->MasterBrightness;
+    }
 
     // forced blank disables BG/OBJ compositing
     if (CurUnit->DispCnt & (1<<7))
