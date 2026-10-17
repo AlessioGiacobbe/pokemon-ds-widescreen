@@ -53,6 +53,10 @@ class DarwinSetupTests(unittest.TestCase):
     def test_rebuild_reconfigures_and_honors_explicit_jobs(self):
         with tempfile.TemporaryDirectory(prefix='ssrecomp build with spaces ') as tmp:
             build = str(Path(tmp) / 'build-macos-arm64')
+            Path(build).mkdir()
+            (Path(build) / 'CMakeCache.txt').write_text('CMAKE_CACHEFILE_DIR:INTERNAL=/old/location\n')
+            (Path(build) / 'CMakeFiles').mkdir()
+            (Path(build) / 'ssrecomp').write_text('keep executable')
             proc = unittest.mock.Mock()
             proc.stdout = iter(())
             proc.wait.return_value = 0
@@ -64,12 +68,31 @@ class DarwinSetupTests(unittest.TestCase):
                  patch.object(subprocess, 'check_output', return_value='/opt/homebrew'):
                 for _ in range(2):
                     setup.run_steps('/synthetic ROM.nds', 3, lambda t: None, lambda f, l: None)
+            self.assertFalse((Path(build) / 'CMakeCache.txt').exists())
+            self.assertFalse((Path(build) / 'CMakeFiles').exists())
+            self.assertEqual((Path(build) / 'ssrecomp').read_text(), 'keep executable')
             commands = [c.args[0] for c in popen.call_args_list]
             configs = [c for c in commands if c[0] == 'cmake']
             self.assertEqual(len(configs), 2)
             self.assertIn('-DCMAKE_OSX_ARCHITECTURES=arm64', configs[0])
             self.assertIn(build, configs[0])
             self.assertEqual(commands[-1], ['ninja', '-C', build, '-j', '3'])
+
+    def test_portable_launch_resolves_rom_and_replaces_log(self):
+        with tempfile.TemporaryDirectory(prefix='ssrecomp portable ') as tmp:
+            note = Path(tmp) / 'ssrecomp.rom'
+            note.write_text('roms/game.nds\n')
+            log = Path(tmp) / 'game.log'
+            log.write_text('old launch\n')
+            with patch.object(setup, 'HERE', tmp), patch.object(setup, 'ROM_NOTE', str(note)):
+                for launch in ('first', 'second'):
+                    def spawn(cmd, **kwargs):
+                        self.assertEqual(cmd[1], os.path.join(tmp, 'roms', 'game.nds'))
+                        self.assertIn('--config', cmd)
+                        kwargs['stdout'].write(launch + '\n')
+                    with patch.object(subprocess, 'Popen', side_effect=spawn):
+                        setup.play()
+                    self.assertEqual(log.read_text(), launch + '\n')
 
     def test_packaged_updates_preserve_user_files(self):
         with tempfile.TemporaryDirectory(prefix='ssrecomp update with spaces ') as tmp:

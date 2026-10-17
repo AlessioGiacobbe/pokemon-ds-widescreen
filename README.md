@@ -111,6 +111,15 @@ Windows, `~/Library/Application Support/ssrecomp` on macOS), where the game is
 built and its save is kept. It contains nothing of the game. Instead of the download you can also run `python3 ssrecomp_setup.py`
 from a copy of this repository (then the game is built in that folder).
 
+**Portable mode:** put an empty file named `portable.txt` next to the setup
+program (the `.exe`, or the AppImage on Linux). Everything — the unpacked
+source, the build, the save and the settings — then goes into a folder
+`ssrecomp-data` beside it instead, so the whole thing can live on a USB stick or
+another drive and move between PCs. Keep the ROM in that folder too (or on the
+same drive), so it is still found when the drive letter changes. After moving to
+another PC, Play works straight away; Build (only needed for updates) compiles
+everything again, since the build remembers where it was made.
+
 The window checks that the ROM is the right game and tells you if something
 needed for compiling is missing, with the command to install it (with
 `python3 ssrecomp_setup.py` instead of the download, add Python's Tk support:

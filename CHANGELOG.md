@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Portable mode** (#10): with a file `portable.txt` next to the setup program,
+  everything is kept in a folder `ssrecomp-data` beside it instead of
+  `%LOCALAPPDATA%` (Windows) or `~/.local/share` (Linux). The ROM's location is
+  remembered relative to that folder, so it still works on another PC or drive
+  letter.
+
 ## v0.2.6 — Controller fixes (prerelease)
 
 **Downloads:** the same three setup programs; use these instead of the earlier
