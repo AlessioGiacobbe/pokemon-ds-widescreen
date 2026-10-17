@@ -9,4 +9,7 @@ if [ ! -x "$HERE/build/ssrecomp" ] || [ ! -f "$ROM" ]; then
     echo "Not set up yet: run ./setup.sh first." >&2
     exit 1
 fi
-exec "$HERE/build/ssrecomp" "$ROM" --save "$HERE/soulsilver.sav" "$@"
+# The messages also go to game.log here (made new each time), for bug reports: started from
+# Steam or a desktop shortcut there is no terminal to see them in.
+"$HERE/build/ssrecomp" "$ROM" --save "$HERE/soulsilver.sav" "$@" 2>&1 | tee "$HERE/game.log"
+exit "${PIPESTATUS[0]}"
