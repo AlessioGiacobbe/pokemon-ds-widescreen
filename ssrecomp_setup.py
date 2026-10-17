@@ -468,15 +468,12 @@ ANDROID_HELP = (
     os.path.join(ANDROID_DIR, 'signing-key.json') + '). Uninstalling the app deletes its save.')
 
 
-GAME_LOG = os.path.join(HERE, 'game.log')     # the game's messages from its last start here
-BUILD_LOG = os.path.join(HERE, 'build.log')   # what the last build from the window printed
-
-
 def play(extra=()):
     rom = read_rom_note()
     # Started from here there is no terminal to see them in (and none at all on Windows):
-    # the game's messages go to game.log, made new each time, for bug reports.
-    with open(GAME_LOG, 'w') as log:
+    # the game's messages go to game.log, made new each time, for bug reports (beside the
+    # build log, build.log).
+    with open(os.path.join(HERE, 'game.log'), 'w') as log:
         return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'), *extra], cwd=HERE,
                                 stdout=log, stderr=subprocess.STDOUT, env=child_env())
 
@@ -765,7 +762,7 @@ def gui():
 
         def worker():
             try:
-                with open(BUILD_LOG, 'w', encoding='utf-8', errors='replace') as build_log:
+                with open(os.path.join(HERE, 'build.log'), 'w', encoding='utf-8', errors='replace') as build_log:
                     def log(text):
                         build_log.write(text + '\n')
                         build_log.flush()
