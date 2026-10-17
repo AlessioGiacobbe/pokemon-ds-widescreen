@@ -2,8 +2,10 @@
 
 ## v0.4.1 — Android controllers and update notice
 
-**Downloads:** the same setup programs as v0.4.0. Android players: build the app
-again from the setup window and install it over the old one (your save is kept).
+**Downloads:** the same setup programs as before; update from the setup window
+and run the setup again to rebuild the game (your save is kept). Android
+players: press **Build for Android** again and install the new app over the old
+one.
 
 - **Android: controllers such as the Backbone One work.** SDL's own USB drivers
   took over some pads (the Backbone One, PlayStation pads) from Android's
