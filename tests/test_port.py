@@ -115,11 +115,12 @@ class DarwinSetupTests(unittest.TestCase):
                 self.assertEqual((data / name).read_text(), 'keep me')
 
     def test_self_bundle_path_and_self_path(self):
-        bundle_exe = '/Applications/ssrecomp-setup.app/Contents/MacOS/ssrecomp-setup'
+        expected = os.path.abspath('/Applications/ssrecomp-setup.app')
+        bundle_exe = os.path.join(expected, 'Contents', 'MacOS', 'ssrecomp-setup')
         with patch.object(setup, 'DARWIN', True), patch.object(sys, 'executable', bundle_exe):
-            self.assertEqual(setup.self_bundle_path(), '/Applications/ssrecomp-setup.app')
-            self.assertEqual(setup.self_path(), '/Applications/ssrecomp-setup.app')
-        plain_exe = '/usr/local/bin/ssrecomp-setup'
+            self.assertEqual(setup.self_bundle_path(), expected)
+            self.assertEqual(setup.self_path(), expected)
+        plain_exe = os.path.abspath('/usr/local/bin/ssrecomp-setup')
         with patch.object(setup, 'DARWIN', True), patch.object(sys, 'executable', plain_exe):
             self.assertIsNone(setup.self_bundle_path())
             self.assertEqual(setup.self_path(), plain_exe)
