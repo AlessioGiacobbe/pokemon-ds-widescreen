@@ -60,6 +60,22 @@ def autoload_image(main_image, base):
     raise SystemExit('ITCM autoload block not found')
 
 
+def bios_section(melonds_src):
+    """The interrupt path of melonDS's built-in ARM9 BIOS (FreeBIOS, in FreeBIOS.cpp),
+    which runs a few hundred times a frame (an HBlank interrupt every line): the vector at
+    0x18 and the handler it branches to. As for any section, the dispatcher only enters it
+    after comparing the bytes with the BIOS actually loaded."""
+    src = open(os.path.join(melonds_src, 'FreeBIOS.cpp')).read()
+    start = src.index('bios_arm9_bin')
+    body = src[src.index('{', start):src.index('}', start)]
+    image = bytes(int(x, 16) for x in re.findall(r'0x([0-9A-Fa-f]{2})', body))
+    assert len(image) == 0x1000, len(image)
+    sec = Section('bios9', 0xFFFF0000, image)
+    sec.ranges = [(0xFFFF0018, 0xFFFF001C, False), (0xFFFF06DC, 0xFFFF06FC, False)]
+    sec.named = {0xFFFF0018, 0xFFFF06DC}
+    return sec
+
+
 def load_sections_from_layout(layout_path, rom_path):
     """The same sections, from the player's own ROM: the code bytes come from the ROM,
     and where code starts and ends (which the decompilation's symbols tell) from the
@@ -235,6 +251,7 @@ def main():
         if not args.build_dir:
             ap.error('give a build directory, or --rom and --layout')
         sections = load_sections(args.build_dir)
+    sections.append(bios_section(args.melonds_src))
     if args.only:
         keep = set(args.only.split(','))
         sections = [s for s in sections if s.name in keep]
@@ -275,6 +292,7 @@ def main():
                 fn = f'rc_s{si}_{addr:08X}'
                 out = [f'void {fn}(melonDS::ARMv5* cpu, melonDS::u32 addr)', '{',
                        '    melonDS::NDS& nds = cpu->NDS;',
+                       '    const bool rc_single_here = rc_single;',
                        f'    const melonDS::u32 RC_SECTION = {si};',
                        f'    switch ((addr - 0x{addr:08X}u) >> {1 if thumb else 2})', '    {']
                 out += [f'    case {i}: goto L{i};' for i in range(n)]
@@ -290,7 +308,9 @@ def main():
                         opc = struct.unpack_from('<I', sec.image, off)[0]
                         stmt = emit_arm(a, opc, arm_tbl, local)
                     out.append(f'L{i}: {stmt}')
-                out += ['    return;', '}', '']
+                out += ['    return;',
+                        f'rc_bail: rc_bail_{"thumb" if thumb else "arm"}(cpu, RC_SECTION);',
+                        '    return;', '}', '']
                 cur_lines += out
                 cur_count += n
                 total += n

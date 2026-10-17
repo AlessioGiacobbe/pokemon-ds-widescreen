@@ -556,13 +556,23 @@ struct AutoFocus
         return true;
     }
 
-    void Update(const u32* top, const u32* bot, bool fieldNow = false)
+    // appBottom: one of bottomApps is starting, running or ending (its probes, which see
+    // the start and end too, unlike the check below).
+    void Update(const u32* top, const u32* bot, bool fieldNow = false, bool appBottom = false)
     {
         bool topBlank = Blank(top), botBlank = Blank(bot);
         bool want = wantBottom;
         int hold = 12;
         if (topBlank && botBlank)
             ; // fade or load: keep whatever is showing
+        else if (appBottom && !fieldNow)
+        {
+            // Straight to the bottom screen, even while it is still dark and the other one
+            // is not: an application loading draws one screen before the other, and
+            // following that showed the top screen first and then switched.
+            want = true;
+            hold = 1;
+        }
         else if (fieldNow && !topBlank)
         {
             // Back in the overworld: the application that was open is over, even though
@@ -1149,6 +1159,7 @@ int main(int argc, char** argv)
         return -1;
     };
     const int probeStartMenu = focusProbe("Task_StartMenu");
+    const int probeStartMenuWait = focusProbe("Task_StartMenu_WaitApp");
     const int probeBattleInput = focusProbe("BattleInput_CheckTouch");
     const int probeSave[] = { focusProbe("sub_0203D264"), focusProbe("sub_0203D288"), focusProbe("sub_0203D2CC"),
         focusProbe("sub_0203D2EC"), focusProbe("sub_0203D304"), focusProbe("TouchSaveApp_HandleSaveConfirmation") };
@@ -1198,10 +1209,47 @@ int main(int argc, char** argv)
     uint32_t battleStripUntil = 0;
     // The button chosen in a battle strip (see the input handling before the frame runs).
     int battleSel = 0;
-    // One probe per game application, to know which one is running.
-    std::vector<std::pair<const char*, int>> appProbes;
+    // Per application, the overlay that holds its code when no other application's code is
+    // there (-1 otherwise), and per section the frames on which it has run since it started
+    // running (see where it is counted).
+    std::vector<int> appOwnSection(rc_num_apps, -1);
+    std::vector<unsigned> sectionStreak(rc_num_sections, 0);
     for (unsigned i = 0; i < rc_num_apps; i++)
+    {
+        if (!strcmp(rc_apps[i].section, "main") || !strcmp(rc_apps[i].section, "field")) continue;
+        unsigned sharing = 0;
+        for (unsigned j = 0; j < rc_num_apps; j++)
+            if (!strcmp(rc_apps[j].section, rc_apps[i].section)) sharing++;
+        if (sharing != 1) continue;
+        for (u32 sec = 0; sec < rc_num_sections; sec++)
+            if (!strcmp(rc_sections[sec].name, rc_apps[i].section)) appOwnSection[i] = (int)sec;
+    }
+    // Probes per game application, to know which one is running: on its per-frame function
+    // and on the functions that start and end it, which run every frame while it loads and
+    // fades in and while it fades out. Its layout then stays from the first frame to the
+    // last instead of other layouts showing in between.
+    std::vector<std::pair<const char*, int>> appProbes;
+    std::vector<std::pair<const char*, int>> appMainProbes; // the per-frame functions alone
+    for (unsigned i = 0; i < rc_num_apps; i++)
+    {
         appProbes.emplace_back(rc_apps[i].name, rc_add_probe(rc_apps[i].section, rc_apps[i].execAddr));
+        appMainProbes.push_back(appProbes.back());
+        if (rc_apps[i].initAddr)
+            appProbes.emplace_back(rc_apps[i].name, rc_add_probe(rc_apps[i].initSection, rc_apps[i].initAddr));
+        if (rc_apps[i].exitAddr)
+            appProbes.emplace_back(rc_apps[i].name, rc_add_probe(rc_apps[i].exitSection, rc_apps[i].exitAddr));
+    }
+    // The application's per-frame function alone, without its start and end: what the test
+    // options that wait for a battle (--battle-mash, --nav-stop-on-battle) go by.
+    auto appRunning = [&](const char* name) {
+        for (auto& ap : appMainProbes)
+            if (!strcmp(ap.first, name))
+            {
+                unsigned last = rc_probe_last_frame(ap.second);
+                if (last && last + 6 >= rc_current_frame()) return true;
+            }
+        return false;
+    };
     auto appActive = [&](const char* name) {
         for (auto& ap : appProbes)
             if (!strcmp(ap.first, name))
@@ -1209,6 +1257,15 @@ int main(int argc, char** argv)
                 unsigned last = rc_probe_last_frame(ap.second);
                 if (last && last + 6 >= rc_current_frame()) return true;
             }
+        // Opened from the start menu, an application is prepared by the field with code of
+        // its own overlay for a while before its start function runs: that counts too, when
+        // the overlay is that application's alone and has kept running for a while
+        // (the start menu calls into some overlays once in passing).
+        const unsigned waitLast = rc_probe_last_frame(probeStartMenuWait);
+        if (waitLast && waitLast + 3 >= rc_current_frame())
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, name) && appOwnSection[i] >= 0 && sectionStreak[appOwnSection[i]] >= 8)
+                    return true;
         return false;
     };
 
@@ -1219,6 +1276,9 @@ int main(int argc, char** argv)
         return false;
     };
 
+    // Whether an application driven from the bottom screen is starting, running or ending
+    // (worked out each frame before the scene is chosen).
+    bool appBottomNow = false;
     // Chooses what the single merged view shows this frame.
     auto pickScene = [&](bool cursorInUse, float viewWidth, const ScreenImage* screens) {
         Scene sc;
@@ -1246,14 +1306,151 @@ int main(int argc, char** argv)
         if (focus.manualFlip)
             only("manual", focus.wantBottom ? 0 : 1);
         else if (appActive("PokemonSummary"))
-            // One page from three panels: the portrait column, the upper card and the lower card
-            // (the game draws the two cards as one tall card split across the screens). The
-            // party grid and page tabs are left out; the D-pad does both.
-            sc = Stack("summary", { Crop(0, 152, 0, 104, 192), Crop(0, 0, 0, 152, 192), Crop(1, 0, 0, 152, 176) },
-                true, viewWidth);
+        {
+            // The page's card is one tall card split across the screens; its two halves stand
+            // side by side after the column with the page's name and the Pokemon's name,
+            // picture and item, on the page's colour. The page tabs and the party grid are
+            // left out; the D-pad does both. The game frames the card on its right only (it
+            // runs off the screen on the left), so the halves are cut from inside that frame
+            // and each gets an even frame of its own, with what is drawn on it centred (the
+            // moves list, for one, stands left of the middle).
+            const uint32_t page = screens[0].pixels[100 * 256 + 1] & 0xFFFFFF;
+            const uint32_t frame = 0x414141;
+            Element side = Crop(0, 152, 8, 104, 184), upper = Crop(0, 0, 22, 147, 170), lower = Crop(1, 0, 0, 147, 160);
+            // The lower half keeps the EXP bar, which overlaps the frame's bottom edge: the
+            // edge's shading and its rounded corner are left out around it.
+            lower.keys[0] = screens[1].pixels[158 * 256 + 1] & 0xFFFFFF;
+            lower.keyRing = 2;
+            lower.cutX = 143;
+            lower.cutY = 154;
+            const float pad = 4, gap = 6, margin = 6, h = 189;
+            const int cardW = upper.sw;
+            const float w = side.sw + 2 * (cardW + 2 * pad) + 2 * gap;
+            const float scale = std::min((192 - 2 * margin) / h, (viewWidth - 2 * margin) / w);
+            float x = 128 - w * scale / 2;
+            const float y = 96 - h * scale / 2;
+            sc.name = "summary";
+            {
+                // The name and item boxes run off the screen at the right, and the item box
+                // off its bottom too: they are closed with mirrored copies of their left and
+                // top edges, and the column's shaded strip at the right is painted over
+                // beside them, as is the header's shaded end.
+                const uint32_t* px = screens[0].pixels;
+                const uint32_t column = px[100 * 256 + 154] & 0xFFFFFF;
+                Element back = FillRect(x, y, side.sw, (int)h, column);
+                back.scale = scale;
+                back.border = true;
+                back.borderColor = frame;
+                back.borderRadius = 3;
+                sc.items.push_back(back);
+                auto at = [&](Element e, int sx, int sy) {
+                    e.scale = scale;
+                    e.dx = x + (sx - 152) * scale;
+                    e.dy = y + (sy - 8) * scale;
+                    sc.items.push_back(e);
+                };
+                at(side, 152, 8);
+                at(FillRect(0, 0, 10, 16, px[15 * 256 + 153] & 0xFFFFFF), 246, 8);
+                auto inBox = [&](int sy) {
+                    for (int sx = 156; sx <= 158; sx++)
+                        if ((px[sy * 256 + sx] & 0xFFFFFF) == frame) return true;
+                    return false;
+                };
+                for (int sy = 26; sy < 192;)
+                {
+                    int end = sy;
+                    while (end < 192 && inBox(end) == inBox(sy)) end++;
+                    if (!inBox(sy)) at(FillRect(0, 0, 4, end - sy, column), 246, sy);
+                    sy = end;
+                }
+                Element right = Crop(0, 152, 26, 6, 166);
+                right.flipX = true;
+                at(right, 250, 26);
+                Element bottom = Crop(0, 152, 156, 98, 2);
+                bottom.flipY = true;
+                at(bottom, 152, 192);
+                Element corner = Crop(0, 152, 156, 6, 2);
+                corner.flipX = corner.flipY = true;
+                at(corner, 250, 192);
+            }
+            x += (side.sw + gap) * scale;
+            for (Element* e : { &upper, &lower })
+            {
+                Element back = FillRect(x, y, cardW + 2 * (int)pad, (int)h, page);
+                back.scale = scale;
+                back.border = true;
+                back.borderColor = frame;
+                back.borderRadius = 3;
+                sc.items.push_back(back);
+                // What is drawn on the card comes in blocks, one above the other with the page's
+                // colour between them; each block is centred across the panel, and all of them
+                // together top to bottom.
+                const uint32_t* px = screens[e->screen].pixels;
+                const uint32_t edge = e->keys[0];
+                auto drawn = [&](int sx, int sy) {
+                    const uint32_t c = px[sy * 256 + sx] & 0xFFFFFF;
+                    return c != page && !(sy >= e->sy + e->sh - e->keyRing && c == edge) &&
+                        (sx < e->cutX || sy < e->cutY);
+                };
+                struct Block { int y0, y1, x0, x1; };
+                std::vector<Block> blocks;
+                int blank = 2;
+                for (int sy = e->sy; sy < e->sy + e->sh; sy++)
+                {
+                    int r0 = cardW, r1 = -1;
+                    for (int sx = 0; sx < cardW; sx++)
+                        if (drawn(sx, sy))
+                        {
+                            r0 = std::min(r0, sx);
+                            r1 = sx;
+                        }
+                    if (r1 < 0)
+                    {
+                        blank++;
+                        continue;
+                    }
+                    if (blank >= 2 || blocks.empty())
+                        blocks.push_back({ sy, sy, r0, r1 });
+                    Block& bl = blocks.back();
+                    bl.y1 = sy;
+                    bl.x0 = std::min(bl.x0, r0);
+                    bl.x1 = std::max(bl.x1, r1);
+                    blank = 0;
+                }
+                if (!blocks.empty())
+                {
+                    const float top = y + (pad + (h - 2 * pad - (blocks.back().y1 + 1 - blocks[0].y0)) / 2.0f) * scale;
+                    for (const Block& bl : blocks)
+                    {
+                        Element piece = *e;
+                        piece.sx = bl.x0;
+                        piece.sw = bl.x1 - bl.x0 + 1;
+                        piece.sy = bl.y0;
+                        piece.sh = bl.y1 - bl.y0 + 1;
+                        piece.scale = scale;
+                        piece.dx = x + (pad + (cardW - piece.sw) / 2.0f) * scale;
+                        piece.dy = top + (bl.y0 - blocks[0].y0) * scale;
+                        sc.items.push_back(piece);
+                        // A box the game runs off the screen or into the card's frame (the
+                        // ability, the number of ribbons) gets sides of its own.
+                        if (bl.x0 == 0 || bl.x1 == cardW - 1)
+                            for (float bx : { piece.dx - 2 * scale, piece.dx + piece.sw * scale })
+                            {
+                                Element side = FillRect(bx, piece.dy, 2, piece.sh, frame);
+                                side.scale = scale;
+                                sc.items.push_back(side);
+                            }
+                    }
+                }
+                x += (cardW + 2 * pad + gap) * scale;
+            }
+            sc.bgScreen = 0;
+            sc.bgX = 1;
+            sc.bgY = 100;
+        }
         else if (appActive("Bag"))
-            // The item list, with the description box from the other screen under it.
-            sc = Stack("bag", { Crop(1, 0, 0, 256, 192), Crop(0, 0, 141, 256, 51) }, false, viewWidth);
+            // Just the bag screen; the description box on the other screen is left out.
+            sc = Stack("bag", { Crop(1, 0, 0, 256, 192) }, false, viewWidth);
         else if (appActive("PCBox"))
             // The selected Pokemon's info card from the other screen beside the box.
         {
@@ -1613,7 +1810,17 @@ int main(int argc, char** argv)
         }
         else if (menuReturn > 0)
             startMenu();
-        else if (focus.wantBottom)
+        else if (probeActive(probeStartMenuWait) && !appBottomNow)
+        {
+            // An application chosen in the start menu is loading (the field prepares it for a
+            // while before it starts): the menu while it fades, then the bottom screen,
+            // where these applications appear, instead of the top screen and both.
+            if (!AutoFocus::Blank(screens[1].pixels))
+                startMenu();
+            else
+                only("bottom", 1);
+        }
+        else if (focus.wantBottom || appBottomNow)
             only("bottom", 1);
         else if (sectionActive("OVY_8"))
             // In-battle bag and party screens (overlay 8) fill the bottom screen.
@@ -2143,7 +2350,7 @@ int main(int argc, char** argv)
             }
         }
 
-        const bool mashing = opt.battleMash && appActive("Battle");
+        const bool mashing = opt.battleMash && appRunning("Battle");
         if (mashing && (frame / 12) % 2 == 0)
         {
             // A fights; if that wandered into the in-battle party or bag screen (e.g. by answering
@@ -2174,7 +2381,7 @@ int main(int argc, char** argv)
             }
         }
         bool navigating = false;
-        if (navState.active && opt.navStopOnBattle && navState.started && appActive("Battle"))
+        if (navState.active && opt.navStopOnBattle && navState.started && appRunning("Battle"))
         {
             printf("nav: battle started at frame %u, stopping\n", frame);
             navState.active = false;
@@ -2645,7 +2852,8 @@ int main(int argc, char** argv)
             static std::string lastActive;
             std::string active;
             for (u32 i = 0; i < rc_num_sections; i++)
-                if (rc_section_last_frame[i] == rc_frame && strcmp(rc_sections[i].name, "main") && strcmp(rc_sections[i].name, "ITCM"))
+                if (rc_section_last_frame[i] == rc_frame && strcmp(rc_sections[i].name, "main") && strcmp(rc_sections[i].name, "ITCM") &&
+                    strcmp(rc_sections[i].name, "bios9"))
                     active += std::string(" ") + rc_sections[i].name;
             if (active != lastActive)
             {
@@ -2677,7 +2885,19 @@ int main(int argc, char** argv)
             { bot, renderer2d.LayerFlags[1 - topUnit] },
         };
         const bool fieldNow = rc_probe_last_frame(probeFieldMap) + 1 >= rc_current_frame() && rc_probe_last_frame(probeFieldMap);
-        if (top && bot && !paused) focus.Update(top, bot, fieldNow);
+        for (u32 sec = 0; sec < rc_num_sections; sec++)
+        {
+            // (A section that misses a frame or two still counts as running; only a gap of
+            // more than three frames starts the count again.)
+            const unsigned last = rc_section_last_frame[sec];
+            if (!last || last + 3 < rc_current_frame()) sectionStreak[sec] = 0;
+            else if (last == rc_current_frame()) sectionStreak[sec]++;
+        }
+        bool appBottom = false;
+        for (const RcApp* app : focus.bottomApps)
+            if (appActive(app->name)) appBottom = true;
+        appBottomNow = appBottom;
+        if (top && bot && !paused) focus.Update(top, bot, fieldNow, appBottom);
         layout.swapped = focus.Swapped();
         // While the touch cursor is in use the bottom screen has to be big enough to aim at.
         if (!merged && focus.mode == 0 && frame < cursorShownUntil) layout.swapped = true;
@@ -2691,6 +2911,28 @@ int main(int argc, char** argv)
             const bool writing = saveWriting();
             fieldHeldBySave = writing && fieldActive();
             Scene picked = pickScene(frame < cursorShownUntil, view.width, screenImages);
+            // An application's own layout stays while it fades out: the game is still ending it
+            // (and its picture is still what is on the screens) when only a general layout
+            // would be chosen, until the overworld runs again or a moment has passed.
+            {
+                static Scene lastApp;
+                static uint32_t lastAppFrame = 0;
+                static const char* const appScenes[] = { "bag", "summary", "phone", "pc-box", "map", "pokedex",
+                    "pokedex-list", "pokedex-page", "mart", "naming" };
+                const bool isApp = std::any_of(std::begin(appScenes), std::end(appScenes),
+                    [&](const char* n) { return !strcmp(picked.name, n); });
+                const bool generic = !strcmp(picked.name, "top") || !strcmp(picked.name, "bottom") || !strcmp(picked.name, "spread");
+                if (isApp)
+                {
+                    lastApp = picked;
+                    lastAppFrame = frame;
+                }
+                else if (generic && lastAppFrame && frame - lastAppFrame < 90 && !fieldNow && !appBottomNow)
+                    // (Not when another application has started, e.g. the party after a summary.)
+                    picked = lastApp;
+                else if (!generic)
+                    lastAppFrame = 0;
+            }
             // With the X menu open the game covers the bottom of the overworld with a strip
             // that points at the other screen. It means nothing here, so the layers it is
             // drawn on are left out and the overworld shows through.
@@ -2712,12 +2954,25 @@ int main(int argc, char** argv)
                 rc_hide_layers[topUnit] = menuOpen ? 0x18 : 0;
                 rc_hide_layers[1 - topUnit] = 0;
             }
+            // The start menu, the layouts of the applications opened from it, and the plain
+            // bottom screen (the party).
+            auto menuScene = [](const char* n) {
+                static const char* const names[] = { "start-menu", "bottom", "bag", "summary", "phone", "pc-box", "map",
+                    "pokedex", "pokedex-list", "pokedex-page", "mart", "naming" };
+                return std::any_of(std::begin(names), std::end(names), [&](const char* m) { return !strcmp(n, m); });
+            };
             static std::string shownName, pendingName;
             static int pending = 0;
             if (writing && !shownName.empty())
                 // The layout on screen stays until the save is written (see probeSaveWrite).
                 pending = 0;
-            else if (shownName.empty() || shownName == picked.name)
+            else if (shownName.empty() || shownName == picked.name ||
+                // Between menus, with both screens black nothing on screen changes, so the new
+                // layout can take over at once and is in place when the picture fades in.
+                // (Not around battles: there the timing of the layouts decides which buttons
+                // are on screen.)
+                (AutoFocus::Blank(top) && AutoFocus::Blank(bot) && !sectionActive("OVY_12") && !sectionActive("OVY_8") &&
+                 (menuScene(picked.name) || menuScene(shownName.c_str()))))
             {
                 scene = picked;
                 shownName = picked.name;

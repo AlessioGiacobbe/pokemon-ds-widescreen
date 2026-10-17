@@ -49,7 +49,11 @@ namespace melonDS
 {
 using namespace Platform;
 
-const s32 kMaxIterationCycles = 64;
+// ssrecomp: 512 instead of 64. Between two slices the core runs the timers, the 3D unit,
+// the ARM7 and the system events, and leaves the recompiled code; with longer slices
+// that is done less often (about 10% faster). Events still happen at their exact times;
+// only how finely the two CPUs take turns changes (melonDS's JIT is coarser still).
+const s32 kMaxIterationCycles = 512;
 const s32 kIterationCycleMargin = 8;
 
 // timing notes
@@ -2763,8 +2767,70 @@ bool NDS::ARM7GetMemRegion(u32 addr, bool write, MemRegion* region)
     case (addr+2): return ((val) >> 16) & 0xFF; \
     case (addr+3): return (val) >> 24;
 
+// ssrecomp: ARM9 register reads per console, so that SkipCardWait can tell that nothing
+// else (an interrupt handler, which always reads IE and IF) ran between two polls.
+struct IO9Count { const NDS* nds; u64 reads; };
+static IO9Count io9Counts[2] = {};
+static u64& IO9Reads(const NDS& nds)
+{
+    IO9Count& c = io9Counts[0].nds == &nds || !io9Counts[0].nds ? io9Counts[0] : io9Counts[1];
+    c.nds = &nds;
+    return c.reads;
+}
+
+// ssrecomp: the card library waits for each word of a ROM transfer in the loop
+//     A:  ldr rX, [ROMCTRL] / tst rX, #0x800000 / beq B ... B: tst rX, #0x80000000 / bne A
+// ROMCTRL only changes at the card's transfer events, between two time slices, so while
+// a word is not ready every turn of the loop is the same within a slice. As in SkipSPIWait
+// (ARM7) the turns that still fit in the slice are skipped by advancing the clock by whole
+// turns, measured between two polls with no other register read between them. The core
+// does this for every ARM9 alike, recompiled or interpreted, so lockstep still compares
+// like with like.
+static void SkipCardWait(NDS& nds)
+{
+    struct Seen { const NDS* nds; u32 r15; u64 time, reads; };
+    static Seen seen[2] = {};
+    Seen& last = seen[0].nds == &nds || !seen[0].nds ? seen[0] : seen[1];
+    last.nds = &nds;
+    ARMv5& cpu = nds.ARM9;
+    const u32 ldr = cpu.CurInstr;
+    const u32 rd = (ldr >> 12) & 0xF;
+    const u32 a = cpu.R[15] - 8;
+    const u32 beq = cpu.NextInstr[1];
+    const u32 b = a + 16 + ((u32)((s32)(beq << 8) >> 6));
+    bool loop = !(cpu.CPSR & 0x20) && (ldr & 0xFFF00FFF) == 0xE5900000 && cpu.NextInstr[0] == (0xE3100502u | (rd << 16)) &&
+        (beq & 0xFF800000) == 0x0A000000 && (a >> 24) == 0x02 && (b >> 24) == 0x02;
+    if (loop)
+    {
+        const u32 tst = *(u32*)&nds.MainRAM[b & nds.MainRAMMask];
+        const u32 bne = *(u32*)&nds.MainRAM[(b + 4) & nds.MainRAMMask];
+        loop = tst == (0xE3100102u | (rd << 16)) && bne == (0x1A000000u | (((a - (b + 12)) >> 2) & 0xFFFFFF));
+    }
+    const u64 reads = IO9Reads(nds);
+    if (!loop)
+    {
+        last.r15 = 0;
+        return;
+    }
+    u64 now = nds.ARM9Timestamp;
+    const bool irqNext = cpu.IRQ && !(cpu.CPSR & 0x80);
+    if (!irqNext && last.r15 == cpu.R[15] && reads == last.reads + 1 && now > last.time)
+    {
+        const u64 turn = now - last.time;
+        if (now + turn < nds.ARM9Target)
+        {
+            now += (nds.ARM9Target - now - 1) / turn * turn;
+            nds.ARM9Timestamp = now;
+        }
+    }
+    last.r15 = cpu.R[15];
+    last.time = now;
+    last.reads = reads;
+}
+
 u8 NDS::ARM9IORead8(u32 addr)
 {
+    IO9Reads(*this)++;
     switch (addr)
     {
     case 0x04000130: LagFrameFlag = false; return KeyInput & 0xFF;
@@ -2898,6 +2964,7 @@ u8 NDS::ARM9IORead8(u32 addr)
 
 u16 NDS::ARM9IORead16(u32 addr)
 {
+    IO9Reads(*this)++;
     switch (addr)
     {
     case 0x04000004: return GPU.DispStat[0];
@@ -3056,6 +3123,7 @@ u16 NDS::ARM9IORead16(u32 addr)
 
 u32 NDS::ARM9IORead32(u32 addr)
 {
+    IO9Reads(*this)++;
     switch (addr)
     {
     case 0x04000004: return GPU.DispStat[0] | (GPU.VCount << 16);
@@ -3099,7 +3167,11 @@ u32 NDS::ARM9IORead32(u32 addr)
         return 0;
     case 0x040001A4:
         if (!(ExMemCnt[0] & (1<<11)))
-            return NDSCartSlot.GetROMCnt();
+        {
+            const u32 cnt = NDSCartSlot.GetROMCnt();
+            if ((cnt & 0x80800000) == 0x80000000 && ConsoleType == 0) SkipCardWait(*this);
+            return cnt;
+        }
         return 0;
 
     case 0x040001A8:
@@ -3807,6 +3879,52 @@ u8 NDS::ARM7IORead8(u32 addr)
     return 0;
 }
 
+// ssrecomp: the ARM7 waits for each SPI transfer (touch screen, firmware, power) in a loop
+//     ldrh rX, [rY] / tst rX, #0x80 / bne <ldrh>
+// reading SPICNT until the busy bit clears. That only happens at the Event_SPITransfer
+// event, between two time slices, so within a slice every turn of the loop is the same:
+// once one full turn has been seen (three instructions since the last read here), the
+// turns that still fit in the slice are skipped by advancing the clock by whole turns.
+// The ARM7 then leaves the loop at the same cycle with the same registers as before.
+extern u64 rc_arm7_instructions;
+static void SkipSPIWait(NDS& nds)
+{
+    // Per console (the lockstep test runs two). The instruction count is shared, but two
+    // reads in the same loop are at least three of this console's instructions apart, so
+    // a difference of exactly three means one turn and nothing run by the other console.
+    struct Seen { const NDS* nds; u32 r15; u64 time, count; };
+    static Seen seen[2] = {};
+    Seen& last = seen[0].nds == &nds || !seen[0].nds ? seen[0] : seen[1];
+    last.nds = &nds;
+    u32& lastR15 = last.r15;
+    u64& lastTime = last.time;
+    u64& lastCount = last.count;
+    ARMv4& cpu = nds.ARM7;
+    const u32 ldrh = cpu.CurInstr;
+    const u32 rd = (ldrh >> 12) & 0xF;
+    if ((cpu.CPSR & 0x20) || (ldrh & 0xFFF00FFF) != 0xE1D000B0 || cpu.NextInstr[0] != (0xE3100080u | (rd << 16)) ||
+        cpu.NextInstr[1] != 0x1AFFFFFC)
+    {
+        lastR15 = 0;
+        return;
+    }
+    u64 now = nds.ARM7Timestamp;
+    // (Not with an interrupt waiting: it is taken after this instruction.)
+    const bool irqNext = cpu.IRQ && !(cpu.CPSR & 0x80);
+    if (!irqNext && lastR15 == cpu.R[15] && rc_arm7_instructions == lastCount + 3 && now > lastTime)
+    {
+        const u64 turn = now - lastTime;
+        if (now + turn < nds.ARM7Target)
+        {
+            now += (nds.ARM7Target - now - 1) / turn * turn;
+            nds.ARM7Timestamp = now;
+        }
+    }
+    lastR15 = cpu.R[15];
+    lastTime = now;
+    lastCount = rc_arm7_instructions;
+}
+
 u16 NDS::ARM7IORead16(u32 addr)
 {
     switch (addr)
@@ -3883,7 +4001,12 @@ u16 NDS::ARM7IORead16(u32 addr)
                   (NDSCartSlot.GetROMCommand(7) << 8);
         return 0;
 
-    case 0x040001C0: return SPI.ReadCnt();
+    case 0x040001C0:
+        {
+            const u16 cnt = SPI.ReadCnt();
+            if ((cnt & 0x80) && ConsoleType == 0) SkipSPIWait(*this);
+            return cnt;
+        }
     case 0x040001C2: return SPI.ReadData();
 
     case 0x04000204: return ExMemCnt[1];

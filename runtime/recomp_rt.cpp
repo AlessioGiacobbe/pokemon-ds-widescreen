@@ -25,10 +25,12 @@ namespace
 {
 const u32 kMainBase = 0x02000000, kMainEnd = 0x02400000;
 const u32 kItcmBase = 0x01FF8000, kItcmEnd = 0x02000000;
+const u32 kBiosBase = 0xFFFF0000, kBiosEnd = 0xFFFF1000;
 
 // Chunk index + 1 for every halfword of executable address space; 0 means nothing stamped.
 std::vector<u32> viewMain((kMainEnd - kMainBase) >> 1);
 std::vector<u32> viewItcm((kItcmEnd - kItcmBase) >> 1);
+std::vector<u32> viewBios((kBiosEnd - kBiosBase) >> 1);
 
 // After a failed byte comparison, skip this many lookups before comparing again.
 std::vector<u8> retryDelay;
@@ -46,15 +48,30 @@ std::vector<u32> probeHead; // per halfword of main RAM: first probe index + 1
 std::vector<u8> chunkHasProbe; // lets the dispatcher skip that table for most chunks
 u64 stamps = 0, evictions = 0;
 
+// Addresses where Miss found no chunk, so that code run there by the interpreter (a
+// section changed at run time, such as the copy-protection code that decrypts itself)
+// does not search every section again for each instruction. An entry lasts a few
+// frames, after which the address is looked up again (code may have been loaded there).
+struct NoChunk
+{
+    u32 addr; // address | thumb, 0 = empty
+    u32 until; // rc_frame up to which it holds
+};
+NoChunk noChunk[4096];
+const u32 kNoChunkFrames = 4;
+inline NoChunk& NoChunkSlot(u32 key) { return noChunk[(key ^ (key >> 12)) & 4095]; }
+
 inline u32* ViewSlot(u32 addr)
 {
     if (addr >= kMainBase && addr < kMainEnd) return &viewMain[(addr - kMainBase) >> 1];
     if (addr >= kItcmBase && addr < kItcmEnd) return &viewItcm[(addr - kItcmBase) >> 1];
+    if (addr >= kBiosBase && addr < kBiosEnd) return &viewBios[(addr - kBiosBase) >> 1];
     return nullptr;
 }
 
 const u8* GuestPtr(ARMv5* cpu, u32 addr)
 {
+    if (addr >= kBiosBase) return cpu->NDS.GetARM9BIOS().data() + (addr - kBiosBase);
     if (addr >= kMainBase) return cpu->NDS.MainRAM + (addr & cpu->NDS.MainRAMMask);
     return cpu->ITCM + (addr & (ITCMPhysicalSize - 1));
 }
@@ -124,10 +141,12 @@ void rc_reset()
 {
     std::fill(viewMain.begin(), viewMain.end(), 0);
     std::fill(viewItcm.begin(), viewItcm.end(), 0);
+    std::fill(viewBios.begin(), viewBios.end(), 0);
     retryDelay.assign(rc_num_chunks, 0);
     chunkLastFrame.assign(rc_num_chunks, 0);
     rc_stats = RcStats();
     stamps = evictions = 0;
+    memset(noChunk, 0, sizeof(noChunk));
 }
 
 void rc_print_stats()
@@ -182,9 +201,17 @@ bool RecompRun(ARMv5* cpu)
     u32 id = *slot;
     if (!id || (bool)rc_chunks[id - 1].thumb != thumb)
     {
+        NoChunk& known = NoChunkSlot(addr | thumb);
+        if (known.addr == (addr | thumb) && known.until >= rc_frame)
+        {
+            rc_stats.interpreted++;
+            return false;
+        }
         id = Miss(cpu, addr, thumb);
         if (!id)
         {
+            known.addr = addr | thumb;
+            known.until = rc_frame + kNoChunkFrames;
             rc_stats.interpreted++;
             return false;
         }

@@ -402,15 +402,9 @@ public:
     template <CPUExecuteMode mode>
     void Execute();
 
-    u16 CodeRead16(u32 addr)
-    {
-        return BusRead16(addr);
-    }
-
-    u32 CodeRead32(u32 addr)
-    {
-        return BusRead32(addr);
-    }
+    // ssrecomp: in ARM.cpp, with main RAM and the ARM7's own WRAM read directly.
+    u16 CodeRead16(u32 addr);
+    u32 CodeRead32(u32 addr);
 
     void DataRead8(u32 addr, u32* val) override;
     void DataRead16(u32 addr, u32* val) override;

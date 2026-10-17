@@ -60,6 +60,9 @@ struct Element
     // are not drawn: a cursor drawn as sprites at the corners of buttons whose labels are
     // sprites too.
     int dropSpriteCorner = 0;
+    // Mirrors the piece left to right / top to bottom (to close a box the game leaves open
+    // at the screen's edge with a copy of its other side).
+    bool flipX = false, flipY = false;
     // Draws a dark outline around the piece, for a panel that floats over another picture.
     bool border = false;
     uint32_t borderColor = 0x282830;
@@ -379,7 +382,8 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
             for (int x = p.xa; x < p.xb; x++)
             {
                 int sx = (int)((x + 0.5f) / p.s);
-                p.col[x] = p.el.sx + (sx < p.el.sw ? sx : p.el.sw - 1);
+                if (sx >= p.el.sw) sx = p.el.sw - 1;
+                p.col[x] = p.el.sx + (p.el.flipX ? p.el.sw - 1 - sx : sx);
             }
         }
         pieces.push_back(std::move(p));
@@ -487,16 +491,6 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
         {
             const Element& el = p.el;
             const int x0 = p.x0, y0 = p.y0, w = p.w, h = p.h;
-            if (el.screen < 0)
-            {
-                for (int y = std::max(ya, y0); y < std::min(yb, y0 + h); y++)
-                    for (int x = std::max(0, x0); x < std::min(outW, x0 + w); x++)
-                        out[(size_t)y * outW + x] = 0xFF000000 | el.keys[0];
-                continue;
-            }
-            const ScreenImage& src = screens[el.screen];
-            const float s = p.s;
-
             if (p.border)
             {
                 const int t = p.border;
@@ -506,6 +500,21 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                         for (int x = std::max(xa, 0); x < std::min(xb, outW); x++) out[(size_t)y * outW + x] = 0xFF000000 | el.borderColor;
                     });
             }
+            if (el.screen < 0)
+            {
+                // A rectangle of one colour, with its corners rounded like its outline.
+                const float r = el.borderRadius * v.unit;
+                for (int y = std::max(ya, y0); y < std::min(yb, y0 + h); y++)
+                {
+                    int xa = x0, xb = x0 + w;
+                    if (r > 0) RoundedRowExtent(x0, y0, w, h, r, y, xa, xb);
+                    for (int x = std::max(0, xa); x < std::min(outW, xb); x++)
+                        out[(size_t)y * outW + x] = 0xFF000000 | el.keys[0];
+                }
+                continue;
+            }
+            const ScreenImage& src = screens[el.screen];
+            const float s = p.s;
 
             const int oya = std::max(ya, y0), oyb = std::min(yb, y0 + h);
             if (p.nearest)
@@ -522,6 +531,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                 {
                     int sy = (int)((oy - y0 + 0.5f) / s);
                     if (sy >= el.sh) sy = el.sh - 1;
+                    if (el.flipY) sy = el.sh - 1 - sy;
                     sy += el.sy;
                     const uint32_t* row = src.pixels + sy * 256;
                     const uint8_t* frow = src.flags ? src.flags + sy * 256 : nullptr;
@@ -583,7 +593,8 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                     const float wt[4] = { (1 - wx) * (1 - wy), wx * (1 - wy), (1 - wx) * wy, wx * wy };
                     for (int k = 0; k < 4; k++)
                     {
-                        int srcX = el.sx + px[k], srcY = el.sy + py[k];
+                        int srcX = el.sx + (el.flipX ? el.sw - 1 - px[k] : px[k]);
+                        int srcY = el.sy + (el.flipY ? el.sh - 1 - py[k] : py[k]);
                         if (srcX >= el.cutX && srcY >= el.cutY) continue;
                         int si = srcY * 256 + srcX;
                         if (el.drop && src.flags && (LayerClass(src.flags[si]) & el.drop)) continue;

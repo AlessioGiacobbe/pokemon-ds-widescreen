@@ -59,6 +59,12 @@ def shift_imm(kind, s, setc):
 
 
 ARM_MEM = re.compile(r'A_(STR|LDR|STRB|LDRB|STRH|LDRH)(_POST)?_IMM$')
+# A_LDR_REG_LSL, A_STRB_POST_REG_ROR, ...: the offset is a register shifted by an amount
+# (A_WB_CALC_OFFSET_REG).
+ARM_MEM_REG = re.compile(r'A_(STR|LDR|STRB|LDRB)(_POST)?_REG_(LSL|LSR|ASR|ROR)$')
+# A_STRH_REG, A_LDRSB_IMM, A_LDRSH_POST_REG, ...: halfword and signed transfers
+# (A_HD_CALC_OFFSET_IMM / _REG).
+ARM_HD = re.compile(r'A_(STRH|LDRH|LDRSB|LDRSH)(_POST)?_(IMM|REG)$')
 ARM_COND = ['EQ', 'NE', 'CS', 'CC', 'MI', 'PL', 'VS', 'VC', 'HI', 'LS', 'GE', 'LT', 'GT', 'LE']
 # The ARMv5 functions the handlers reach through ARM's virtual ones, called directly.
 READ = {'32': 'cpu->ARMv5::DataRead32', '16': 'cpu->ARMv5::DataRead16', '8': 'cpu->ARMv5::DataRead8'}
@@ -99,6 +105,92 @@ def arm_mem(m, opc):
                 f'cpu->R[{rn}] += 0x{off:X}u; {CDI} cpu->R[{rd}] = v; }}')
     return (f'{{ uint32_t ad = 0x{off:X}u + cpu->R[{rn}]; uint32_t v; {READ[size]}(ad, &v);{rot} '
             + (f'cpu->R[{rn}] = ad; ' if wb else '') + f'{CDI} cpu->R[{rd}] = v; }}')
+
+
+def arm_mem_reg(m, opc):
+    """The register-offset forms of A_STR, A_LDR, A_STRB and A_LDRB, as arm_mem with the
+    offset worked out at run time."""
+    op, post, kind = m.group(1), bool(m.group(2)), m.group(3)
+    rn, rd, rm = (opc >> 16) & 0xF, (opc >> 12) & 0xF, opc & 0xF
+    if rd == 15 and op.startswith('LDR'):
+        return None
+    # LSR_IMM, ASR_IMM and ROR_IMM of ARMInterpreter_LoadStore.cpp (by 0: 0, sign, RRX).
+    off = f'uint32_t b = cpu->R[{rm}]; ' + shift_imm(kind, (opc >> 7) & 0x1F, False)
+    if not opc & (1 << 23):
+        off += ' b = 0u - b;'
+    wb = bool(opc & (1 << 21))
+    size = '8' if op.endswith('B') else '32'
+    if op.startswith('STR'):
+        val = f'cpu->R[{rd}]' + (' + 4' if rd == 15 and size == '32' else '')
+        if post:
+            return (f'{{ {off} uint32_t ad = cpu->R[{rn}]; {WRITE[size]}(ad, {val}); '
+                    f'cpu->R[{rn}] += b; {CD} }}')
+        return (f'{{ {off} uint32_t ad = b + cpu->R[{rn}]; {WRITE[size]}(ad, {val}); '
+                + (f'cpu->R[{rn}] = ad; ' if wb else '') + f'{CD} }}')
+    rot = ' v = rc_ror(v, (ad & 3) << 3);' if size == '32' else ''
+    if post:
+        return (f'{{ {off} uint32_t ad = cpu->R[{rn}]; uint32_t v; {READ[size]}(ad, &v);{rot} '
+                f'cpu->R[{rn}] += b; {CDI} cpu->R[{rd}] = v; }}')
+    return (f'{{ {off} uint32_t ad = b + cpu->R[{rn}]; uint32_t v; {READ[size]}(ad, &v);{rot} '
+            + (f'cpu->R[{rn}] = ad; ' if wb else '') + f'{CDI} cpu->R[{rd}] = v; }}')
+
+
+def arm_hd(m, opc):
+    """A_STRH, A_LDRH, A_LDRSB and A_LDRSH with an immediate or register offset, before or
+    after (_POST). Loads read straight into the register after the write-back, and the
+    signed ones then extend it in place, as the macros do."""
+    op, post, form = m.group(1), bool(m.group(2)), m.group(3)
+    rn, rd, rm = (opc >> 16) & 0xF, (opc >> 12) & 0xF, opc & 0xF
+    if rd == 15 and op != 'STRH':
+        return None   # a message from the handler
+    if form == 'IMM':
+        off = ((opc & 0xF) | ((opc >> 4) & 0xF0))
+        if not opc & (1 << 23):
+            off = -off & 0xFFFFFFFF
+        pre, b = '', f'0x{off:X}u'
+    else:
+        pre = f'uint32_t b = cpu->R[{rm}];' + ('' if opc & (1 << 23) else ' b = 0u - b;') + ' '
+        b = 'b'
+    wb = bool(opc & (1 << 21))
+    if op == 'STRH':
+        if post:
+            return (f'{{ {pre}uint32_t ad = cpu->R[{rn}]; {WRITE["16"]}(ad, cpu->R[{rd}]); '
+                    f'cpu->R[{rn}] += {b}; {CD} }}')
+        return (f'{{ {pre}uint32_t ad = {b} + cpu->R[{rn}]; {WRITE["16"]}(ad, cpu->R[{rd}]); '
+                + (f'cpu->R[{rn}] = ad; ' if wb else '') + f'{CD} }}')
+    size = '8' if op == 'LDRSB' else '16'
+    ext = {'LDRH': '', 'LDRSB': f' cpu->R[{rd}] = (uint32_t)(int32_t)(int8_t)cpu->R[{rd}];',
+           'LDRSH': f' cpu->R[{rd}] = (uint32_t)(int32_t)(int16_t)cpu->R[{rd}];'}[op]
+    if post:
+        return (f'{{ {pre}uint32_t ad = cpu->R[{rn}]; cpu->R[{rn}] += {b}; '
+                f'{READ[size]}(ad, &cpu->R[{rd}]);{ext} {CDI} }}')
+    return (f'{{ {pre}uint32_t ad = {b} + cpu->R[{rn}]; ' + (f'cpu->R[{rn}] = ad; ' if wb else '')
+            + f'{READ[size]}(ad, &cpu->R[{rd}]);{ext} {CDI} }}')
+
+
+def arm_mul(handler, opc, r15):
+    """A_MUL, A_MLA, A_UMULL, A_UMLAL, A_SMULL and A_SMLAL as the ARM9 (Num == 0) runs
+    them: one internal cycle, three when they set the flags; C is left alone."""
+    s = bool(opc & (1 << 20))
+    rm, rs, rlo, rhi = opc & 0xF, (opc >> 8) & 0xF, (opc >> 12) & 0xF, (opc >> 16) & 0xF
+    cyc = cycles(r15, 3 if s else 1)
+    if handler in ('A_MUL', 'A_MLA'):
+        if rhi == 15:
+            return None
+        add = f' + cpu->R[{rlo}]' if handler == 'A_MLA' else ''
+        return (f'{{ uint32_t r = cpu->R[{rm}] * cpu->R[{rs}]{add}; cpu->R[{rhi}] = r; '
+                + ('rc_nz(cpu, r); ' if s else '') + f'{cyc} }}')
+    if rlo == 15 or rhi == 15:
+        return None
+    if handler.startswith('A_U'):
+        mul = f'uint64_t r = (uint64_t)cpu->R[{rm}] * (uint64_t)cpu->R[{rs}];'
+    else:
+        mul = f'uint64_t r = (uint64_t)((int64_t)(int32_t)cpu->R[{rm}] * (int64_t)(int32_t)cpu->R[{rs}]);'
+    if handler.endswith('LAL'):
+        mul += f' r += (uint64_t)cpu->R[{rlo}] | ((uint64_t)cpu->R[{rhi}] << 32);'
+    flags = (' cpu->CPSR = (cpu->CPSR & ~0xC0000000u) | ((uint32_t)(r >> 32) & 0x80000000u) | (r ? 0 : 0x40000000u);'
+             if s else '')
+    return (f'{{ {mul} cpu->R[{rlo}] = (uint32_t)r; cpu->R[{rhi}] = (uint32_t)(r >> 32);{flags} {cyc} }}')
 
 
 def ldm_stm(load, opc):
@@ -168,19 +260,37 @@ def arm(handler, opc, addr):
                 f'cpu->ARMv5::JumpTo(0x{(r15 + (sext24 << 2)) & 0xFFFFFFFF:08X}u); }}')
     if handler in ('A_LDM', 'A_STM'):
         return ldm_stm(handler == 'A_LDM', opc)
+    # Jumps to a register (ARMInterpreter_Branch.cpp): the link value is R15 - 4, taken
+    # before the jump, written after it (as the handler does when Rm is LR).
+    if handler == 'A_BX':
+        return f'cpu->ARMv5::JumpTo(cpu->R[{opc & 0xF}]);'
+    if handler == 'A_BLX_REG':
+        return f'{{ cpu->ARMv5::JumpTo(cpu->R[{opc & 0xF}]); cpu->R[14] = 0x{r15 - 4:08X}u; }}'
+    if handler in ('A_MUL', 'A_MLA', 'A_UMULL', 'A_UMLAL', 'A_SMULL', 'A_SMLAL'):
+        return arm_mul(handler, opc, r15)
+    mr = ARM_MEM_REG.match(handler)
+    if mr:
+        return arm_mem_reg(mr, opc)
+
     if handler == 'A_MOV_REG_LSL_IMM_DBG' and opc != 0xE1A0C00C:
         handler = 'A_MOV_REG_LSL_IMM'   # its debug-print hook is for mov r12, r12 only
     mm = ARM_MEM.match(handler)
     if mm:
         return arm_mem(mm, opc)
+    mh = ARM_HD.match(handler)
+    if mh:
+        return arm_hd(mh, opc)
     m = ARM_ALU.match(handler)
     if not m:
         return None
     op, form, kind, s_suffix = m.group(1), m.group(2), m.group(3), bool(m.group(4))
     rd, rn = (opc >> 12) & 0xF, (opc >> 16) & 0xF
     flags = s_suffix or op in TESTS
-    if rd == 15 and op not in TESTS:
-        return None   # JumpTo, and with S a mode change: left to the handler
+    # Writing the PC without S is a jump (to the result with bit 0 cleared, after the
+    # cycles: A_ADD and the others); with S it also changes mode, left to the handler.
+    jump = rd == 15 and op not in TESTS
+    if jump and s_suffix:
+        return None
     # The shifter's carry reaches C in flag-setting logical operations only (the "s"
     # argument of A_IMPLEMENT_ALU_OP / A_IMPLEMENT_ALU_TEST).
     setc = flags and op in LOGICAL
@@ -233,6 +343,8 @@ def arm(handler, opc, addr):
             calc, f = f'uint32_t r = b - a - {borrow};', ''
     if not flags:
         f = ''
+    if jump:
+        return '{ ' + ' '.join(x for x in (pre, a, calc) if x) + ' ' + cycles(addr + 8) + ' cpu->ARMv5::JumpTo(r & ~1u); }'
     store = '' if op in TESTS else f' cpu->R[{rd}] = r;'
     return '{ ' + ' '.join(x for x in (pre, a, calc, f) if x) + store + ' ' + cycles(addr + 8) + ' }'
 
@@ -293,6 +405,36 @@ def thumb(handler, opc, addr):
     if handler == 'T_LDR_PCREL':
         r = (opc >> 8) & 7
         return f'{{ uint32_t ad = (cpu->R[15] & ~0x2u) + {(opc & 0xFF) << 2}u; {READ["32"]}(ad, &cpu->R[{r}]); {CDI} }}'
+    if handler == 'T_BX':
+        return f'cpu->ARMv5::JumpTo(cpu->R[{(opc >> 3) & 0xF}]);'
+    if handler == 'T_BLX_REG':
+        return f'{{ cpu->ARMv5::JumpTo(cpu->R[{(opc >> 3) & 0xF}]); cpu->R[14] = 0x{r15 - 1:08X}u; }}'
+    if handler in ('T_STRB_REG', 'T_STRH_REG', 'T_LDRB_REG', 'T_LDRH_REG', 'T_LDRSB_REG', 'T_LDRSH_REG'):
+        ro = (opc >> 6) & 7
+        size = '8' if 'B_' in handler else '16'
+        ad = f'uint32_t ad = cpu->R[{rb_}] + cpu->R[{ro}];'
+        if handler.startswith('T_STR'):
+            return f'{{ {ad} {WRITE[size]}(ad, cpu->R[{rd_}]); {CD} }}'
+        ext = ''
+        if handler == 'T_LDRSB_REG':
+            ext = f' cpu->R[{rd_}] = (uint32_t)(int32_t)(int8_t)cpu->R[{rd_}];'
+        elif handler == 'T_LDRSH_REG':
+            ext = f' cpu->R[{rd_}] = (uint32_t)(int32_t)(int16_t)cpu->R[{rd_}];'
+        return f'{{ {ad} {READ[size]}(ad, &cpu->R[{rd_}]);{ext} {CDI} }}'
+    if handler in ('T_STMIA', 'T_LDMIA') and opc & 0xFF:
+        rb = (opc >> 8) & 7
+        load = handler == 'T_LDMIA'
+        out, k = [f'uint32_t base = cpu->R[{rb}];'], 0
+        for i in range(8):
+            if opc & (1 << i):
+                if load:
+                    out.append(f'cpu->ARMv5::DataRead32{"S" if k else ""}(base, &cpu->R[{i}]); base += 4;')
+                else:
+                    out.append(f'cpu->ARMv5::DataWrite32{"S" if k else ""}(base, cpu->R[{i}]); base += 4;')
+                k += 1
+        if not load or not opc & (1 << rb):
+            out.append(f'cpu->R[{rb}] = base;')
+        return '{ ' + ' '.join(out) + f' {CDI if load else CD} }}'
     if handler in ('T_STR_REG', 'T_LDR_REG'):
         ro = (opc >> 6) & 7
         if handler == 'T_STR_REG':
@@ -342,6 +484,21 @@ def thumb(handler, opc, addr):
         return (f'{{ uint32_t a = cpu->R[{rd}]; uint32_t b = cpu->R[{rs}]; uint32_t t = a - b; '
                 f'uint32_t k = (cpu->CPSR & 0x20000000u ? 0u : 1u); uint32_t r = t - k; cpu->R[{rd}] = r; '
                 f'rc_nzcv(cpu, r, rc_carry_sub(a, b) & rc_carry_sub(t, k), rc_overflow_sbc(a, b, k)); {c} }}')
+    # Shifts by a register (LSL_REG_S and the others of ARMInterpreter_ALU.cpp): by the low
+    # byte, with the carry out; one internal cycle. (ROR's carry bit is taken modulo 32, as
+    # the shift in the handler comes out on the processors this runs on.)
+    if handler in ('T_LSL_REG', 'T_LSR_REG', 'T_ASR_REG', 'T_ROR_REG'):
+        sh = {
+            'T_LSL_REG': 'if (s > 31) { rc_setc(cpu, s > 32 ? 0 : (a & 1u)); a = 0; } '
+                         'else if (s > 0) { rc_setc(cpu, a & (1u << (32 - s))); a <<= s; }',
+            'T_LSR_REG': 'if (s > 31) { rc_setc(cpu, s > 32 ? 0 : (a & 0x80000000u)); a = 0; } '
+                         'else if (s > 0) { rc_setc(cpu, a & (1u << (s - 1))); a >>= s; }',
+            'T_ASR_REG': 'if (s > 31) { rc_setc(cpu, a & 0x80000000u); a = (uint32_t)((int32_t)a >> 31); } '
+                         'else if (s > 0) { rc_setc(cpu, a & (1u << (s - 1))); a = (uint32_t)((int32_t)a >> s); }',
+            'T_ROR_REG': 'if (s > 0) rc_setc(cpu, a & (1u << ((s - 1) & 31))); a = rc_ror(a, s & 0x1F);',
+        }[handler]
+        return (f'{{ uint32_t a = cpu->R[{rd}]; uint32_t s = cpu->R[{rs}] & 0xFF; {sh} cpu->R[{rd}] = a; '
+                f'rc_nz(cpu, a); {cycles(r15, 1)} }}')
     if handler == 'T_MUL_REG':
         # The ARM9's form: three internal cycles, C untouched.
         return (f'{{ uint32_t r = cpu->R[{rd}] * cpu->R[{rs}]; cpu->R[{rd}] = r; rc_nz(cpu, r); '
@@ -350,6 +507,9 @@ def thumb(handler, opc, addr):
         hd, hs = (opc & 7) | ((opc >> 4) & 8), (opc >> 3) & 0xF
         if handler == 'T_CMP_HIREG':
             return f'{{ uint32_t a = cpu->R[{hd}]; uint32_t b = cpu->R[{hs}]; uint32_t r = a - b; {sub} {c} }}'
+        if hd == 15 and handler == 'T_ADD_HIREG':
+            # add pc, rX (a jump table): the cycles, then a jump staying in Thumb.
+            return f'{{ {c} cpu->ARMv5::JumpTo((0x{r15:08X}u + cpu->R[{hs}]) | 1u); }}'
         if hd == 15 or (handler == 'T_MOV_HIREG' and opc == 0x46E4):
             return None   # a jump, or the debug-print hook
         val = f'cpu->R[{hd}] + cpu->R[{hs}]' if handler == 'T_ADD_HIREG' else f'cpu->R[{hs}]'

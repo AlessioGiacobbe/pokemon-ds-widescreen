@@ -362,8 +362,30 @@ machine). What got it there:
   functions. Copying them into every instruction instead made the code 30 MB
   bigger and slower overall.
 
-The ARM9 game code is now about half of the main thread's time; most of the
-rest is melonDS's 2D renderer, the ARM7 and the timers.
+Around the recompiled code, in the melonDS core (`--lockstep` still passes, and
+each change was checked to give the same pictures, sound and memory as before,
+except the longer time slices, see below):
+
+- the 2D renderer keeps each finished line and its sprites, and draws a line
+  again only when something it is made from changed (the engine's registers,
+  palettes, VRAM, OAM, the 3D line); most lines are the same as in the frame
+  before. Text backgrounds are drawn a tile row at a time;
+- the scheduler gives each CPU 512 cycles at a time instead of 64 (events still
+  happen at their exact times; melonDS's own JIT is coarser). This is the one
+  change to timing: of 2,312 test screenshots, 3 differ, each by one line
+  during a battle transition;
+- the ARM7 reads its code and data in main RAM and WRAM directly;
+- loops that wait for the SPI bus (ARM7) or the game card (ARM9) are skipped to
+  the end of the time slice in whole turns, so they end at the same cycle;
+- the widescreen 3D draws opaque polygons nearest first, so hidden pixels are
+  rejected before they are shaded;
+- the interrupt path of melonDS's built-in BIOS (FreeBIOS), which runs at every
+  HBlank interrupt (most lines), is recompiled too (section `bios9`), so no game
+  code is interpreted any more.
+
+Together that is about 30% less time in the overworld and 20% in battles than
+v0.3.0. The ARM9 game code is now about 60% of the main thread's time; most of
+the rest is the ARM7, the sound and melonDS's bookkeeping.
 
 `SSR_SAMPLE=<file>` records about 1000 call stacks a second from whichever
 thread is running (`frontend/sampler.h`); `tools/samples.py build/ssrecomp

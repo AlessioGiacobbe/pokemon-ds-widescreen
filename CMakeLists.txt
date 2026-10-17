@@ -41,7 +41,8 @@ include("${SSR_GENERATED_DIR}/sources.cmake")
 add_library(gamecode OBJECT ${RC_GENERATED_SOURCES})
 target_include_directories(gamecode PRIVATE melonDS/src runtime "${SSR_GENERATED_DIR}")
 # Generated code is huge and uniform; -O1 keeps build times reasonable.
-target_compile_options(gamecode PRIVATE -O1 -g0 -fno-exceptions -fno-rtti "$<$<COMPILE_LANGUAGE:ASM>:-Wa,-I${SSR_GENERATED_DIR}>")
+target_compile_options(gamecode PRIVATE -O1 -g0 -fno-exceptions -fno-rtti "$<$<COMPILE_LANGUAGE:CXX>:-fno-stack-protector>"
+    "$<$<COMPILE_LANGUAGE:ASM>:-Wa,-I${SSR_GENERATED_DIR}>")
 
 set(SSRECOMP_SOURCES
     frontend/main.cpp

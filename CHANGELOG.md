@@ -1,7 +1,31 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 — Faster again, cleaner menus
 
+**Downloads:** the setup programs for Linux (x86_64 and arm64), Windows and now
+macOS (Apple Silicon and Intel; the Mac app is unsigned, so open it with
+right-click → Open the first time). Use the setup window's update button or
+download the new one, then run the setup again to rebuild the game (your save
+is kept).
+
+- **The bag shows just the bag.** The item description box from the other
+  screen is no longer drawn below it.
+- **A tidier Pokémon summary.** The Pokémon's name, item and markings sit in
+  their own column and the information from both screens is shown side by side, each
+  in a rounded card with its contents centred, and no borders cut off.
+- **Menus stay on one layout.** Opening the bag, party, Pokégear and the other
+  menus from the start menu no longer shows the top screen and then both screens
+  before the menu's own view, and closing them no longer falls back to the plain
+  bottom screen while they fade out. The view now follows each menu from the
+  moment the game starts loading it until it has closed (the game's start and
+  end functions of each menu are watched as well as its main one).
+- **Faster again: about 30% in the overworld and 20% in battles** (measured
+  headless on a 6-core desktop; slower machines such as the Steam Deck and
+  phones gain the most). The bottom screen and anything that does not move are
+  no longer redrawn every frame, the CPUs switch less often, waits for the game
+  card and the touch screen are skipped, and more instructions are recompiled.
+  Nothing else changes: in testing, pictures, sound and memory came out the
+  same, apart from a one-line difference in a few frames of battle transitions.
 - `run.sh` writes `game.log` next to it, as the setup window's Play button does.
 - The log lists every controller SDL sees (name, USB IDs, whether its layout is
   known), the SDL version, and the Steam and container settings that can hide a

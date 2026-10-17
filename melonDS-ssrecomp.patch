@@ -1,8 +1,48 @@
 diff --git a/src/ARM.cpp b/src/ARM.cpp
-index 827fcb01..67208150 100644
+index 827fcb01..2b2f80a8 100644
 --- a/src/ARM.cpp
 +++ b/src/ARM.cpp
-@@ -657,7 +657,11 @@ void ARMv5::Execute()
+@@ -359,6 +359,39 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
+     NDS.MonitorARM9Jump(addr);
+ }
+ 
++// ssrecomp: the ARM7 runs from main RAM or WRAM almost all the time; those are
++// read and written here as NDS::ARM7Read/Write do it (with no JIT, nothing else happens
++// on a write), the rest goes through the bus as before.
++// (Not for the DSi, whose ARM7 bus is different.)
++static inline __attribute__((always_inline)) u8* ARM7DirectRAM(melonDS::NDS& nds, u32 addr)
++{
++    if (nds.ConsoleType != 0) return nullptr;
++    switch (addr & 0xFF800000)
++    {
++    case 0x02000000:
++    case 0x02800000:
++        return &nds.MainRAM[addr & nds.MainRAMMask];
++    case 0x03000000:
++        if (nds.SWRAM_ARM7.Mem) return &nds.SWRAM_ARM7.Mem[addr & nds.SWRAM_ARM7.Mask];
++        return &nds.ARM7WRAM[addr & (ARM7WRAMSize - 1)];
++    case 0x03800000:
++        return &nds.ARM7WRAM[addr & (ARM7WRAMSize - 1)];
++    }
++    return nullptr;
++}
++
++u16 ARMv4::CodeRead16(u32 addr)
++{
++    if (u8* p = ARM7DirectRAM(NDS, addr & ~1u)) return *(u16*)p;
++    return BusRead16(addr);
++}
++
++u32 ARMv4::CodeRead32(u32 addr)
++{
++    if (u8* p = ARM7DirectRAM(NDS, addr & ~3u)) return *(u32*)p;
++    return BusRead32(addr);
++}
++
+ void ARMv4::JumpTo(u32 addr, bool restorecpsr)
+ {
+     if (restorecpsr)
+@@ -657,7 +690,11 @@ void ARMv5::Execute()
          else
  #endif
          {
@@ -15,7 +55,7 @@ index 827fcb01..67208150 100644
              {
                  if constexpr (mode == CPUExecuteMode::InterpreterGDB)
                      GdbCheckC();
-@@ -698,6 +702,8 @@ void ARMv5::Execute()
+@@ -698,6 +735,8 @@ void ARMv5::Execute()
                      AddCycles_C();
              }
  
@@ -24,8 +64,112 @@ index 827fcb01..67208150 100644
              // TODO optimize this shit!!!
              if (Halted)
              {
+@@ -729,6 +768,9 @@ template void ARMv5::Execute<CPUExecuteMode::InterpreterGDB>();
+ template void ARMv5::Execute<CPUExecuteMode::JIT>();
+ #endif
+ 
++// ssrecomp: ARM7 instructions run so far (see SkipSPIWait in NDS.cpp).
++u64 rc_arm7_instructions = 0;
++
+ template <CPUExecuteMode mode>
+ void ARMv4::Execute()
+ {
+@@ -796,6 +838,7 @@ void ARMv4::Execute()
+         else
+ #endif
+         {
++            rc_arm7_instructions++;
+             if (CPSR & 0x20) // THUMB
+             {
+                 if constexpr (mode == CPUExecuteMode::InterpreterGDB)
+@@ -1121,7 +1164,8 @@ u32 ARMv5::ReadMem(u32 addr, int size)
+ 
+ void ARMv4::DataRead8(u32 addr, u32* val)
+ {
+-    *val = BusRead8(addr);
++    u8* p = ARM7DirectRAM(NDS, addr);
++    *val = p ? *p : BusRead8(addr);
+     DataRegion = addr;
+     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+ }
+@@ -1130,7 +1174,8 @@ void ARMv4::DataRead16(u32 addr, u32* val)
+ {
+     addr &= ~1;
+ 
+-    *val = BusRead16(addr);
++    u8* p = ARM7DirectRAM(NDS, addr);
++    *val = p ? *(u16*)p : BusRead16(addr);
+     DataRegion = addr;
+     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+ }
+@@ -1139,7 +1184,8 @@ void ARMv4::DataRead32(u32 addr, u32* val)
+ {
+     addr &= ~3;
+ 
+-    *val = BusRead32(addr);
++    u8* p = ARM7DirectRAM(NDS, addr);
++    *val = p ? *(u32*)p : BusRead32(addr);
+     DataRegion = addr;
+     DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
+ }
+@@ -1148,13 +1194,15 @@ void ARMv4::DataRead32S(u32 addr, u32* val)
+ {
+     addr &= ~3;
+ 
+-    *val = BusRead32(addr);
++    u8* p = ARM7DirectRAM(NDS, addr);
++    *val = p ? *(u32*)p : BusRead32(addr);
+     DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
+ }
+ 
+ void ARMv4::DataWrite8(u32 addr, u8 val)
+ {
+-    BusWrite8(addr, val);
++    if (u8* p = ARM7DirectRAM(NDS, addr)) *p = val;
++    else BusWrite8(addr, val);
+     DataRegion = addr;
+     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+ }
+@@ -1163,7 +1211,8 @@ void ARMv4::DataWrite16(u32 addr, u16 val)
+ {
+     addr &= ~1;
+ 
+-    BusWrite16(addr, val);
++    if (u8* p = ARM7DirectRAM(NDS, addr)) *(u16*)p = val;
++    else BusWrite16(addr, val);
+     DataRegion = addr;
+     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+ }
+@@ -1172,7 +1221,8 @@ void ARMv4::DataWrite32(u32 addr, u32 val)
+ {
+     addr &= ~3;
+ 
+-    BusWrite32(addr, val);
++    if (u8* p = ARM7DirectRAM(NDS, addr)) *(u32*)p = val;
++    else BusWrite32(addr, val);
+     DataRegion = addr;
+     DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
+ }
+@@ -1181,7 +1231,8 @@ void ARMv4::DataWrite32S(u32 addr, u32 val)
+ {
+     addr &= ~3;
+ 
+-    BusWrite32(addr, val);
++    if (u8* p = ARM7DirectRAM(NDS, addr)) *(u32*)p = val;
++    else BusWrite32(addr, val);
+     DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
+ }
+ 
+@@ -1293,6 +1344,7 @@ u32 ARMv4::BusRead32(u32 addr)
+     return NDS.ARM7Read32(addr);
+ }
+ 
++
+ void ARMv4::BusWrite8(u32 addr, u8 val)
+ {
+     NDS.ARM7Write8(addr, val);
 diff --git a/src/ARM.h b/src/ARM.h
-index 96ed66f0..4ecb159e 100644
+index 96ed66f0..a193e70c 100644
 --- a/src/ARM.h
 +++ b/src/ARM.h
 @@ -229,6 +229,10 @@ protected:
@@ -52,8 +196,27 @@ index 96ed66f0..4ecb159e 100644
      // all code accesses are forced nonseq 32bit
      u32 CodeRead32(u32 addr, bool branch);
  
+@@ -392,15 +402,9 @@ public:
+     template <CPUExecuteMode mode>
+     void Execute();
+ 
+-    u16 CodeRead16(u32 addr)
+-    {
+-        return BusRead16(addr);
+-    }
+-
+-    u32 CodeRead32(u32 addr)
+-    {
+-        return BusRead32(addr);
+-    }
++    // ssrecomp: in ARM.cpp, with main RAM and the ARM7's own WRAM read directly.
++    u16 CodeRead16(u32 addr);
++    u32 CodeRead32(u32 addr);
+ 
+     void DataRead8(u32 addr, u32* val) override;
+     void DataRead16(u32 addr, u32* val) override;
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index e85dd429..8e23d538 100644
+index e85dd429..f2273793 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -38,6 +38,7 @@ add_library(core STATIC
@@ -64,7 +227,7 @@ index e85dd429..8e23d538 100644
      GPU3D_Texcache.cpp
      GPU3D_Texcache.h
      melonDLDI.h
-@@ -235,3 +236,19 @@ endif()
+@@ -235,3 +236,21 @@ endif()
  #  )
  #endif()
  
@@ -73,7 +236,9 @@ index e85dd429..8e23d538 100644
 +# that have it (the game is compiled on the machine it runs on; not when building for
 +# another device, e.g. Android); ARM gets NEON by default.
 +set(SSR_WIDE_FLAGS -O3 -ffast-math)
-+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND NOT CMAKE_CROSSCOMPILING)
++option(SSR_PORTABLE_X86 "Avoid host-specific AVX2/FMA instructions" OFF)
++if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND NOT CMAKE_CROSSCOMPILING
++   AND NOT SSR_PORTABLE_X86)
 +    include(CheckCXXSourceRuns)
 +    set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma")
 +    check_cxx_source_runs("int main() { return __builtin_cpu_supports(\"avx2\") && __builtin_cpu_supports(\"fma\") ? 0 : 1; }"
@@ -85,10 +250,16 @@ index e85dd429..8e23d538 100644
 +endif()
 +set_source_files_properties(GPU3D_Wide.cpp PROPERTIES COMPILE_OPTIONS "${SSR_WIDE_FLAGS}")
 diff --git a/src/GPU2D_Soft.cpp b/src/GPU2D_Soft.cpp
-index 2f8afcba..d0a124b8 100644
+index 2f8afcba..90044d1d 100644
 --- a/src/GPU2D_Soft.cpp
 +++ b/src/GPU2D_Soft.cpp
-@@ -20,6 +20,10 @@
+@@ -16,10 +16,16 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include <algorithm>
++#include <cstring>
+ #include "GPU2D_Soft.h"
  #include "GPU.h"
  #include "GPU3D.h"
  
@@ -99,7 +270,161 @@ index 2f8afcba..d0a124b8 100644
  namespace melonDS
  {
  namespace GPU2D
-@@ -576,7 +580,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
+@@ -30,7 +36,8 @@ SoftRenderer::SoftRenderer(melonDS::GPU& gpu)
+     // mosaic table is initialized at compile-time
+ }
+ 
+-u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
++// ssrecomp: inlined into the per-pixel loops that call it.
++inline __attribute__((always_inline)) u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
+ {
+     u32 coloreffect = 0;
+     u32 eva, evb;
+@@ -102,6 +109,60 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
+     return val1;
+ }
+ 
++// ssrecomp: most lines of a frame come out the same as in the frame before (a menu on the
++// bottom screen, the overworld standing still). A line is drawn again only if something it
++// is made from changed: the engine's registers, the sprite pixels of the line (drawn
++// beforehand by DrawSprites), the 3D line, or any of its VRAM or palette (CacheEpoch counts
++// those changes). Otherwise the finished line is copied from the last time.
++namespace
++{
++struct LineCache
++{
++    bool valid;
++    u32 epoch, hide;
++    u8 regs[160];
++    u32 obj[256];
++    u8 objWindow[256];
++    u32 line3D[256];
++    u32 out[256];
++};
++LineCache Cache[2][192];
++u32 CacheEpoch[2] = { 1, 1 };
++
++struct SpriteCache
++{
++    bool valid;
++    u32 epoch, count;
++    u8 regs[160];
++    u32 obj[256];
++    u8 objWindow[256];
++};
++SpriteCache SpriteLines[2][192];
++u32 SpriteEpoch[2] = { 1, 1 };
++u8 OAMSeen[2][0x400];
++
++// Whether the engine's palettes (BG and OBJ, 1 KB) differ from when this was last asked.
++u8 PaletteSeen[2][0x400];
++bool PaletteChanged(const u8* palette, u32 num)
++{
++    const u8* p = palette + (num ? 0x400 : 0);
++    if (!memcmp(PaletteSeen[num], p, 0x400)) return false;
++    memcpy(PaletteSeen[num], p, 0x400);
++    return true;
++}
++
++// The unit's registers from DispCnt to MasterBrightness (positions, windows, blending,
++// mosaic counters...), as they are when the line is drawn.
++size_t UnitRegs(const Unit* u, u8* out)
++{
++    const u8* a = (const u8*)&u->DispCnt;
++    const u8* b = (const u8*)(&u->MasterBrightness + 1);
++    const size_t n = std::min<size_t>(b - a, sizeof(LineCache::regs));
++    memcpy(out, a, n);
++    return n;
++}
++}
++
+ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+ {
+     CurUnit = unit;
+@@ -115,20 +176,22 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+     if (CurUnit->Num == 0)
+     {
+         auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
+-        GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
++        bool changed = GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
+         auto bgExtPalDirty = GPU.VRAMDirty_ABGExtPal.DeriveState(GPU.VRAMMap_ABGExtPal, GPU);
+-        GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtPalDirty);
++        changed |= GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtPalDirty);
+         auto objExtPalDirty = GPU.VRAMDirty_AOBJExtPal.DeriveState(&GPU.VRAMMap_AOBJExtPal, GPU);
+-        GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtPalDirty);
++        changed |= GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtPalDirty);
++        if (changed || PaletteChanged(GPU.Palette, 0)) CacheEpoch[0]++;
+     }
+     else
+     {
+         auto bgDirty = GPU.VRAMDirty_BBG.DeriveState(GPU.VRAMMap_BBG, GPU);
+-        GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
++        bool changed = GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
+         auto bgExtPalDirty = GPU.VRAMDirty_BBGExtPal.DeriveState(GPU.VRAMMap_BBGExtPal, GPU);
+-        GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtPalDirty);
++        changed |= GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtPalDirty);
+         auto objExtPalDirty = GPU.VRAMDirty_BOBJExtPal.DeriveState(&GPU.VRAMMap_BOBJExtPal, GPU);
+-        GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtPalDirty);
++        changed |= GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtPalDirty);
++        if (changed || PaletteChanged(GPU.Palette, 1)) CacheEpoch[1]++;
+     }
+ 
+     bool forceblank = false;
+@@ -170,6 +233,40 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+     u32 dispmode = CurUnit->DispCnt >> 16;
+     dispmode &= (CurUnit->Num ? 0x1 : 0x3);
+ 
++    LineCache* cache = nullptr;
++    if (line < 192 && (u32)n3dline == line && dispmode == 1 && !CurUnit->CaptureLatch && !GPU.GPU3D.IsRendererAccelerated())
++    {
++        cache = &Cache[CurUnit->Num][line];
++        const u32 num = CurUnit->Num;
++        u8 regs[sizeof(LineCache::regs)] = {};
++        UnitRegs(CurUnit, regs);
++        const bool with3D = num == 0 && (CurUnit->DispCnt & 0x8) && _3DLine;
++        if (cache->valid && cache->epoch == CacheEpoch[num] && cache->hide == rc_hide_layers[num] &&
++            !memcmp(cache->regs, regs, sizeof(regs)) && !memcmp(cache->obj, OBJLine[num], sizeof(cache->obj)) &&
++            !memcmp(cache->objWindow, OBJWindow[num], sizeof(cache->objWindow)) &&
++            (!with3D || !memcmp(cache->line3D, _3DLine, sizeof(cache->line3D))))
++        {
++            // What DrawScanline_BGOBJ changes besides the picture: the mosaic counter.
++            if (CurUnit->BGMosaicY >= CurUnit->BGMosaicYMax)
++            {
++                CurUnit->BGMosaicY = 0;
++                CurUnit->BGMosaicYMax = CurUnit->BGMosaicSize[1];
++            }
++            else
++                CurUnit->BGMosaicY++;
++            CurUnit->UpdateMosaicCounters(line);
++            memcpy(dst, cache->out, sizeof(cache->out));
++            return;
++        }
++        cache->valid = false;
++        cache->epoch = CacheEpoch[num];
++        cache->hide = rc_hide_layers[num];
++        memcpy(cache->regs, regs, sizeof(regs));
++        memcpy(cache->obj, OBJLine[num], sizeof(cache->obj));
++        memcpy(cache->objWindow, OBJWindow[num], sizeof(cache->objWindow));
++        if (with3D) memcpy(cache->line3D, _3DLine, sizeof(cache->line3D));
++    }
++
+     // always render regular graphics
+     DrawScanline_BGOBJ(line);
+     CurUnit->UpdateMosaicCounters(line);
+@@ -303,6 +400,12 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+ 
+         *(u64*)&dst[i] = c | ((c & 0x00C0C0C000C0C0C0) >> 6) | 0xFF000000FF000000;
+     }
++
++    if (cache)
++    {
++        memcpy(cache->out, dst, sizeof(cache->out));
++        cache->valid = true;
++    }
+ }
+ 
+ void SoftRenderer::VBlankEnd(Unit* unitA, Unit* unitB)
+@@ -576,7 +679,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
  template<u32 bgmode>
  void SoftRenderer::DrawScanlineBGMode(u32 line)
  {
@@ -108,7 +433,7 @@ index 2f8afcba..d0a124b8 100644
      u16* bgCnt = CurUnit->BGCnt;
      for (int i = 3; i >= 0; i--)
      {
-@@ -631,7 +635,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
+@@ -631,7 +734,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
  
  void SoftRenderer::DrawScanlineBGMode6(u32 line)
  {
@@ -117,7 +442,7 @@ index 2f8afcba..d0a124b8 100644
      u16* bgCnt = CurUnit->BGCnt;
      for (int i = 3; i >= 0; i--)
      {
-@@ -659,7 +663,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
+@@ -659,7 +762,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
  
  void SoftRenderer::DrawScanlineBGMode7(u32 line)
  {
@@ -126,7 +451,7 @@ index 2f8afcba..d0a124b8 100644
      u16* bgCnt = CurUnit->BGCnt;
      // mode 7 only has text-mode BG0 and BG1
  
-@@ -691,11 +695,29 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
+@@ -691,11 +794,29 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
  
  void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  {
@@ -156,7 +481,7 @@ index 2f8afcba..d0a124b8 100644
  
          return;
      }
-@@ -741,11 +763,16 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -741,11 +862,16 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  
      if (!GPU.GPU3D.IsRendererAccelerated())
      {
@@ -173,7 +498,82 @@ index 2f8afcba..d0a124b8 100644
              BGOBJLine[i] = ColorComposite(i, val1, val2);
          }
      }
-@@ -1599,6 +1626,10 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+@@ -859,16 +985,6 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+ }
+ 
+ 
+-void SoftRenderer::DrawPixel_Normal(u32* dst, u16 color, u32 flag)
+-{
+-    u8 r = (color & 0x001F) << 1;
+-    u8 g = (color & 0x03E0) >> 4;
+-    u8 b = (color & 0x7C00) >> 9;
+-    //g |= ((color & 0x8000) >> 15);
+-
+-    *(dst+256) = *dst;
+-    *dst = r | (g << 8) | (b << 16) | flag;
+-}
+ 
+ void SoftRenderer::DrawPixel_Accel(u32* dst, u16 color, u32 flag)
+ {
+@@ -965,6 +1081,57 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
+     else
+         tilemapaddr += ((yoff & 0xF8) << 3);
+ 
++    if (!mosaic)
++    {
++        // ssrecomp: without mosaic, one tile row at a time (the same pixels as the loops
++        // below): the row's 8 pixels are read at once, and a row with none is skipped.
++        const u32 flag = 0x01000000 << bgnum;
++        const u8 winbit = 1 << bgnum;
++        const u32 yrow = yoff & 0x7;
++        u32 x = xoff;
++        for (int i = 0; i < 256;)
++        {
++            const u16 tile = *(u16*)&bgvram[(tilemapaddr + ((x & 0xF8) >> 2) + ((x & widexmask) << 3)) & bgvrammask];
++            const u32 first = x & 0x7;
++            const int n = std::min<int>(8 - first, 256 - i);
++            const u32 ty = (tile & 0x0800) ? (7 - yrow) : yrow;
++            const u32 flip = (tile & 0x0400) ? 7 : 0;
++            if (bgcnt & 0x0080)
++            {
++                u64 row;
++                memcpy(&row, &bgvram[(tilesetaddr + ((tile & 0x03FF) << 6) + (ty << 3)) & bgvrammask], 8);
++                if (row)
++                {
++                    u16* tpal = extpal ? CurUnit->GetBGExtPal(extpalslot, tile >> 12) : pal;
++                    for (int k = 0; k < n; k++)
++                    {
++                        const u8 c = row >> (((first + k) ^ flip) * 8);
++                        if (c && (WindowMask[i + k] & winbit))
++                            drawPixel(&BGOBJLine[i + k], tpal[c], flag);
++                    }
++                }
++            }
++            else
++            {
++                u32 row;
++                memcpy(&row, &bgvram[(tilesetaddr + ((tile & 0x03FF) << 5) + (ty << 2)) & bgvrammask], 4);
++                if (row)
++                {
++                    u16* tpal = pal + ((tile & 0xF000) >> 8);
++                    for (int k = 0; k < n; k++)
++                    {
++                        const u8 c = (row >> (((first + k) ^ flip) * 4)) & 0xF;
++                        if (c && (WindowMask[i + k] & winbit))
++                            drawPixel(&BGOBJLine[i + k], tpal[c], flag);
++                    }
++                }
++            }
++            i += n;
++            x += n;
++        }
++        return;
++    }
++
+     u16 curtile;
+     u16* curpal;
+     u32 pixelsaddr;
+@@ -1599,19 +1766,60 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
  
          CurUnit->OBJMosaicY = 0;
          CurUnit->OBJMosaicYCount = 0;
@@ -183,14 +583,104 @@ index 2f8afcba..d0a124b8 100644
 +        memcpy(OAMSnap[CurUnit->Num], &GPU.OAM[CurUnit->Num ? 0x400 : 0], 0x400);
      }
  
-     if (CurUnit->Num == 0)
+-    if (CurUnit->Num == 0)
++    const u32 num = CurUnit->Num;
++    bool changed;
++    if (num == 0)
+     {
+         auto objDirty = GPU.VRAMDirty_AOBJ.DeriveState(GPU.VRAMMap_AOBJ, GPU);
+-        GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
++        changed = GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
+     }
+     else
+     {
+         auto objDirty = GPU.VRAMDirty_BOBJ.DeriveState(GPU.VRAMMap_BOBJ, GPU);
+-        GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
++        changed = GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
+     }
+ 
++    // ssrecomp: like the lines in DrawScanline, a line's sprites are only drawn again if
++    // the OAM, the sprite VRAM or the registers changed (see LineCache).
++    const u8* oamNow = &GPU.OAM[num ? 0x400 : 0];
++    if (changed || memcmp(OAMSeen[num], oamNow, 0x400))
++    {
++        memcpy(OAMSeen[num], oamNow, 0x400);
++        SpriteEpoch[num]++;
++    }
++    SpriteCache* cache = line < 192 ? &SpriteLines[num][line] : nullptr;
++    if (cache)
++    {
++        u8 regs[sizeof(SpriteCache::regs)] = {};
++        UnitRegs(CurUnit, regs);
++        if (cache->valid && cache->epoch == SpriteEpoch[num] && !memcmp(cache->regs, regs, sizeof(regs)))
++        {
++            memcpy(OBJLine[num], cache->obj, sizeof(cache->obj));
++            memcpy(OBJWindow[num], cache->objWindow, sizeof(cache->objWindow));
++            NumSprites[num] = cache->count;
++            return;
++        }
++        cache->epoch = SpriteEpoch[num];
++        memcpy(cache->regs, regs, sizeof(regs));
++    }
++    DrawSpritesLine(line);
++    if (cache)
++    {
++        memcpy(cache->obj, OBJLine[num], sizeof(cache->obj));
++        memcpy(cache->objWindow, OBJWindow[num], sizeof(cache->objWindow));
++        cache->count = NumSprites[num];
++        cache->valid = true;
++    }
++}
++
++void SoftRenderer::DrawSpritesLine(u32 line)
++{
+     NumSprites[CurUnit->Num] = 0;
+     memset(OBJLine[CurUnit->Num], 0, 256*4);
+     memset(OBJWindow[CurUnit->Num], 0, 256);
+@@ -1634,15 +1842,29 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+         64, 32, 64, 8
+     };
+ 
+-    for (int bgnum = 0x0C00; bgnum >= 0x0000; bgnum -= 0x0400)
++    // ssrecomp: the sprites sorted by priority in one pass, instead of four passes over
++    // all 128; each priority's sprites keep their order (128 down to 0).
++    u8 byPrio[4][128];
++    int numByPrio[4] = {0, 0, 0, 0};
++    // Those not on this line (by the tests below) are left out here already.
++    for (int sprnum = 127; sprnum >= 0; sprnum--)
+     {
+-        for (int sprnum = 127; sprnum >= 0; sprnum--)
++        const u16* attrib = &oam[sprnum*4];
++        if ((attrib[0] & 0x0300) == 0x0200) continue; // disabled
++        u32 height = spriteheight[(attrib[0] >> 14) | ((attrib[1] & 0xC000) >> 12)];
++        if ((attrib[0] & 0x0300) == 0x0300) height <<= 1; // double size
++        if (((line - (attrib[0] & 0xFF)) & 0xFF) >= height) continue;
++        const int prio = (attrib[2] >> 10) & 0x3;
++        byPrio[prio][numByPrio[prio]++] = sprnum;
++    }
++
++    for (int prio = 3; prio >= 0; prio--)
++    {
++        for (int k = 0; k < numByPrio[prio]; k++)
+         {
++            const int sprnum = byPrio[prio][k];
+             u16* attrib = &oam[sprnum*4];
+ 
+-            if ((attrib[2] & 0x0C00) != bgnum)
+-                continue;
+-
+             bool iswin = (((attrib[0] >> 10) & 0x3) == 2);
+ 
+             u32 sprline;
 diff --git a/src/GPU2D_Soft.h b/src/GPU2D_Soft.h
-index 4beaf8f9..45d26440 100644
+index 4beaf8f9..61a3e491 100644
 --- a/src/GPU2D_Soft.h
 +++ b/src/GPU2D_Soft.h
-@@ -36,6 +36,24 @@ public:
+@@ -35,7 +35,26 @@ public:
+ 
      void DrawScanline(u32 line, Unit* unit) override;
      void DrawSprites(u32 line, Unit* unit) override;
++    void DrawSpritesLine(u32 line); // ssrecomp: DrawSprites without its cache
      void VBlankEnd(Unit* unitA, Unit* unitB) override;
 +
 +    // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
@@ -213,6 +703,24 @@ index 4beaf8f9..45d26440 100644
  private:
      melonDS::GPU& GPU;
      alignas(8) u32 BGOBJLine[256*3];
+@@ -124,7 +143,16 @@ private:
+     void DrawScanlineBGMode7(u32 line);
+     void DrawScanline_BGOBJ(u32 line);
+ 
+-    static void DrawPixel_Normal(u32* dst, u16 color, u32 flag);
++    // ssrecomp: defined here so that it is inlined into the drawing loops.
++    static inline __attribute__((always_inline)) void DrawPixel_Normal(u32* dst, u16 color, u32 flag)
++    {
++        u8 r = (color & 0x001F) << 1;
++        u8 g = (color & 0x03E0) >> 4;
++        u8 b = (color & 0x7C00) >> 9;
++
++        *(dst+256) = *dst;
++        *dst = r | (g << 8) | (b << 16) | flag;
++    }
+     static void DrawPixel_Accel(u32* dst, u16 color, u32 flag);
+ 
+     typedef void (*DrawPixel)(u32* dst, u16 color, u32 flag);
 diff --git a/src/GPU3D.cpp b/src/GPU3D.cpp
 index 1204741d..b3332a5d 100644
 --- a/src/GPU3D.cpp
@@ -488,3 +996,187 @@ index a201c6a6..0cbc750b 100644
      // Notes on the interpolator:
      //
      // This is a theory on how the DS hardware interpolates values. It matches hardware output
+diff --git a/src/NDS.cpp b/src/NDS.cpp
+index f45051e2..01137c53 100644
+--- a/src/NDS.cpp
++++ b/src/NDS.cpp
+@@ -49,7 +49,11 @@ namespace melonDS
+ {
+ using namespace Platform;
+ 
+-const s32 kMaxIterationCycles = 64;
++// ssrecomp: 512 instead of 64. Between two slices the core runs the timers, the 3D unit,
++// the ARM7 and the system events, and leaves the recompiled code; with longer slices
++// that is done less often (about 10% faster). Events still happen at their exact times;
++// only how finely the two CPUs take turns changes (melonDS's JIT is coarser still).
++const s32 kMaxIterationCycles = 512;
+ const s32 kIterationCycleMargin = 8;
+ 
+ // timing notes
+@@ -2763,8 +2767,70 @@ bool NDS::ARM7GetMemRegion(u32 addr, bool write, MemRegion* region)
+     case (addr+2): return ((val) >> 16) & 0xFF; \
+     case (addr+3): return (val) >> 24;
+ 
++// ssrecomp: ARM9 register reads per console, so that SkipCardWait can tell that nothing
++// else (an interrupt handler, which always reads IE and IF) ran between two polls.
++struct IO9Count { const NDS* nds; u64 reads; };
++static IO9Count io9Counts[2] = {};
++static u64& IO9Reads(const NDS& nds)
++{
++    IO9Count& c = io9Counts[0].nds == &nds || !io9Counts[0].nds ? io9Counts[0] : io9Counts[1];
++    c.nds = &nds;
++    return c.reads;
++}
++
++// ssrecomp: the card library waits for each word of a ROM transfer in the loop
++//     A:  ldr rX, [ROMCTRL] / tst rX, #0x800000 / beq B ... B: tst rX, #0x80000000 / bne A
++// ROMCTRL only changes at the card's transfer events, between two time slices, so while
++// a word is not ready every turn of the loop is the same within a slice. As in SkipSPIWait
++// (ARM7) the turns that still fit in the slice are skipped by advancing the clock by whole
++// turns, measured between two polls with no other register read between them. The core
++// does this for every ARM9 alike, recompiled or interpreted, so lockstep still compares
++// like with like.
++static void SkipCardWait(NDS& nds)
++{
++    struct Seen { const NDS* nds; u32 r15; u64 time, reads; };
++    static Seen seen[2] = {};
++    Seen& last = seen[0].nds == &nds || !seen[0].nds ? seen[0] : seen[1];
++    last.nds = &nds;
++    ARMv5& cpu = nds.ARM9;
++    const u32 ldr = cpu.CurInstr;
++    const u32 rd = (ldr >> 12) & 0xF;
++    const u32 a = cpu.R[15] - 8;
++    const u32 beq = cpu.NextInstr[1];
++    const u32 b = a + 16 + ((u32)((s32)(beq << 8) >> 6));
++    bool loop = !(cpu.CPSR & 0x20) && (ldr & 0xFFF00FFF) == 0xE5900000 && cpu.NextInstr[0] == (0xE3100502u | (rd << 16)) &&
++        (beq & 0xFF800000) == 0x0A000000 && (a >> 24) == 0x02 && (b >> 24) == 0x02;
++    if (loop)
++    {
++        const u32 tst = *(u32*)&nds.MainRAM[b & nds.MainRAMMask];
++        const u32 bne = *(u32*)&nds.MainRAM[(b + 4) & nds.MainRAMMask];
++        loop = tst == (0xE3100102u | (rd << 16)) && bne == (0x1A000000u | (((a - (b + 12)) >> 2) & 0xFFFFFF));
++    }
++    const u64 reads = IO9Reads(nds);
++    if (!loop)
++    {
++        last.r15 = 0;
++        return;
++    }
++    u64 now = nds.ARM9Timestamp;
++    const bool irqNext = cpu.IRQ && !(cpu.CPSR & 0x80);
++    if (!irqNext && last.r15 == cpu.R[15] && reads == last.reads + 1 && now > last.time)
++    {
++        const u64 turn = now - last.time;
++        if (now + turn < nds.ARM9Target)
++        {
++            now += (nds.ARM9Target - now - 1) / turn * turn;
++            nds.ARM9Timestamp = now;
++        }
++    }
++    last.r15 = cpu.R[15];
++    last.time = now;
++    last.reads = reads;
++}
++
+ u8 NDS::ARM9IORead8(u32 addr)
+ {
++    IO9Reads(*this)++;
+     switch (addr)
+     {
+     case 0x04000130: LagFrameFlag = false; return KeyInput & 0xFF;
+@@ -2898,6 +2964,7 @@ u8 NDS::ARM9IORead8(u32 addr)
+ 
+ u16 NDS::ARM9IORead16(u32 addr)
+ {
++    IO9Reads(*this)++;
+     switch (addr)
+     {
+     case 0x04000004: return GPU.DispStat[0];
+@@ -3056,6 +3123,7 @@ u16 NDS::ARM9IORead16(u32 addr)
+ 
+ u32 NDS::ARM9IORead32(u32 addr)
+ {
++    IO9Reads(*this)++;
+     switch (addr)
+     {
+     case 0x04000004: return GPU.DispStat[0] | (GPU.VCount << 16);
+@@ -3099,7 +3167,11 @@ u32 NDS::ARM9IORead32(u32 addr)
+         return 0;
+     case 0x040001A4:
+         if (!(ExMemCnt[0] & (1<<11)))
+-            return NDSCartSlot.GetROMCnt();
++        {
++            const u32 cnt = NDSCartSlot.GetROMCnt();
++            if ((cnt & 0x80800000) == 0x80000000 && ConsoleType == 0) SkipCardWait(*this);
++            return cnt;
++        }
+         return 0;
+ 
+     case 0x040001A8:
+@@ -3807,6 +3879,52 @@ u8 NDS::ARM7IORead8(u32 addr)
+     return 0;
+ }
+ 
++// ssrecomp: the ARM7 waits for each SPI transfer (touch screen, firmware, power) in a loop
++//     ldrh rX, [rY] / tst rX, #0x80 / bne <ldrh>
++// reading SPICNT until the busy bit clears. That only happens at the Event_SPITransfer
++// event, between two time slices, so within a slice every turn of the loop is the same:
++// once one full turn has been seen (three instructions since the last read here), the
++// turns that still fit in the slice are skipped by advancing the clock by whole turns.
++// The ARM7 then leaves the loop at the same cycle with the same registers as before.
++extern u64 rc_arm7_instructions;
++static void SkipSPIWait(NDS& nds)
++{
++    // Per console (the lockstep test runs two). The instruction count is shared, but two
++    // reads in the same loop are at least three of this console's instructions apart, so
++    // a difference of exactly three means one turn and nothing run by the other console.
++    struct Seen { const NDS* nds; u32 r15; u64 time, count; };
++    static Seen seen[2] = {};
++    Seen& last = seen[0].nds == &nds || !seen[0].nds ? seen[0] : seen[1];
++    last.nds = &nds;
++    u32& lastR15 = last.r15;
++    u64& lastTime = last.time;
++    u64& lastCount = last.count;
++    ARMv4& cpu = nds.ARM7;
++    const u32 ldrh = cpu.CurInstr;
++    const u32 rd = (ldrh >> 12) & 0xF;
++    if ((cpu.CPSR & 0x20) || (ldrh & 0xFFF00FFF) != 0xE1D000B0 || cpu.NextInstr[0] != (0xE3100080u | (rd << 16)) ||
++        cpu.NextInstr[1] != 0x1AFFFFFC)
++    {
++        lastR15 = 0;
++        return;
++    }
++    u64 now = nds.ARM7Timestamp;
++    // (Not with an interrupt waiting: it is taken after this instruction.)
++    const bool irqNext = cpu.IRQ && !(cpu.CPSR & 0x80);
++    if (!irqNext && lastR15 == cpu.R[15] && rc_arm7_instructions == lastCount + 3 && now > lastTime)
++    {
++        const u64 turn = now - lastTime;
++        if (now + turn < nds.ARM7Target)
++        {
++            now += (nds.ARM7Target - now - 1) / turn * turn;
++            nds.ARM7Timestamp = now;
++        }
++    }
++    lastR15 = cpu.R[15];
++    lastTime = now;
++    lastCount = rc_arm7_instructions;
++}
++
+ u16 NDS::ARM7IORead16(u32 addr)
+ {
+     switch (addr)
+@@ -3883,7 +4001,12 @@ u16 NDS::ARM7IORead16(u32 addr)
+                   (NDSCartSlot.GetROMCommand(7) << 8);
+         return 0;
+ 
+-    case 0x040001C0: return SPI.ReadCnt();
++    case 0x040001C0:
++        {
++            const u16 cnt = SPI.ReadCnt();
++            if ((cnt & 0x80) && ConsoleType == 0) SkipSPIWait(*this);
++            return cnt;
++        }
+     case 0x040001C2: return SPI.ReadData();
+ 
+     case 0x04000204: return ExMemCnt[1];

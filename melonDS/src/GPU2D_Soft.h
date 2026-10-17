@@ -35,6 +35,7 @@ public:
 
     void DrawScanline(u32 line, Unit* unit) override;
     void DrawSprites(u32 line, Unit* unit) override;
+    void DrawSpritesLine(u32 line); // ssrecomp: DrawSprites without its cache
     void VBlankEnd(Unit* unitA, Unit* unitB) override;
 
     // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
@@ -142,7 +143,16 @@ private:
     void DrawScanlineBGMode7(u32 line);
     void DrawScanline_BGOBJ(u32 line);
 
-    static void DrawPixel_Normal(u32* dst, u16 color, u32 flag);
+    // ssrecomp: defined here so that it is inlined into the drawing loops.
+    static inline __attribute__((always_inline)) void DrawPixel_Normal(u32* dst, u16 color, u32 flag)
+    {
+        u8 r = (color & 0x001F) << 1;
+        u8 g = (color & 0x03E0) >> 4;
+        u8 b = (color & 0x7C00) >> 9;
+
+        *(dst+256) = *dst;
+        *dst = r | (g << 8) | (b << 16) | flag;
+    }
     static void DrawPixel_Accel(u32* dst, u16 color, u32 flag);
 
     typedef void (*DrawPixel)(u32* dst, u16 color, u32 flag);

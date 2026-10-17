@@ -49,8 +49,10 @@ with tempfile.TemporaryDirectory() as tmp:
                     build_dir, tmp], check=True, stdout=subprocess.DEVNULL)
     table = open(os.path.join(tmp, 'apps_table.cpp')).read()
 row = re.compile(r'\{"(\w+)", "(\w+)", 0x([0-9A-F]{8})u\}')
+app_row = re.compile(r'\{"(\w+)", "(\w+)", 0x([0-9A-F]{8})u, 0x([0-9A-F]{8})u, "(\w*)", 0x([0-9A-F]{8})u, "(\w*)"\}')
 apps_part, focus_part = table.split('rc_focus_syms')
-apps = [[m.group(1), m.group(2), int(m.group(3), 16)] for m in row.finditer(apps_part)]
+apps = [[m.group(1), m.group(2), int(m.group(3), 16), int(m.group(4), 16), m.group(5), int(m.group(6), 16), m.group(7)]
+        for m in app_row.finditer(apps_part)]
 focus = [[m.group(1), m.group(2), int(m.group(3), 16)] for m in row.finditer(focus_part)]
 
 layout = {

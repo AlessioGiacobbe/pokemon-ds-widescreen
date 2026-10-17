@@ -22,7 +22,7 @@ using namespace melonDS::ARMInterpreter;
 
 // ARMv5::CodeRead32(addr, branch), inlined: the prefetch of every recompiled instruction
 // goes through it. Has to stay identical to the function in CP15.cpp.
-static inline melonDS::u32 rc_code_read32(melonDS::ARMv5* cpu, melonDS::u32 addr, bool branch = false)
+static inline __attribute__((always_inline)) melonDS::u32 rc_code_read32(melonDS::ARMv5* cpu, melonDS::u32 addr, bool branch = false)
 {
     if (addr < cpu->ITCMSize)
     {
@@ -77,17 +77,21 @@ void rc_dw32s(melonDS::ARMv5* cpu, melonDS::u32 addr, melonDS::u32 val);
 
 // The opcode actually fetched must be the one this statement was generated from.
 // It will not be when another overlay occupies the address, or before code is loaded.
+// Every chunk ends in one call to rc_bail_arm or rc_bail_thumb (label rc_bail) that all
+// its statements share, instead of a copy of the call in each.
 #define RC_A_GUARD(opc) \
-    if (RC_UNLIKELY(cpu->CurInstr != (opc))) { rc_bail_arm(cpu, RC_SECTION); return; }
+    if (RC_UNLIKELY(cpu->CurInstr != (opc))) goto rc_bail;
 
 #define RC_T_GUARD(opc) \
-    if (RC_UNLIKELY((melonDS::u16)cpu->CurInstr != (opc))) { rc_bail_thumb(cpu, RC_SECTION); return; }
+    if (RC_UNLIKELY((melonDS::u16)cpu->CurInstr != (opc))) goto rc_bail;
 
+// (rc_single_here: rc_single as it was when the chunk was entered, kept in a local by
+// every chunk; it only changes between chunks, and a local need not be read again.)
 // After an instruction: leave the chunk if control flow left the straight line, if the
 // CPU must stop (halt or IRQ), or if the time slice is used up. The dispatcher then
 // performs the interpreter's post-instruction steps, so returning early is always safe.
 #define RC_POST(expected_r15) \
-    if (RC_UNLIKELY((cpu->R[15] != (expected_r15)) | cpu->StopExecution | (melonDS::u32)rc_single)) return; \
+    if (RC_UNLIKELY((cpu->R[15] != (expected_r15)) | cpu->StopExecution | (melonDS::u32)rc_single_here)) return; \
     { \
         melonDS::u64 ts = nds.ARM9Timestamp + cpu->Cycles; \
         if (RC_UNLIKELY(ts >= nds.ARM9Target)) return; \
@@ -98,7 +102,7 @@ void rc_dw32s(melonDS::ARMv5* cpu, melonDS::u32 addr, melonDS::u32 val);
 // After an instruction that cannot change R15 or stop the CPU (translated arithmetic,
 // which calls nothing): only the time slice is checked.
 #define RC_POST_PURE \
-    if (RC_UNLIKELY((melonDS::u32)rc_single)) return; \
+    if (RC_UNLIKELY((melonDS::u32)rc_single_here)) return; \
     { \
         melonDS::u64 ts = nds.ARM9Timestamp + cpu->Cycles; \
         if (RC_UNLIKELY(ts >= nds.ARM9Target)) return; \
@@ -109,7 +113,7 @@ void rc_dw32s(melonDS::ARMv5* cpu, melonDS::u32 addr, melonDS::u32 val);
 // The same for a branch whose target is inside this chunk: when it is taken, execution
 // continues at the target's statement instead of going back through the dispatcher.
 #define RC_POST_BR(expected_r15, target_r15, label) \
-    if (RC_UNLIKELY(cpu->StopExecution | (melonDS::u32)rc_single)) return; \
+    if (RC_UNLIKELY(cpu->StopExecution | (melonDS::u32)rc_single_here)) return; \
     if (cpu->R[15] == (target_r15)) \
     { \
         melonDS::u64 ts = nds.ARM9Timestamp + cpu->Cycles; \

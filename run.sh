@@ -15,5 +15,7 @@ if [ ! -x "$BUILD/ssrecomp" ] || [ ! -f "$ROM" ]; then
     fi
     exit 1
 fi
+# The messages also go to game.log here (made new each time), for bug reports: started from
+# Steam or a desktop shortcut there is no terminal to see them in.
 "$BUILD/ssrecomp" "$ROM" --save "$HERE/soulsilver.sav" "$@" 2>&1 | tee "$HERE/game.log"
 exit "${PIPESTATUS[0]}"

@@ -118,6 +118,7 @@ struct WideAccess
     static inline int BackW = 0, BackH = 0;
     static inline std::vector<s32> Depth;
     static inline std::vector<u8> Attr; // bit 7 fog, bits 0-6 translucent polygon ID + 1
+    static inline std::vector<u16> Writer; // which opaque triangle (Tri::Order) drew the pixel
     static inline std::unique_ptr<Workers> Pool;
     static inline bool Drawing = false;
 
@@ -483,6 +484,7 @@ struct WideAccess
         Back.resize((size_t)W * H);
         Depth.resize((size_t)W * H);
         Attr.resize((size_t)W * H);
+        Writer.resize((size_t)W * H);
         BackW = W;
         BackH = H;
 
@@ -505,14 +507,17 @@ struct WideAccess
             WideVertex V[3];
             int Y0, Y1; // rows touched
             Texture* Tex;
-            bool FrontFirst; // drawn in reverse order: on equal depth it replaces what is there
+            bool FrontFirst; // drawn out of order: on equal depth it wins if it came first
+            u16 Order;       // its place among the opaque triangles, in the game's order
+            float NearZ;
         };
-        // Opaque polygons arrive far to near. Drawn like that, a forest shades every pixel
-        // many times over, so they are drawn near to far instead and the depth test rejects
-        // what is hidden before any shading. To keep the outcome the same, a polygon drawn
-        // this way wins ties in depth (it came first in the original order). Polygons that
-        // test for equal depth (decals) need what is under them drawn first, and translucent
-        // ones are blended in order, so those follow in their original order.
+        // Opaque polygons arrive in no particular order of depth (the hardware sorts them by
+        // screen position). Drawn like that, a forest shades every pixel many times over, so
+        // they are drawn near to far instead and the depth test rejects what is hidden
+        // before any shading. To keep the outcome the same, on equal depth the one earlier in
+        // the original order wins (Writer records who drew each pixel). Polygons that test
+        // for equal depth (decals) need what is under them drawn first, and translucent ones
+        // are blended in order, so those follow in their original order.
         static std::vector<Tri> tris, opaqueTris, laterTris;
         tris.clear();
         opaqueTris.clear();
@@ -569,10 +574,15 @@ struct WideAccess
                 t.Y1 = std::min(H - 1, (int)std::floor(ymax - 0.5f + 0.4f));
                 if (t.Y1 < t.Y0) continue;
                 t.FrontFirst = !poly->Translucent && !(poly->Attr & (1 << 14));
+                t.NearZ = std::min({ t.V[0].Z, t.V[1].Z, t.V[2].Z });
+                if (t.FrontFirst) t.Order = (u16)std::min<size_t>(opaqueTris.size(), 0xFFFE);
                 (t.FrontFirst ? opaqueTris : laterTris).push_back(t);
             }
         }
-        tris.assign(opaqueTris.rbegin(), opaqueTris.rend());
+        // Nearest first (by its nearest corner), so that the depth test rejects as much as
+        // possible; on equal depth the one first in the game's order wins (Writer).
+        std::stable_sort(opaqueTris.begin(), opaqueTris.end(), [](const Tri& a, const Tri& b) { return a.NearZ < b.NearZ; });
+        tris.assign(opaqueTris.begin(), opaqueTris.end());
         tris.insert(tris.end(), laterTris.begin(), laterTris.end());
 
         // The drawing itself runs on other threads while emulation goes on, so everything it
@@ -611,6 +621,7 @@ struct WideAccess
                 std::fill(Back.begin() + (size_t)y * W, Back.begin() + (size_t)(y + 1) * W, clearColor);
                 std::fill(Depth.begin() + (size_t)y * W, Depth.begin() + (size_t)(y + 1) * W, clearZ);
                 std::fill(Attr.begin() + (size_t)y * W, Attr.begin() + (size_t)(y + 1) * W, clearAttr);
+                std::fill(Writer.begin() + (size_t)y * W, Writer.begin() + (size_t)(y + 1) * W, 0xFFFF);
             }
 
             for (const Tri& t : tris)
@@ -655,10 +666,12 @@ struct WideAccess
                 const float aS = a.S, bS = b.S, cS = c.S, aT = a.T, bT = b.T, cT = c.T;
                 u32* const texels = tex ? tex->Texels.data() : nullptr;
                 const bool frontFirst = t.FrontFirst;
+                const u16 order = t.Order;
                 const int Wl = W;
                 u32* const backData = Back.data();
                 s32* const depthData = Depth.data();
                 u8* const attrData = Attr.data();
+                u16* const writerData = Writer.data();
                 const u16* const toonTable = toonCopy;
                 // Vertices are placed to a sixteenth of a DS pixel, which is a visible fraction
                 // of an output pixel, so where three polygons meet along an edge a sliver can
@@ -701,6 +714,7 @@ struct WideAccess
                     u32* color = backData + (size_t)y * Wl;
                     s32* depth = depthData + (size_t)y * Wl;
                     u8* pattr = attrData + (size_t)y * Wl;
+                    u16* writer = writerData + (size_t)y * Wl;
 
                     const double l0 = E[0][0] * (x0 + 0.5) + E[0][1] * py + E[0][2];
                     const double l1 = E[1][0] * (x0 + 0.5) + E[1][1] * py + E[1][2];
@@ -726,40 +740,40 @@ struct WideAccess
                         float q0 = w0 * aIW, q1 = w1 * bIW, q2 = w2 * cIW;
                         float qs = q0 + q1 + q2;
                         if (qs <= 0) continue;
-                        float iq = 1.0f / qs;
-
-                        s32 z = wbuffer ? (s32)(wScale * iq) : (s32)(w0 * aZ + w1 * bZ + w2 * cZ);
+                        // A Z-buffered polygon's depth needs no division, so the depth test
+                        // (which most pixels fail, being drawn near to far) comes first.
+                        s32 z = 0;
                         const s32 dz = depth[x];
-                        if (depthEqual)
+                        if (!wbuffer)
                         {
-                            s32 diff = dz - z;
-                            if (diff < -equalTolerance || diff > equalTolerance) continue;
+                            z = (s32)(w0 * aZ + w1 * bZ + w2 * cZ);
+                            if (depthEqual)
+                            {
+                                s32 diff = dz - z;
+                                if (diff < -equalTolerance || diff > equalTolerance) continue;
+                            }
+                            else if (z > dz || (z == dz && !(frontFirst && order < writer[x])))
+                                continue;
                         }
-                        else if (z > dz || (z == dz && !frontFirst))
-                            continue;
+                        float iq = 1.0f / qs;
+                        if (wbuffer)
+                        {
+                            z = (s32)(wScale * iq);
+                            if (depthEqual)
+                            {
+                                s32 diff = dz - z;
+                                if (diff < -equalTolerance || diff > equalTolerance) continue;
+                            }
+                            else if (z > dz || (z == dz && !(frontFirst && order < writer[x])))
+                                continue;
+                        }
 
                         q0 *= iq;
                         q1 *= iq;
                         q2 *= iq;
-                        int vr = flatR, vg = flatG, vb = flatB;
-                        if (!flat)
-                        {
-                            vr = std::clamp((int)(q0 * aR + q1 * bR + q2 * cR + 0.5f), 0, 63);
-                            vg = std::clamp((int)(q0 * aG + q1 * bG + q2 * cG + 0.5f), 0, 63);
-                            vb = std::clamp((int)(q0 * aB + q1 * bB + q2 * cB + 0.5f), 0, 63);
-                        }
-                        const int rawR = vr;
-                        if (highlight)
-                            vg = vb = vr;
-                        else if (toon)
-                        {
-                            u16 tc = toonTable[vr >> 1];
-                            vr = (tc << 1) & 0x3E; if (vr) vr++;
-                            vg = (tc >> 4) & 0x3E; if (vg) vg++;
-                            vb = (tc >> 9) & 0x3E; if (vb) vb++;
-                        }
-
-                        u32 r, gr, bl, alpha;
+                        // The alpha test first: it needs only the texel, and a quarter of the
+                        // pixels (the clear parts of billboards) stop there.
+                        u32 r, gr, bl, alpha, texel = 0;
                         if (tex)
                         {
                             // (+32768 keeps the value positive so the conversion rounds down)
@@ -784,7 +798,7 @@ struct WideAccess
                             else
                                 tv = tv < 0 ? 0 : tv >= texH ? texH - 1 : tv;
 
-                            u32 texel = texels[(size_t)tv * texW + ts];
+                            texel = texels[(size_t)tv * texW + ts];
                             if (!texel)
                             {
                                 u16 tcolor;
@@ -796,6 +810,34 @@ struct WideAccess
                                 texel = 0x80000000 | tr | (tg << 8) | (tb << 16) | ((u32)talpha << 24);
                                 texels[(size_t)tv * texW + ts] = texel;
                             }
+                            const u32 ta = (texel >> 24) & 0x1F;
+                            alpha = (blendMode & 1) ? polyAlpha : ((ta + 1) * (polyAlpha + 1) - 1) >> 5;
+                        }
+                        else
+                            alpha = polyAlpha;
+                        if (polyAlpha == 0) alpha = 31; // wireframe polygons are drawn filled here
+                        if (alpha <= alphaRef) continue;
+
+                        int vr = flatR, vg = flatG, vb = flatB;
+                        if (!flat)
+                        {
+                            vr = std::clamp((int)(q0 * aR + q1 * bR + q2 * cR + 0.5f), 0, 63);
+                            vg = std::clamp((int)(q0 * aG + q1 * bG + q2 * cG + 0.5f), 0, 63);
+                            vb = std::clamp((int)(q0 * aB + q1 * bB + q2 * cB + 0.5f), 0, 63);
+                        }
+                        const int rawR = vr;
+                        if (highlight)
+                            vg = vb = vr;
+                        else if (toon)
+                        {
+                            u16 tc = toonTable[vr >> 1];
+                            vr = (tc << 1) & 0x3E; if (vr) vr++;
+                            vg = (tc >> 4) & 0x3E; if (vg) vg++;
+                            vb = (tc >> 9) & 0x3E; if (vb) vb++;
+                        }
+
+                        if (tex)
+                        {
                             const u32 tr = texel & 0x3F, tg = (texel >> 8) & 0x3F, tb = (texel >> 16) & 0x3F, ta = (texel >> 24) & 0x1F;
                             if (blendMode & 1)
                             {
@@ -808,7 +850,6 @@ struct WideAccess
                                     gr = ((tg * ta) + (vg * (31 - ta))) >> 5;
                                     bl = ((tb * ta) + (vb * (31 - ta))) >> 5;
                                 }
-                                alpha = polyAlpha;
                             }
                             else
                             {
@@ -816,7 +857,6 @@ struct WideAccess
                                 r = ((tr + 1) * (vr + 1) - 1) >> 6;
                                 gr = ((tg + 1) * (vg + 1) - 1) >> 6;
                                 bl = ((tb + 1) * (vb + 1) - 1) >> 6;
-                                alpha = ((ta + 1) * (polyAlpha + 1) - 1) >> 5;
                             }
                         }
                         else
@@ -824,7 +864,6 @@ struct WideAccess
                             r = vr;
                             gr = vg;
                             bl = vb;
-                            alpha = polyAlpha;
                         }
                         if (highlight)
                         {
@@ -836,8 +875,6 @@ struct WideAccess
                             gr = std::min<u32>(63, gr + hg);
                             bl = std::min<u32>(63, bl + hb);
                         }
-                        if (polyAlpha == 0) alpha = 31; // wireframe polygons are drawn filled here
-                        if (alpha <= alphaRef) continue;
 
                         r = (r << 2) | (r >> 4);
                         gr = (gr << 2) | (gr >> 4);
@@ -848,6 +885,7 @@ struct WideAccess
                             color[x] = 0xFF000000 | (r << 16) | (gr << 8) | bl;
                             depth[x] = z;
                             pattr[x] = fogBit;
+                            if (frontFirst) writer[x] = order;
                         }
                         else
                         {
@@ -864,7 +902,11 @@ struct WideAccess
                             }
                             da = std::max(da, (alpha << 3) | (alpha >> 2));
                             color[x] = (da << 24) | (r << 16) | (gr << 8) | bl;
-                            if (attr & (1 << 11)) depth[x] = z;
+                            if (attr & (1 << 11))
+                            {
+                                depth[x] = z;
+                                if (frontFirst) writer[x] = order;
+                            }
                             pattr[x] = (u8)(polyId | (pattr[x] & fogBit));
                         }
                     }

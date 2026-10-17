@@ -359,6 +359,39 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     NDS.MonitorARM9Jump(addr);
 }
 
+// ssrecomp: the ARM7 runs from main RAM or WRAM almost all the time; those are
+// read and written here as NDS::ARM7Read/Write do it (with no JIT, nothing else happens
+// on a write), the rest goes through the bus as before.
+// (Not for the DSi, whose ARM7 bus is different.)
+static inline __attribute__((always_inline)) u8* ARM7DirectRAM(melonDS::NDS& nds, u32 addr)
+{
+    if (nds.ConsoleType != 0) return nullptr;
+    switch (addr & 0xFF800000)
+    {
+    case 0x02000000:
+    case 0x02800000:
+        return &nds.MainRAM[addr & nds.MainRAMMask];
+    case 0x03000000:
+        if (nds.SWRAM_ARM7.Mem) return &nds.SWRAM_ARM7.Mem[addr & nds.SWRAM_ARM7.Mask];
+        return &nds.ARM7WRAM[addr & (ARM7WRAMSize - 1)];
+    case 0x03800000:
+        return &nds.ARM7WRAM[addr & (ARM7WRAMSize - 1)];
+    }
+    return nullptr;
+}
+
+u16 ARMv4::CodeRead16(u32 addr)
+{
+    if (u8* p = ARM7DirectRAM(NDS, addr & ~1u)) return *(u16*)p;
+    return BusRead16(addr);
+}
+
+u32 ARMv4::CodeRead32(u32 addr)
+{
+    if (u8* p = ARM7DirectRAM(NDS, addr & ~3u)) return *(u32*)p;
+    return BusRead32(addr);
+}
+
 void ARMv4::JumpTo(u32 addr, bool restorecpsr)
 {
     if (restorecpsr)
@@ -735,6 +768,9 @@ template void ARMv5::Execute<CPUExecuteMode::InterpreterGDB>();
 template void ARMv5::Execute<CPUExecuteMode::JIT>();
 #endif
 
+// ssrecomp: ARM7 instructions run so far (see SkipSPIWait in NDS.cpp).
+u64 rc_arm7_instructions = 0;
+
 template <CPUExecuteMode mode>
 void ARMv4::Execute()
 {
@@ -802,6 +838,7 @@ void ARMv4::Execute()
         else
 #endif
         {
+            rc_arm7_instructions++;
             if (CPSR & 0x20) // THUMB
             {
                 if constexpr (mode == CPUExecuteMode::InterpreterGDB)
@@ -1127,7 +1164,8 @@ u32 ARMv5::ReadMem(u32 addr, int size)
 
 void ARMv4::DataRead8(u32 addr, u32* val)
 {
-    *val = BusRead8(addr);
+    u8* p = ARM7DirectRAM(NDS, addr);
+    *val = p ? *p : BusRead8(addr);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
 }
@@ -1136,7 +1174,8 @@ void ARMv4::DataRead16(u32 addr, u32* val)
 {
     addr &= ~1;
 
-    *val = BusRead16(addr);
+    u8* p = ARM7DirectRAM(NDS, addr);
+    *val = p ? *(u16*)p : BusRead16(addr);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
 }
@@ -1145,7 +1184,8 @@ void ARMv4::DataRead32(u32 addr, u32* val)
 {
     addr &= ~3;
 
-    *val = BusRead32(addr);
+    u8* p = ARM7DirectRAM(NDS, addr);
+    *val = p ? *(u32*)p : BusRead32(addr);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
 }
@@ -1154,13 +1194,15 @@ void ARMv4::DataRead32S(u32 addr, u32* val)
 {
     addr &= ~3;
 
-    *val = BusRead32(addr);
+    u8* p = ARM7DirectRAM(NDS, addr);
+    *val = p ? *(u32*)p : BusRead32(addr);
     DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
 }
 
 void ARMv4::DataWrite8(u32 addr, u8 val)
 {
-    BusWrite8(addr, val);
+    if (u8* p = ARM7DirectRAM(NDS, addr)) *p = val;
+    else BusWrite8(addr, val);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
 }
@@ -1169,7 +1211,8 @@ void ARMv4::DataWrite16(u32 addr, u16 val)
 {
     addr &= ~1;
 
-    BusWrite16(addr, val);
+    if (u8* p = ARM7DirectRAM(NDS, addr)) *(u16*)p = val;
+    else BusWrite16(addr, val);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
 }
@@ -1178,7 +1221,8 @@ void ARMv4::DataWrite32(u32 addr, u32 val)
 {
     addr &= ~3;
 
-    BusWrite32(addr, val);
+    if (u8* p = ARM7DirectRAM(NDS, addr)) *(u32*)p = val;
+    else BusWrite32(addr, val);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
 }
@@ -1187,7 +1231,8 @@ void ARMv4::DataWrite32S(u32 addr, u32 val)
 {
     addr &= ~3;
 
-    BusWrite32(addr, val);
+    if (u8* p = ARM7DirectRAM(NDS, addr)) *(u32*)p = val;
+    else BusWrite32(addr, val);
     DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
 }
 
@@ -1298,6 +1343,7 @@ u32 ARMv4::BusRead32(u32 addr)
 {
     return NDS.ARM7Read32(addr);
 }
+
 
 void ARMv4::BusWrite8(u32 addr, u8 val)
 {

@@ -1,6 +1,8 @@
 # Functions whose execution tells the frontend that the bottom screen is in use.
 # One name per line; resolved against the linker map by tools/apps.py.
 Task_StartMenu
+# The start menu waiting for an application it opened (bag, party, Pokegear...).
+Task_StartMenu_WaitApp
 BattleInput_CheckTouch
 TouchscreenListMenu_HandleInput
 # Save flow in the start menu and the save confirmation on the touch screen.

@@ -8,6 +8,12 @@ struct RcApp
     const char* name;
     const char* section;
     unsigned execAddr;
+    // The functions that start and end the application, run every frame while it starts
+    // and ends (0 when it has none of its own).
+    unsigned initAddr;
+    const char* initSection;
+    unsigned exitAddr;
+    const char* exitSection;
 };
 extern const RcApp rc_apps[];
 extern const unsigned rc_num_apps;

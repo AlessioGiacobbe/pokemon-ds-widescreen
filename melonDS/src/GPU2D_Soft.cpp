@@ -16,6 +16,8 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <algorithm>
+#include <cstring>
 #include "GPU2D_Soft.h"
 #include "GPU.h"
 #include "GPU3D.h"
@@ -34,7 +36,8 @@ SoftRenderer::SoftRenderer(melonDS::GPU& gpu)
     // mosaic table is initialized at compile-time
 }
 
-u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
+// ssrecomp: inlined into the per-pixel loops that call it.
+inline __attribute__((always_inline)) u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
 {
     u32 coloreffect = 0;
     u32 eva, evb;
@@ -106,6 +109,60 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
     return val1;
 }
 
+// ssrecomp: most lines of a frame come out the same as in the frame before (a menu on the
+// bottom screen, the overworld standing still). A line is drawn again only if something it
+// is made from changed: the engine's registers, the sprite pixels of the line (drawn
+// beforehand by DrawSprites), the 3D line, or any of its VRAM or palette (CacheEpoch counts
+// those changes). Otherwise the finished line is copied from the last time.
+namespace
+{
+struct LineCache
+{
+    bool valid;
+    u32 epoch, hide;
+    u8 regs[160];
+    u32 obj[256];
+    u8 objWindow[256];
+    u32 line3D[256];
+    u32 out[256];
+};
+LineCache Cache[2][192];
+u32 CacheEpoch[2] = { 1, 1 };
+
+struct SpriteCache
+{
+    bool valid;
+    u32 epoch, count;
+    u8 regs[160];
+    u32 obj[256];
+    u8 objWindow[256];
+};
+SpriteCache SpriteLines[2][192];
+u32 SpriteEpoch[2] = { 1, 1 };
+u8 OAMSeen[2][0x400];
+
+// Whether the engine's palettes (BG and OBJ, 1 KB) differ from when this was last asked.
+u8 PaletteSeen[2][0x400];
+bool PaletteChanged(const u8* palette, u32 num)
+{
+    const u8* p = palette + (num ? 0x400 : 0);
+    if (!memcmp(PaletteSeen[num], p, 0x400)) return false;
+    memcpy(PaletteSeen[num], p, 0x400);
+    return true;
+}
+
+// The unit's registers from DispCnt to MasterBrightness (positions, windows, blending,
+// mosaic counters...), as they are when the line is drawn.
+size_t UnitRegs(const Unit* u, u8* out)
+{
+    const u8* a = (const u8*)&u->DispCnt;
+    const u8* b = (const u8*)(&u->MasterBrightness + 1);
+    const size_t n = std::min<size_t>(b - a, sizeof(LineCache::regs));
+    memcpy(out, a, n);
+    return n;
+}
+}
+
 void SoftRenderer::DrawScanline(u32 line, Unit* unit)
 {
     CurUnit = unit;
@@ -119,20 +176,22 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     if (CurUnit->Num == 0)
     {
         auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
-        GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
+        bool changed = GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
         auto bgExtPalDirty = GPU.VRAMDirty_ABGExtPal.DeriveState(GPU.VRAMMap_ABGExtPal, GPU);
-        GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtPalDirty);
+        changed |= GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtPalDirty);
         auto objExtPalDirty = GPU.VRAMDirty_AOBJExtPal.DeriveState(&GPU.VRAMMap_AOBJExtPal, GPU);
-        GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtPalDirty);
+        changed |= GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtPalDirty);
+        if (changed || PaletteChanged(GPU.Palette, 0)) CacheEpoch[0]++;
     }
     else
     {
         auto bgDirty = GPU.VRAMDirty_BBG.DeriveState(GPU.VRAMMap_BBG, GPU);
-        GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
+        bool changed = GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
         auto bgExtPalDirty = GPU.VRAMDirty_BBGExtPal.DeriveState(GPU.VRAMMap_BBGExtPal, GPU);
-        GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtPalDirty);
+        changed |= GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtPalDirty);
         auto objExtPalDirty = GPU.VRAMDirty_BOBJExtPal.DeriveState(&GPU.VRAMMap_BOBJExtPal, GPU);
-        GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtPalDirty);
+        changed |= GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtPalDirty);
+        if (changed || PaletteChanged(GPU.Palette, 1)) CacheEpoch[1]++;
     }
 
     bool forceblank = false;
@@ -173,6 +232,40 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
 
     u32 dispmode = CurUnit->DispCnt >> 16;
     dispmode &= (CurUnit->Num ? 0x1 : 0x3);
+
+    LineCache* cache = nullptr;
+    if (line < 192 && (u32)n3dline == line && dispmode == 1 && !CurUnit->CaptureLatch && !GPU.GPU3D.IsRendererAccelerated())
+    {
+        cache = &Cache[CurUnit->Num][line];
+        const u32 num = CurUnit->Num;
+        u8 regs[sizeof(LineCache::regs)] = {};
+        UnitRegs(CurUnit, regs);
+        const bool with3D = num == 0 && (CurUnit->DispCnt & 0x8) && _3DLine;
+        if (cache->valid && cache->epoch == CacheEpoch[num] && cache->hide == rc_hide_layers[num] &&
+            !memcmp(cache->regs, regs, sizeof(regs)) && !memcmp(cache->obj, OBJLine[num], sizeof(cache->obj)) &&
+            !memcmp(cache->objWindow, OBJWindow[num], sizeof(cache->objWindow)) &&
+            (!with3D || !memcmp(cache->line3D, _3DLine, sizeof(cache->line3D))))
+        {
+            // What DrawScanline_BGOBJ changes besides the picture: the mosaic counter.
+            if (CurUnit->BGMosaicY >= CurUnit->BGMosaicYMax)
+            {
+                CurUnit->BGMosaicY = 0;
+                CurUnit->BGMosaicYMax = CurUnit->BGMosaicSize[1];
+            }
+            else
+                CurUnit->BGMosaicY++;
+            CurUnit->UpdateMosaicCounters(line);
+            memcpy(dst, cache->out, sizeof(cache->out));
+            return;
+        }
+        cache->valid = false;
+        cache->epoch = CacheEpoch[num];
+        cache->hide = rc_hide_layers[num];
+        memcpy(cache->regs, regs, sizeof(regs));
+        memcpy(cache->obj, OBJLine[num], sizeof(cache->obj));
+        memcpy(cache->objWindow, OBJWindow[num], sizeof(cache->objWindow));
+        if (with3D) memcpy(cache->line3D, _3DLine, sizeof(cache->line3D));
+    }
 
     // always render regular graphics
     DrawScanline_BGOBJ(line);
@@ -306,6 +399,12 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
         c = r | g | b;
 
         *(u64*)&dst[i] = c | ((c & 0x00C0C0C000C0C0C0) >> 6) | 0xFF000000FF000000;
+    }
+
+    if (cache)
+    {
+        memcpy(cache->out, dst, sizeof(cache->out));
+        cache->valid = true;
     }
 }
 
@@ -886,16 +985,6 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
 }
 
 
-void SoftRenderer::DrawPixel_Normal(u32* dst, u16 color, u32 flag)
-{
-    u8 r = (color & 0x001F) << 1;
-    u8 g = (color & 0x03E0) >> 4;
-    u8 b = (color & 0x7C00) >> 9;
-    //g |= ((color & 0x8000) >> 15);
-
-    *(dst+256) = *dst;
-    *dst = r | (g << 8) | (b << 16) | flag;
-}
 
 void SoftRenderer::DrawPixel_Accel(u32* dst, u16 color, u32 flag)
 {
@@ -991,6 +1080,57 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
     }
     else
         tilemapaddr += ((yoff & 0xF8) << 3);
+
+    if (!mosaic)
+    {
+        // ssrecomp: without mosaic, one tile row at a time (the same pixels as the loops
+        // below): the row's 8 pixels are read at once, and a row with none is skipped.
+        const u32 flag = 0x01000000 << bgnum;
+        const u8 winbit = 1 << bgnum;
+        const u32 yrow = yoff & 0x7;
+        u32 x = xoff;
+        for (int i = 0; i < 256;)
+        {
+            const u16 tile = *(u16*)&bgvram[(tilemapaddr + ((x & 0xF8) >> 2) + ((x & widexmask) << 3)) & bgvrammask];
+            const u32 first = x & 0x7;
+            const int n = std::min<int>(8 - first, 256 - i);
+            const u32 ty = (tile & 0x0800) ? (7 - yrow) : yrow;
+            const u32 flip = (tile & 0x0400) ? 7 : 0;
+            if (bgcnt & 0x0080)
+            {
+                u64 row;
+                memcpy(&row, &bgvram[(tilesetaddr + ((tile & 0x03FF) << 6) + (ty << 3)) & bgvrammask], 8);
+                if (row)
+                {
+                    u16* tpal = extpal ? CurUnit->GetBGExtPal(extpalslot, tile >> 12) : pal;
+                    for (int k = 0; k < n; k++)
+                    {
+                        const u8 c = row >> (((first + k) ^ flip) * 8);
+                        if (c && (WindowMask[i + k] & winbit))
+                            drawPixel(&BGOBJLine[i + k], tpal[c], flag);
+                    }
+                }
+            }
+            else
+            {
+                u32 row;
+                memcpy(&row, &bgvram[(tilesetaddr + ((tile & 0x03FF) << 5) + (ty << 2)) & bgvrammask], 4);
+                if (row)
+                {
+                    u16* tpal = pal + ((tile & 0xF000) >> 8);
+                    for (int k = 0; k < n; k++)
+                    {
+                        const u8 c = (row >> (((first + k) ^ flip) * 4)) & 0xF;
+                        if (c && (WindowMask[i + k] & winbit))
+                            drawPixel(&BGOBJLine[i + k], tpal[c], flag);
+                    }
+                }
+            }
+            i += n;
+            x += n;
+        }
+        return;
+    }
 
     u16 curtile;
     u16* curpal;
@@ -1632,17 +1772,54 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
         memcpy(OAMSnap[CurUnit->Num], &GPU.OAM[CurUnit->Num ? 0x400 : 0], 0x400);
     }
 
-    if (CurUnit->Num == 0)
+    const u32 num = CurUnit->Num;
+    bool changed;
+    if (num == 0)
     {
         auto objDirty = GPU.VRAMDirty_AOBJ.DeriveState(GPU.VRAMMap_AOBJ, GPU);
-        GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
+        changed = GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
     }
     else
     {
         auto objDirty = GPU.VRAMDirty_BOBJ.DeriveState(GPU.VRAMMap_BOBJ, GPU);
-        GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
+        changed = GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
     }
 
+    // ssrecomp: like the lines in DrawScanline, a line's sprites are only drawn again if
+    // the OAM, the sprite VRAM or the registers changed (see LineCache).
+    const u8* oamNow = &GPU.OAM[num ? 0x400 : 0];
+    if (changed || memcmp(OAMSeen[num], oamNow, 0x400))
+    {
+        memcpy(OAMSeen[num], oamNow, 0x400);
+        SpriteEpoch[num]++;
+    }
+    SpriteCache* cache = line < 192 ? &SpriteLines[num][line] : nullptr;
+    if (cache)
+    {
+        u8 regs[sizeof(SpriteCache::regs)] = {};
+        UnitRegs(CurUnit, regs);
+        if (cache->valid && cache->epoch == SpriteEpoch[num] && !memcmp(cache->regs, regs, sizeof(regs)))
+        {
+            memcpy(OBJLine[num], cache->obj, sizeof(cache->obj));
+            memcpy(OBJWindow[num], cache->objWindow, sizeof(cache->objWindow));
+            NumSprites[num] = cache->count;
+            return;
+        }
+        cache->epoch = SpriteEpoch[num];
+        memcpy(cache->regs, regs, sizeof(regs));
+    }
+    DrawSpritesLine(line);
+    if (cache)
+    {
+        memcpy(cache->obj, OBJLine[num], sizeof(cache->obj));
+        memcpy(cache->objWindow, OBJWindow[num], sizeof(cache->objWindow));
+        cache->count = NumSprites[num];
+        cache->valid = true;
+    }
+}
+
+void SoftRenderer::DrawSpritesLine(u32 line)
+{
     NumSprites[CurUnit->Num] = 0;
     memset(OBJLine[CurUnit->Num], 0, 256*4);
     memset(OBJWindow[CurUnit->Num], 0, 256);
@@ -1665,14 +1842,28 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
         64, 32, 64, 8
     };
 
-    for (int bgnum = 0x0C00; bgnum >= 0x0000; bgnum -= 0x0400)
+    // ssrecomp: the sprites sorted by priority in one pass, instead of four passes over
+    // all 128; each priority's sprites keep their order (128 down to 0).
+    u8 byPrio[4][128];
+    int numByPrio[4] = {0, 0, 0, 0};
+    // Those not on this line (by the tests below) are left out here already.
+    for (int sprnum = 127; sprnum >= 0; sprnum--)
     {
-        for (int sprnum = 127; sprnum >= 0; sprnum--)
-        {
-            u16* attrib = &oam[sprnum*4];
+        const u16* attrib = &oam[sprnum*4];
+        if ((attrib[0] & 0x0300) == 0x0200) continue; // disabled
+        u32 height = spriteheight[(attrib[0] >> 14) | ((attrib[1] & 0xC000) >> 12)];
+        if ((attrib[0] & 0x0300) == 0x0300) height <<= 1; // double size
+        if (((line - (attrib[0] & 0xFF)) & 0xFF) >= height) continue;
+        const int prio = (attrib[2] >> 10) & 0x3;
+        byPrio[prio][numByPrio[prio]++] = sprnum;
+    }
 
-            if ((attrib[2] & 0x0C00) != bgnum)
-                continue;
+    for (int prio = 3; prio >= 0; prio--)
+    {
+        for (int k = 0; k < numByPrio[prio]; k++)
+        {
+            const int sprnum = byPrio[prio][k];
+            u16* attrib = &oam[sprnum*4];
 
             bool iswin = (((attrib[0] >> 10) & 0x3) == 2);
 
