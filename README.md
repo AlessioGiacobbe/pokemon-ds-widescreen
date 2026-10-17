@@ -71,13 +71,21 @@ On the device: the touch screen works on the touch-screen parts of the picture,
 and on-screen buttons are shown over it. Using a controller (Bluetooth, USB, or a
 handheld's built-in controls) hides them; touching the screen brings them back.
 The **MENU** button or Back opens the pause menu. Messages and frame timings go
-to `log.txt` in the app's storage, which helps with bug reports.
+to `log.txt` in `Android/data/io.github.clickingmaster.ssrecomp/files` on the
+phone's storage (open it with a file manager, or from a PC over USB), which helps
+with bug reports.
 
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
 Windows), where the game is built and its save is kept. It contains nothing of
 the game. Instead of the download you can also run `python3 ssrecomp_setup.py`
 from a copy of this repository (then the game is built in that folder).
+
+**Updating:** the setup window shows its version and whether a newer release is
+out; **Update** downloads it, checks its checksum, replaces the setup program and
+restarts it. Press **Build** once afterwards to rebuild the game with the new
+version (your save and settings are kept). Without a display:
+`ssrecomp-setup-linux-x86_64 --update`, then `--rom` again.
 
 **Portable mode:** put an empty file named `portable.txt` next to the setup
 program (the `.exe`, or the AppImage on Linux). Everything — the unpacked
@@ -288,16 +296,25 @@ What keeps it there:
 - frames are paced by sleeping and then spinning for the last fraction of a
   millisecond, which keeps them an even 16.7 ms apart.
 
-What does not help yet is the recompiled code itself: because every
-instruction still calls the interpreter's handler and repeats its bookkeeping,
-it runs slightly slower than the plain interpreter (`--interp`): about 6.1
-against 5.2 ms of emulation per frame in the overworld, the generated code
-being 390 MB against the interpreter's few hundred KB. `rc_code_read32` in
-`runtime/recomp_gen.h` is meant to be inlined but is not at `-O1`. Translating
-the common instructions to inline C++ with their operands folded in is where
-the remaining CPU time would come from; `--lockstep` checks each instruction,
-and comparing `--hash-every` output with the interpreter's checks how they are
-chained.
+The recompiled code itself is now about 6–9% faster than the plain interpreter
+(`--interp`): 1,800 frames of overworld from a save state, headless, take about
+9.0–9.9 s against 9.9–10.6 s (the range is between runs on a busier or quieter
+machine). What got it there:
+
+- the common instructions (arithmetic, loads and stores, LDM/STM, PUSH/POP,
+  branches; about 97% of all) are translated to inline C++ with their operands
+  folded in (`tools/recomp_inline.py`), instead of calling the interpreter's
+  handler; each translation is chosen by the handler melonDS would run, so it
+  does exactly what that handler does;
+- R15 is a constant in every statement, and after a translation that calls
+  nothing only the time slice is checked;
+- memory accesses to the TCMs and main RAM, and jumps, go through small
+  functions (`runtime/recomp_mem.cpp`) instead of the core's general bus
+  functions. Copying them into every instruction instead made the code 30 MB
+  bigger and slower overall.
+
+The ARM9 game code is now about half of the main thread's time; most of the
+rest is melonDS's 2D renderer, the ARM7 and the timers.
 
 `SSR_SAMPLE=<file>` records about 1000 call stacks a second from whichever
 thread is running (`frontend/sampler.h`); `tools/samples.py build/ssrecomp
@@ -417,8 +434,8 @@ instruction becomes a labelled statement inside a "chunk" function of up to
 - `runtime/recomp_gen.h` defines what one recompiled instruction does. It
   repeats the interpreter's per-instruction sequence (prefetch, execute, cycle
   accounting), so a recompiled run is bit-identical to an interpreted one.
-  At present the execute step calls the melonDS handler for that instruction;
-  translating the common instructions to inline C++ is the next optimisation.
+  The execute step is inline C++ for the common instructions
+  (`tools/recomp_inline.py`) and the melonDS handler for the rest.
 - Many overlays are linked at the same addresses. `runtime/recomp_rt.cpp`
   enters a chunk only after comparing its bytes with emulated memory, and each
   instruction checks its own opcode, so stale code is never executed. Anything

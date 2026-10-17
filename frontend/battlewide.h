@@ -9,6 +9,7 @@
 // Everything else is the screen exactly as the game drew it.
 #pragma once
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include "NDS.h"
 #include "GPU2D_Soft.h"
@@ -41,7 +42,7 @@ public:
         // the game lets through there (a move's effect is shown through a window shaped like
         // the Pokémon, with its background hidden elsewhere).
         const u8 shown = (dispcnt & 0xE000) ? unit.WinCnt[2] : 0x3F;
-        struct Layer { int num, prio; bool c256; int mapH; u32 charBase, mapBase; int effect; };
+        struct Layer { int num, prio; bool c256; int mapH; u32 charBase, mapBase; };
         Layer layers[4];
         int nLayers = 0;
         for (int prio = 0; prio < 4; prio++)
@@ -61,22 +62,56 @@ public:
                     l.charBase += ((dispcnt >> 24) & 7) * 0x10000;
                     l.mapBase += ((dispcnt >> 27) & 7) * 0x10000;
                 }
-                // The brightness effect, if the layer is one of its targets.
-                l.effect = (unit.BlendCnt & (1 << b)) && (shown & 0x20) ? (unit.BlendCnt >> 6) & 3 : 0;
             }
+        // Windows (the stats shown after a level up): a background whose pixels on the screen
+        // fill the rectangle they are in, away from both edges of the screen, whatever the
+        // size of its map. They are not continued beyond the screen, stay where the game
+        // put them, in front, and are not moved with the wild Pokémon's side (which would
+        // cut one in two at the bottom of its rows).
+        uint8_t windowLayers = 0;
+        for (int b = 0; b < 4; b++)
+        {
+            const uint8_t bit = 1 << b;
+            int n = 0, x0 = 256, x1 = -1, y0 = 192, y1 = -1;
+            for (int y = 0; y < 192; y++)
+                for (int x = 0; x < 256; x++)
+                    if (LayerClass(top.flags[y * 256 + x]) == bit)
+                    {
+                        n++;
+                        x0 = std::min(x0, x); x1 = std::max(x1, x);
+                        y0 = std::min(y0, y); y1 = std::max(y1, y);
+                    }
+            if (n >= 256 && x0 > 0 && x1 < 255 && n * 10 >= (x1 - x0 + 1) * (y1 - y0 + 1) * 9) windowLayers |= bit;
+        }
+        {
+            int kept = 0;
+            for (int i = 0; i < nLayers; i++)
+                if (!(windowLayers & (1 << layers[i].num))) layers[kept++] = layers[i];
+            nLayers = kept;
+        }
         uint8_t layerMask = 0;
         for (int i = 0; i < nLayers; i++) layerMask |= 1 << layers[i].num;
         if (!nLayers) return false;                                 // nothing more to show beside the screen
         auto vram16 = [&](u32 a) -> u16 { return unitNum == 0 ? nds.GPU.ReadVRAM_ABG<u16>(a) : nds.GPU.ReadVRAM_BBG<u16>(a); };
         auto vram8 = [&](u32 a) -> u8 { return unitNum == 0 ? nds.GPU.ReadVRAM_ABG<u8>(a) : nds.GPU.ReadVRAM_BBG<u8>(a); };
-        const u32 palBase = unitNum == 0 ? 0 : 0x400;
+        // The palettes the frame was drawn with (the game changes them for the next one
+        // before this runs; with the current ones the sides of the view would be a frame
+        // ahead of the screen in a fade): BG at 0, sprites at 0x200.
+        const u8* palSnap = static_cast<GPU2D::SoftRenderer*>(&nds.GPU.GetRenderer2D())->PalSnap[unitNum];
+        auto palette = [&](u32 off) -> u16 { u16 v; memcpy(&v, palSnap + (off & 0x3FE), 2); return v; };
 
-        // A colour with the effects the game applies (a layer's brightness effect, then the
-        // master brightness, as the 2D engine does), converted to 8 bits per channel as its
-        // output is.
-        const int evy = std::min<int>(16, unit.EVY);
-        const int mbMode = (unit.MasterBrightness >> 14) & 3, mb = std::min(16, unit.MasterBrightness & 0x1F);
-        auto colour = [&](u16 c, int effect) -> uint32_t {
+        // A colour with the effects the game applies to the 2D layer it is on (target: BG0-3,
+        // 4 the sprites, 5 the backdrop): the brightness effect if the layer is one of its
+        // targets, then the master brightness, as the 2D engine does, converted to 8 bits per
+        // channel as its output is. With the registers each line was drawn with (a fade
+        // changes them for the next frame before this runs, and the sides of the view would
+        // be a frame ahead of the screen).
+        const u16 (*lineBlend)[3] = static_cast<GPU2D::SoftRenderer*>(&nds.GPU.GetRenderer2D())->LineBlend[unitNum];
+        auto colour = [&](u16 c, int target, int y) -> uint32_t {
+            const u16 blend = lineBlend[y][0];
+            const int effect = (blend & (1 << target)) && (shown & 0x20) ? (blend >> 6) & 3 : 0;
+            const int evy = std::min<int>(16, lineBlend[y][1]);
+            const int mbMode = (lineBlend[y][2] >> 14) & 3, mb = std::min(16, lineBlend[y][2] & 0x1F);
             int ch[3] = { (c & 0x1F) << 1, ((c >> 5) & 0x1F) << 1, ((c >> 10) & 0x1F) << 1 };
             for (int& v : ch)
             {
@@ -88,8 +123,7 @@ public:
             auto to8 = [](int v) { return (uint32_t)((v << 2) | (v >> 4)); };
             return 0xFF000000 | (to8(ch[0]) << 16) | (to8(ch[1]) << 8) | to8(ch[2]);
         };
-        const int backdropEffect = (unit.BlendCnt & 0x20) && (shown & 0x20) ? (unit.BlendCnt >> 6) & 3 : 0;
-        const uint32_t backdrop = colour(nds.GPU.ReadPalette<u16>(palBase), backdropEffect);
+        const u16 backdropColour = palette(0);
 
         // The sprites other than the HP boxes (which are the only ones at the front, priority
         // 0): the trainer, and the platforms the Pokémon stand on as they slide in at the start
@@ -111,8 +145,7 @@ public:
                 { { 8, 8 }, { 8, 8 }, { 8, 8 }, { 8, 8 } } };
             const u16* oam = (const u16*)renderer->OAMSnap[unitNum];
             const u32 objBase = unitNum == 0 ? 0x06400000 : 0x06600000;
-            const u32 objPal = palBase + 0x200;
-            const int objEffect = (unit.BlendCnt & 0x10) && (shown & 0x20) ? (unit.BlendCnt >> 6) & 3 : 0;
+            const u32 objPal = 0x200;
             for (int o = 127; o >= 0; o--)                                  // the first sprite in front
             {
                 const u16 a0 = oam[o * 4], a1 = oam[o * 4 + 1], a2 = oam[o * 4 + 2];
@@ -158,7 +191,7 @@ public:
                         if (objPrio <= BackPrio[outIndex(x, y)])
                         {
                             BackPrio[outIndex(x, y)] = objPrio;
-                            Back[outIndex(x, y)] = colour(nds.GPU.ReadPalette<u16>(objPal + (c256 ? idx : idx + (a2 >> 12) * 16) * 2), objEffect);
+                            Back[outIndex(x, y)] = colour(palette(objPal + (c256 ? idx : idx + (a2 >> 12) * 16) * 2), 4, y);
                         }
                     }
             }
@@ -204,11 +237,16 @@ public:
                 g.w = x1 - x0;
                 g.h = std::min(192, y1) - g.y;
                 g.px.assign((size_t)g.w * g.h, 0);
+                g.prio.assign((size_t)g.w * g.h, 4);
                 for (int y = 0; y < g.h; y++)
                     for (int x = std::max(x0, -extend); x < std::min(x1, 256 + extend); x++)
                     {
                         const int i = outIndex(x, g.y + y);
-                        if (BackPrio[i] == 1 || BackPrio[i] == 2) g.px[(size_t)y * g.w + x - x0] = Back[i];
+                        if (BackPrio[i] == 1 || BackPrio[i] == 2)
+                        {
+                            g.px[(size_t)y * g.w + x - x0] = Back[i];
+                            g.prio[(size_t)y * g.w + x - x0] = BackPrio[i];
+                        }
                     }
             }
             else if (g.seen && (side == 0 ? g.vel < -0.5f : g.vel > 0.5f))
@@ -228,9 +266,17 @@ public:
         // The 2D layers at a point: the colour and the priority of the frontmost (4 for the
         // backdrop), and whether it is a sprite (in front of a background of the same priority).
         auto layerPixel = [&](int x, int y, int& prio, bool& obj) -> uint32_t {
-            const uint32_t sprite = Back[outIndex(x, y)];
+            uint32_t sprite = Back[outIndex(x, y)];
             const int spritePrio = BackPrio[outIndex(x, y)];
+            if ((x < 0 || x >= 256) && spritePrio > EdgePrio[y * 2 + (x >= 256)]) sprite = 0;
             obj = false;
+            if ((x < 0 || x >= 256) && RowFlat[y])
+            {
+                // A row the screen shows in one colour (see RowFlat) is that colour beside it,
+                // without the sprites the game keeps off the screen there.
+                prio = RowPrio[y];
+                return RowColour[y];
+            }
             for (int i = 0; i <= nLayers; i++)
             {
                 if (sprite && (i == nLayers || layers[i].prio >= spritePrio))
@@ -261,29 +307,67 @@ public:
                 if (idx)
                 {
                     prio = l.prio;
-                    return colour(nds.GPU.ReadPalette<u16>(palBase + idx * 2), l.effect);
+                    return colour(palette(idx * 2), l.num, y);
                 }
             }
             prio = 4;
-            return backdrop;
+            return colour(backdropColour, 5, y);
         };
+
+        // A row of the screen in one colour from edge to edge (the plain screen a battle
+        // opens with) is continued in that colour, not with the rest of the map: the half of
+        // the map the game does not show is not always more of the same (in the opening, it
+        // and the wide 3D picture have things there that would flash beside the screen).
+        RowFlat.assign(192, 0);
+        RowColour.assign(192, 0);
+        RowPrio.assign(192, 4);
+        // Beside the screen a sprite is only drawn where it would be in front of the
+        // background at that edge of the screen in its row: the message box hides the
+        // trainer on the screen, and does beside it too (where its map is empty).
+        EdgePrio.assign(192 * 2, 4);
+        for (int y = 0; y < 192; y++)
+            for (int side = 0; side < 2; side++)
+            {
+                const uint8_t c = LayerClass(top.flags[y * 256 + (side ? 255 : 0)]);
+                if (c & 0x0F) EdgePrio[y * 2 + side] = unit.BGCnt[__builtin_ctz(c)] & 3;
+            }
+        for (int y = 0; y < 192; y++)
+        {
+            // In one colour, whatever draws it (in the opening a sprite in the same blue
+            // stands at the edge); the priority is that of the background showing.
+            const uint32_t* px = &top.pixels[y * 256];
+            bool same = true;
+            uint8_t bg = 0;
+            for (int x = 0; x < 256 && same; x++)
+            {
+                same = (px[x] & 0xFFFFFF) == (px[0] & 0xFFFFFF);
+                const uint8_t c = LayerClass(top.flags[y * 256 + x]);
+                if (!bg && (c & 0x0F)) bg = c;
+            }
+            if (!same) continue;
+            RowFlat[y] = 1;
+            RowColour[y] = 0xFF000000 | px[0];
+            if (bg) RowPrio[y] = unit.BGCnt[__builtin_ctz(bg)] & 3;
+        }
 
         // With the 3D layer (BG0) over them where it is in front.
         const bool use3D = world && world->pixels && !world->placed && world->w > 0 && (dispcnt & 0x100) && (dispcnt & 8) && (shown & 1);
         const int prio3D = unit.BGCnt[0] & 3;
-        const int effect3D = (unit.BlendCnt & 1) && (shown & 0x20) ? (unit.BlendCnt >> 6) & 3 : 0;
         const float viewLeft = 128 - viewWidth / 2;
         auto bgPixel = [&](int x, int y) -> uint32_t {
             int prio;
             bool obj;
             const uint32_t c = layerPixel(x, y, prio, obj);
             if (!use3D || prio < prio3D || (obj && prio == prio3D)) return c;
+            // Nor what the 3D picture has there (in the opening, white pieces the game keeps
+            // just off the screen).
+            if ((x < 0 || x >= 256) && RowFlat[y]) return c;
             int wx = (int)((x + 0.5f - viewLeft) / viewWidth * world->w), wy = (int)((y + 0.5f) / 192 * world->h);
             if (wx < 0 || wx >= world->w || wy < 0 || wy >= world->h) return c;
             const uint32_t w3 = world->pixels[(size_t)wy * world->w + wx];
             const uint32_t a = w3 >> 24;
             if (!a) return c;
-            const uint32_t t = colour((u16)((((w3 >> 19) & 0x1F)) | (((w3 >> 11) & 0x1F) << 5) | (((w3 >> 3) & 0x1F) << 10)), effect3D);
+            const uint32_t t = colour((u16)((((w3 >> 19) & 0x1F)) | (((w3 >> 11) & 0x1F) << 5) | (((w3 >> 3) & 0x1F) << 10)), 0, y);
             if (a == 255) return t;
             auto mix = [&](int sh) { return ((((t >> sh) & 0xFF) * a + ((c >> sh) & 0xFF) * (255 - a)) / 255) << sh; };
             return 0xFF000000 | mix(16) | mix(8) | mix(0);
@@ -413,6 +497,7 @@ public:
                 const uint8_t c = LayerClass(top.flags[i]);
                 if (!(Label[i] && shift[Label[i]]) && c < LAYER_OBJ && !(c & layerMask)) boxLayers |= c;
             }
+        Ui.assign((size_t)w * 192, 0);
         for (int y = 0; y < 192; y++)
         {
             uint32_t* row = &Picture[(size_t)y * w];
@@ -446,6 +531,7 @@ public:
                     {
                         row[x] = 0xFF000000 | top.pixels[i];
                         const uint8_t c = LayerClass(top.flags[i]);
+                        Ui[(size_t)y * w + x] = (c & windowLayers) != 0;
                         fg[x] = c == LAYER_3D || c == LAYER_OBJ || (c != LAYER_BACKDROP && !(c & layerMask) && !(c & boxLayers));
                     }
                 }
@@ -475,7 +561,7 @@ public:
             Comp.assign((size_t)w * 192, 0);
             for (size_t start = 0; start < Fg.size(); start++)
             {
-                if (!Fg[start] || Comp[start]) continue;
+                if (!Fg[start] || Comp[start] || Ui[start]) continue;
                 Stack.clear();
                 Members.clear();
                 Comp[start] = 1;
@@ -497,7 +583,7 @@ public:
                         {
                             if (x + dx < 0 || x + dx >= w || y + dy < 0 || y + dy > 191) continue;
                             const int q = p + dy * w + dx;
-                            if (Fg[q] && !Comp[q])
+                            if (Fg[q] && !Comp[q] && !Ui[q])
                             {
                                 Comp[q] = 1;
                                 Stack.push_back(q);
@@ -553,6 +639,9 @@ public:
                 }
                 for (int x = 0; x + enemyShift < w; x++)
                     if (move[x]) row[x + enemyShift] = pic[x];
+                const uint8_t* ui = &Ui[(size_t)y * w];
+                for (int x = 0; x < w; x++)
+                    if (ui[x]) row[x] = pic[x];
             }
             else
                 std::copy(pic, pic + w, row);
@@ -563,8 +652,14 @@ public:
                     for (int i = 0; i < g.w; i++)
                     {
                         const int sx = gx + i;
-                        const uint32_t c = g.px[(size_t)(y - g.y) * g.w + i];
-                        if (c && sx >= -extend && sx < 256 + extend) row[sx + extend] = c;
+                        const size_t gi = (size_t)(y - g.y) * g.w + i;
+                        const uint32_t c = g.px[gi];
+                        if (!c || sx < -extend || sx >= 256 + extend) continue;
+                        // Behind the message box, as the game draws the trainer: on the
+                        // screen, and beside it in the box's rows (see EdgePrio).
+                        if (sx < 0 || sx >= 256 ? g.prio[gi] > EdgePrio[y * 2 + (sx >= 256)]
+                                                : (LayerClass(top.flags[y * 256 + sx]) & (boxLayers | windowLayers)) != 0) continue;
+                        row[sx + extend] = c;
                     }
                 }
             for (int sx = 0; sx < 256; sx++)
@@ -597,11 +692,14 @@ private:
     // Where the two Pokémon stand on the screen.
     static constexpr int EnemyX = 192, EnemyY = 56, PlayerX = 60, PlayerY = 105;
     std::vector<uint32_t> Pixels, Picture, Plain;
-    std::vector<uint8_t> Fg, Move, Comp;
+    std::vector<uint8_t> Fg, Move, Comp, Ui;
     std::vector<int> Members;
     std::vector<uint8_t> Label;
     std::vector<uint32_t> Back, Row;
     std::vector<uint8_t> BackPrio;
+    std::vector<uint8_t> RowFlat, RowPrio;
+    std::vector<uint32_t> RowColour;
+    std::vector<uint8_t> EdgePrio;   // per row, left and right: priority of the background at the screen's edge
     float Glide = 0;
     struct Box { int x, y, w, h; };
     std::vector<Box> Boxes;
@@ -612,6 +710,7 @@ private:
         float x = 0, vel = 0, edge = 0;
         int y = 0, w = 0, h = 0;
         std::vector<uint32_t> px;
+        std::vector<uint8_t> prio;
     };
     Ghost Ghosts[2];
     int Calls = 0;

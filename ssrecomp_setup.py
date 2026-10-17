@@ -7,6 +7,7 @@ the frontend. Needs Python 3 with Tk, CMake, Ninja, a C++ compiler and the SDL2,
 libpng and zlib development files; the window says what is missing and how to get it.
 
 Without a display: python3 ssrecomp_setup.py --rom <file> [--jobs N]
+The packaged program updates itself with --update.
 """
 import hashlib
 import json
@@ -410,6 +411,8 @@ def run_steps(rom, jobs, log, progress, android=False):
             if bindir and os.path.exists(os.path.join(bindir, dll)):
                 shutil.copy2(os.path.join(bindir, dll), BUILD)
     write_rom_note(rom)
+    if os.path.exists(os.path.join(HERE, '.bundle')):
+        shutil.copyfile(os.path.join(HERE, '.bundle'), os.path.join(HERE, '.built'))
     progress(1.0, 'Done')
 
 
@@ -465,10 +468,146 @@ ANDROID_HELP = (
     os.path.join(ANDROID_DIR, 'signing-key.json') + '). Uninstalling the app deletes its save.')
 
 
+GAME_LOG = os.path.join(HERE, 'game.log')     # the game's messages from its last start here
+BUILD_LOG = os.path.join(HERE, 'build.log')   # what the last build from the window printed
+
+
 def play(extra=()):
     rom = read_rom_note()
-    return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'), *extra], cwd=HERE,
-                            env=child_env())
+    # Started from here there is no terminal to see them in (and none at all on Windows):
+    # the game's messages go to game.log, made new each time, for bug reports.
+    with open(GAME_LOG, 'w') as log:
+        return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'), *extra], cwd=HERE,
+                                stdout=log, stderr=subprocess.STDOUT, env=child_env())
+
+
+# ---------------------------------------------------------------------------
+# Updates: the packaged setup program replaces itself with the newest release's.
+
+RELEASES = 'https://api.github.com/repos/ClickingMaster/ssrecomp/releases/latest'
+UPDATE_ASSETS = {   # (system, machine) -> the release file for it
+    ('win32', 'AMD64'): 'ssrecomp-setup-windows-x86_64.exe',
+    ('linux', 'x86_64'): 'ssrecomp-setup-linux-x86_64',
+    ('linux', 'aarch64'): 'ssrecomp-setup-linux-aarch64.AppImage',
+}
+
+
+def version():
+    """This program's version: the newest released version in its CHANGELOG.md."""
+    path = os.path.join(sys._MEIPASS if FROZEN else HERE, 'project' if FROZEN else '', 'CHANGELOG.md')
+    try:
+        with open(path, encoding='utf-8') as f:
+            m = re.search(r'^## v(\d+(?:\.\d+)*)', f.read(), re.M)
+        return m.group(1) if m else None
+    except OSError:
+        return None
+
+
+def version_key(v):
+    return tuple(int(x) for x in v.split('.'))
+
+
+def self_path():
+    """The file to replace: the AppImage when running from one, else the executable."""
+    return os.environ.get('APPIMAGE') or sys.executable
+
+
+def https_open(url):
+    import ssl
+    import urllib.request
+    context = None
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    req = urllib.request.Request(url, headers={'User-Agent': 'ssrecomp-setup', 'Accept': 'application/vnd.github+json'})
+    return urllib.request.urlopen(req, context=context, timeout=20)
+
+
+def check_update():
+    """(version, release page, asset url, sha256 url) of a newer release for this system,
+    or None. Raises OSError/ValueError when GitHub cannot be reached."""
+    import platform
+    current = version()
+    asset = UPDATE_ASSETS.get((sys.platform, platform.machine()))
+    if not FROZEN or not current or not asset:
+        return None
+    with https_open(RELEASES) as r:
+        rel = json.load(r)
+    latest = rel.get('tag_name', '').lstrip('v')
+    if not re.fullmatch(r'\d+(\.\d+)*', latest) or version_key(latest) <= version_key(current):
+        return None
+    files = {a['name']: a['browser_download_url'] for a in rel.get('assets', [])}
+    if asset not in files or 'SHA256SUMS.txt' not in files:
+        return None
+    return latest, rel.get('html_url', ''), files[asset], files['SHA256SUMS.txt']
+
+
+def install_update(update, progress):
+    """Downloads the new setup program next to this one, checks it against the release's
+    SHA256SUMS.txt and puts it in this one's place. Returns the path to start."""
+    latest, _page, url, sums_url = update
+    target = self_path()
+    name = url.rsplit('/', 1)[1]
+    sums = {}
+    with https_open(sums_url) as r:
+        for line in r.read().decode().splitlines():   # "<sha256>  <file>"
+            parts = line.split()
+            if len(parts) == 2:
+                sums[parts[1].lstrip('*')] = parts[0].lower()
+    digest = sums.get(name)
+    if not digest:
+        raise RuntimeError('The release has no checksum for ' + name + '.')
+    new = target + '.new'
+    h = hashlib.sha256()
+    with https_open(url) as r, open(new, 'wb') as f:
+        total, done = int(r.headers.get('Content-Length') or 0), 0
+        for block in iter(lambda: r.read(1 << 20), b''):
+            f.write(block)
+            h.update(block)
+            done += len(block)
+            progress(done / total if total else None, 'Downloading v%s: %d of %d MB' % (latest, done >> 20, total >> 20))
+    if h.hexdigest() != digest:
+        os.remove(new)
+        raise RuntimeError('The download was damaged (checksum mismatch). Try again.')
+    if WINDOWS:
+        # A running .exe cannot be overwritten, but it can be renamed; the old copy is
+        # removed the next time the program starts.
+        old = target + '.old'
+        if os.path.exists(old):
+            os.remove(old)
+        os.replace(target, old)
+    else:
+        os.chmod(new, 0o755)
+    os.replace(new, target)
+    return target
+
+
+def restart(path):
+    env = child_env()
+    env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'   # the new program is a fresh one, not a child of this
+    for var in ('APPIMAGE', 'APPDIR', 'OWD', 'ARGV0'):
+        env.pop(var, None)
+    subprocess.Popen([path], env=env, close_fds=True, start_new_session=not WINDOWS,
+                     creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0) if WINDOWS else 0)
+
+
+def remove_old_copy():
+    if FROZEN and WINDOWS:
+        try:
+            os.remove(self_path() + '.old')
+        except OSError:
+            pass
+
+
+def built_from_older_source():
+    """Packaged: whether the game was built before the last update of the source."""
+    try:
+        with open(os.path.join(HERE, '.bundle')) as a, open(os.path.join(HERE, '.built')) as b:
+            return a.read() != b.read()
+    except OSError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +628,44 @@ def gui():
     ttk.Label(frame, wraplength=600, justify='left', text=(
         'Builds the game from your own copy of Pokemon SoulSilver (US). Its code is recompiled on this '
         'computer; nothing of the game is downloaded.' +
-        (f' The game is built in {HERE}.' if FROZEN else ''))).pack(anchor='w', pady=(4, 12))
+        (f' The game is built in {HERE}.' if FROZEN else ''))).pack(anchor='w', pady=(4, 4))
+
+    update_row = ttk.Frame(frame)
+    update_row.pack(fill='x', pady=(0, 8))
+    update_label = ttk.Label(update_row, text=('Version ' + (version() or '?')) if FROZEN else '')
+    update_label.pack(side='left')
+    update_btn = ttk.Button(update_row, text='Check for updates')
+    if FROZEN:
+        update_btn.pack(side='left', padx=8)
+    found_update = [None]
+
+    def look_for_update(quiet):
+        update_btn.state(['disabled'])
+
+        def worker():
+            try:
+                events.put(('update', check_update(), quiet))
+            except Exception as e:  # no network, GitHub down...
+                events.put(('update', e, quiet))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def do_update():
+        if not found_update[0]:
+            look_for_update(False)
+            return
+        if not messagebox.askyesno('Update', 'Download version %s and restart? Your save and settings are kept; '
+                                   'afterwards press Build once to update the game.' % found_update[0][0]):
+            return
+        update_btn.state(['disabled'])
+        build_btn.state(['disabled'])
+
+        def worker():
+            try:
+                events.put(('updated', install_update(found_update[0], lambda f, l: events.put(('progress', f, l)))))
+            except Exception as e:
+                events.put(('updated', e))
+        threading.Thread(target=worker, daemon=True).start()
+    update_btn.config(command=do_update)
 
     row = ttk.Frame(frame)
     row.pack(fill='x')
@@ -541,6 +717,14 @@ def gui():
     android_btn = ttk.Button(buttons, text='Build for Android')
     android_btn.pack(side='right')
 
+    def open_folder():
+        # The logs (game.log, build.log) are here, for bug reports.
+        if WINDOWS:
+            os.startfile(HERE)
+        else:
+            subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', HERE], env=child_env())
+    ttk.Button(buttons, text='Open logs folder', command=open_folder).pack(side='right', padx=6)
+
     def update_checks():
         lines = []
         rom = rom_var.get().strip()
@@ -570,6 +754,9 @@ def gui():
         built = os.path.exists(EXE) and os.path.exists(ROM_NOTE)
         for b in (play_btn, windowed_btn):
             b.state(['!disabled'] if built else ['disabled'])
+        if built and FROZEN and built_from_older_source():
+            lines.append('Updated: press Build once to update the game (your save is kept).')
+            checks.config(text='\n'.join(lines))
 
     def start(android=False):
         build_btn.state(['disabled'])
@@ -578,8 +765,16 @@ def gui():
 
         def worker():
             try:
-                run_steps(rom, jobs, lambda t: events.put(('log', t)), lambda f, l: events.put(('progress', f, l)),
-                          android=android)
+                with open(BUILD_LOG, 'w', encoding='utf-8', errors='replace') as build_log:
+                    def log(text):
+                        build_log.write(text + '\n')
+                        build_log.flush()
+                        events.put(('log', text))
+                    try:
+                        run_steps(rom, jobs, log, lambda f, l: events.put(('progress', f, l)), android=android)
+                    except Exception as e:
+                        build_log.write('Failed: %s\n' % e)
+                        raise
                 events.put(('done', None, android))
             except Exception as e:  # shown to the user
                 events.put(('done', str(e), android))
@@ -600,6 +795,29 @@ def gui():
                     if ev[1] is not None:
                         bar['value'] = ev[1]
                     status.config(text=ev[2])
+                elif ev[0] == 'update':
+                    update_btn.state(['!disabled'])
+                    result, quiet = ev[1], ev[2]
+                    if isinstance(result, Exception):
+                        if not quiet:
+                            messagebox.showerror('Update', 'Could not check for updates: %s' % result)
+                    elif result:
+                        found_update[0] = result
+                        update_label.config(text='Version %s - version %s is available.' % (version(), result[0]))
+                        update_btn.config(text='Update to %s' % result[0])
+                    elif not quiet:
+                        messagebox.showinfo('Update', 'This is the newest version.')
+                elif ev[0] == 'updated':
+                    if isinstance(ev[1], Exception):
+                        update_btn.state(['!disabled'])
+                        update_checks()
+                        status.config(text='Update failed')
+                        messagebox.showerror('Update failed', '%s\n\nYou can also download it from %s' %
+                                             (ev[1], found_update[0][1]))
+                    else:
+                        restart(ev[1])
+                        root.destroy()
+                        return
                 elif ev[0] == 'done':
                     update_checks()
                     if ev[1]:
@@ -614,14 +832,33 @@ def gui():
         root.after(100, pump)
 
     update_checks()
+    if FROZEN:
+        look_for_update(True)
     pump()
     root.mainloop()
 
 
 def main():
+    remove_old_copy()
     unpack()
     find_msys2()
     args = sys.argv[1:]
+    if '--update' in args:
+        # Without the window: replace this program with the newest release's.
+        if not FROZEN:
+            sys.exit('Running from the source: update it with git pull instead.')
+        try:
+            update = check_update()
+            if not update:
+                print('Version %s is the newest.' % version())
+                return
+            print('Updating from %s to %s' % (version(), update[0]))
+            out = sys.__stdout__
+            path = install_update(update, lambda f, l: print(l, file=out, flush=True))
+        except Exception as e:
+            sys.exit('Update failed: %s' % e)
+        print('Updated: %s. Run it again with --rom to rebuild the game.' % path)
+        return
     if '--rom' in args:
         rom = args[args.index('--rom') + 1]
         jobs = int(args[args.index('--jobs') + 1]) if '--jobs' in args else default_jobs()

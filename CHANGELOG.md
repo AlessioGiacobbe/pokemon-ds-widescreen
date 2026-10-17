@@ -1,8 +1,46 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 — Faster, updates, logs
+
+**Downloads:** the same three setup programs; use these instead of the earlier
+ones and run the setup again to rebuild the game (your save is kept). From this
+version on, the setup window can update itself.
+
+### Faster
+
+- **The recompiled game code is about 6–9% faster than melonDS's interpreter**
+  (before it was about 16% slower). The common instructions are now plain C++
+  instead of calls into the interpreter, and memory accesses and jumps take a
+  shorter path. Every instruction was checked against the interpreter
+  (`--lockstep`) over 16,000 frames of booting, walking and battling.
+
+### Fixed
+
+- **White strips beside the screen as a battle opens.** The widescreen view showed
+  the half of the opening's background, and the 3D pieces, that the game keeps off
+  the screen; a row the screen shows in one colour is now that colour beside it.
+- **The trainer's legs over the black bar** as he slides out after throwing the
+  Poké Ball: beside the screen he is now behind the message box, as on the screen.
+- **Fades at the start and end of a battle** reached the sides of the view a frame
+  before the screen, so the picture faded unevenly. The sides now use the palettes
+  and brightness the screen was drawn with.
+- **The stats after a level up** were cut in two, the top half moved to the right
+  with the wild Pokémon's side. Windows like it now stay where the game puts them.
 
 ### Added
+
+- **Logs for bug reports.** Started from the setup window, the game's messages now
+  go to `game.log` (new each time) and a build's output to `build.log`; **Open logs
+  folder** opens the folder with both. On Android `log.txt` moved to
+  `Android/data/io.github.clickingmaster.ssrecomp/files`, where a file manager or a
+  PC can reach it. The renderer in use is now always in the log.
+
+- **Updates from the setup window.** At start it checks for a newer release (shown
+  next to the version number); **Update** downloads the setup program for your
+  system, checks it against the release's `SHA256SUMS.txt`, puts it in place of
+  the old one and restarts. Then press **Build** once to update the game; the
+  save and settings are kept. (This version still has to be downloaded by hand.)
+- **Issue forms** on GitHub ask for the version, system and log.
 
 - **Portable mode** (#10): with a file `portable.txt` next to the setup program,
   everything is kept in a folder `ssrecomp-data` beside it instead of

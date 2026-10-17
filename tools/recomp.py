@@ -16,6 +16,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import recomp_inline
 
 try:
     from elftools.elf.elffile import ELFFile   # only needed with a build directory
@@ -141,13 +142,15 @@ def load_sections(build_dir):
 ARM_COND = ['EQ', 'NE', 'CS', 'CC', 'MI', 'PL', 'VS', 'VC', 'HI', 'LS', 'GE', 'LT', 'GT', 'LE']
 
 
-def post(addr, step, target, local):
+def post(addr, step, target, local, pure=False):
     """The statement after an instruction; `target` is where a direct branch goes.
     A branch to an instruction of the same chunk continues there without a trip through
     the dispatcher, unless something has a name at that address: the frontend watches
     function entries (probes), and those are noticed in the dispatcher."""
     if target is not None and target in local:
         return f'RC_POST_BR(0x{addr + 2 * step:08X}u, 0x{target + step:08X}u, L{local[target]})'
+    if pure:
+        return 'RC_POST_PURE'
     return f'RC_POST(0x{addr + 2 * step:08X}u)'
 
 
@@ -159,30 +162,38 @@ def emit_arm(addr, opc, arm_tbl, local):
     cond = opc >> 28
     icode = ((opc >> 4) & 0xF) | ((opc >> 16) & 0xFF0)
     handler = arm_tbl[icode]
+    # The common instructions as inline C++, the rest through their handler.
+    inline = recomp_inline.arm(handler, opc, addr)
+    pure = recomp_inline.is_pure(inline)
+    run = recomp_inline.fast(inline) if inline else f'{handler}(cpu);'
+    skipped = recomp_inline.cycles(addr + 8)   # AddCycles_C
     if cond == 0xE:
-        body = f'{handler}(cpu);'
+        body = run
     elif cond == 0xF:
         if (opc & 0xFE000000) == 0xFA000000:
-            body = 'A_BLX_IMM(cpu);'
+            body, pure = 'A_BLX_IMM(cpu);', False
         else:
-            body = 'cpu->AddCycles_C();'
+            body, pure = skipped, True
     else:
-        body = f'if (RC_CC_{ARM_COND[cond]}) {handler}(cpu); else cpu->AddCycles_C();'
+        body = f'if (RC_CC_{ARM_COND[cond]}) {run} else {{ {skipped} }}'
     target = None
     if handler == 'A_B' and cond != 0xF:
         target = (addr + 8 + (sext(opc & 0xFFFFFF, 24) << 2)) & 0xFFFFFFFF
-    return f'RC_A_FETCH RC_A_GUARD(0x{opc:08X}u) {body} {post(addr, 4, target, local)}'
+    return f'RC_A_FETCH_AT(0x{addr + 8:08X}u) RC_A_GUARD(0x{opc:08X}u) {body} {post(addr, 4, target, local, pure)}'
 
 
 def emit_thumb(addr, opc, thumb_tbl, local):
     handler = thumb_tbl[(opc >> 6) & 0x3FF]
-    fetch = 'RC_T_FETCH_SHIFT' if (addr & 2) else 'RC_T_FETCH_READ'
+    fetch = f'RC_T_FETCH_SHIFT_AT(0x{addr + 4:08X}u)' if (addr & 2) else f'RC_T_FETCH_READ_AT(0x{addr + 4:08X}u)'
     target = None
     if handler == 'T_BCOND':
         target = (addr + 4 + (sext(opc & 0xFF, 8) << 1)) & 0xFFFFFFFF
     elif handler == 'T_B':
         target = (addr + 4 + (sext(opc & 0x7FF, 11) << 1)) & 0xFFFFFFFF
-    return f'{fetch} RC_T_GUARD(0x{opc:04X}u) {handler}(cpu); {post(addr, 2, target, local)}'
+    inline = recomp_inline.thumb(handler, opc, addr)
+    pure = recomp_inline.is_pure(inline)
+    run = recomp_inline.fast(inline) if inline else f'{handler}(cpu);'
+    return f'{fetch} RC_T_GUARD(0x{opc:04X}u) {run} {post(addr, 2, target, local, pure)}'
 
 
 def main():
