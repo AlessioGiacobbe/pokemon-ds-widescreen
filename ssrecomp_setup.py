@@ -508,7 +508,7 @@ ANDROID_HELP = (
 def play(extra=()):
     with open(ROM_NOTE) as f:
         rom = f.read().strip()
-    with open(os.path.join(HERE, 'game.log'), 'a') as log:
+    with open(os.path.join(HERE, 'game.log'), 'w') as log:
         return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'),
                                  '--config', os.path.join(HERE, 'ssrecomp.cfg'), *extra], cwd=HERE,
                                 stdout=log, stderr=subprocess.STDOUT, env=child_env())

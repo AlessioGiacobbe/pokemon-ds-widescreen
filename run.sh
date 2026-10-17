@@ -8,7 +8,11 @@ ROM="$HERE/../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds"
 BUILD="$HERE/build"
 [ "$(uname -s)" = Darwin ] && BUILD="$HERE/build-macos-$(uname -m)"
 if [ ! -x "$BUILD/ssrecomp" ] || [ ! -f "$ROM" ]; then
-    echo "Not set up yet: run python3 ssrecomp_setup.py first." >&2
+    if [ "$(uname -s)" = Darwin ]; then
+        echo "Not set up yet: run python3 ssrecomp_setup.py first." >&2
+    else
+        echo "Not set up yet: run ./setup.sh first." >&2
+    fi
     exit 1
 fi
 exec "$BUILD/ssrecomp" "$ROM" --save "$HERE/soulsilver.sav" "$@"

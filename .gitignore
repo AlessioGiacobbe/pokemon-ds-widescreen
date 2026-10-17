@@ -25,7 +25,3 @@ __pycache__/
 /gen.new/
 /dist/
 .DS_Store
-
-# Local macOS port planning and validation notes
-/docs/macos-port-plan.md
-/docs/macos-validation.md
