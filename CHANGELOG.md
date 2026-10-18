@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.2 — Faster widescreen
+
+**Downloads:** the same setup programs as before; update from the setup window
+and run the setup again to rebuild the game (your save is kept). Android
+players: press **Build for Android** again and install the new app over the old
+one.
+
+- **The widescreen 3D picture takes about half the processor time it did.** It is
+  drawn several pixels at a time (SIMD: AVX2 or SSE on PCs, NEON on phones), and
+  its working memory now stays in the processor's cache. On PCs it also uses fewer
+  threads (about one per core), which leaves more room for the game itself. The
+  picture is the same, apart from the odd pixel along the edge of a polygon.
+- The widescreen battle view looks for the stats window in one pass instead of four.
+
 ## v0.4.1 — Android controllers and update notice
 
 **Downloads:** the same setup programs as before; update from the setup window

@@ -122,3 +122,9 @@ pipeline (CurInstr/NextInstr) or cycles/timestamp in chunk locals (spills,
 up to 14% slower). The current recompiled code is about 6–9% faster than the
 interpreter; the cost now is mostly melonDS's per-instruction bookkeeping that
 lockstep requires.
+
+Widescreen 3D (`GPU3D_Wide.cpp`): the pixel loop works on groups of 8 (AVX2)
+or 4 (SSE, NEON) pixels; measure it with `SSR_WIDE_THREADS=1 SSR_WIDE_PROF=1`.
+No gain: separate loop copies per kind of polygon without SIMD (2%), reading
+texels without branches plus writing opaque groups as vectors (0%), keeping
+decoded textures from one frame to the next.
