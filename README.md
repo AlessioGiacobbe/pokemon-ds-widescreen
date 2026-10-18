@@ -26,8 +26,8 @@ accept such work.
 
 ## Screenshots
 
-The overworld drawn across a 16:9 screen, and battles with the touch-screen
-buttons laid out along the bottom (one screen, played with a controller):
+The overworld and battles drawn across a 16:9 screen, with the touch-screen
+buttons laid out along the bottom in battle (one screen, played with a controller):
 
 | | |
 |---|---|
