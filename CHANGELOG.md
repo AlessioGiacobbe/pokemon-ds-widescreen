@@ -4,6 +4,40 @@
 
 - The setup program for macOS can now check for updates and update itself from
   the setup window and with `--update`, matching Linux and Windows.
+## v0.4.2 — Faster widescreen
+
+**Downloads:** the same setup programs as before; update from the setup window
+and run the setup again to rebuild the game (your save is kept). Android
+players: press **Build for Android** again and install the new app over the old
+one.
+
+- **The widescreen 3D picture takes about half the processor time it did.** It is
+  drawn several pixels at a time (SIMD: AVX2 or SSE on PCs, NEON on phones), and
+  its working memory now stays in the processor's cache. On PCs it also uses fewer
+  threads (about one per core), which leaves more room for the game itself. The
+  picture is the same, apart from the odd pixel along the edge of a polygon.
+- The widescreen battle view looks for the stats window in one pass instead of four.
+
+## v0.4.1 — Android controllers and update notice
+
+**Downloads:** the same setup programs as before; update from the setup window
+and run the setup again to rebuild the game (your save is kept). Android
+players: press **Build for Android** again and install the new app over the old
+one.
+
+- **Android: controllers such as the Backbone One work.** SDL's own USB drivers
+  took over some pads (the Backbone One, PlayStation pads) from Android's
+  input, and lost them when they could not open them themselves. All controllers
+  now come through Android, which knows them.
+- **Android: the app says when there is a new version.** At start it asks
+  GitHub for the newest release; when that is newer, a message at the top of the
+  screen says to build the app again on the PC (the app holds your own game, so
+  it cannot download itself). It is the only thing the app uses the internet for.
+- **Lower world detail for slower devices.** WORLD DETAIL in the pause menu now
+  also offers 384, 288 and 192 (the DS's own sharpness) as well as 540 to 1440;
+  fewer lines draw faster. Left and right go down and up through the choices.
+- **FPS counter.** FPS COUNTER in the pause menu shows the frames shown per
+  second in the top right corner.
 
 ## v0.4.0 — Faster again, cleaner menus
 

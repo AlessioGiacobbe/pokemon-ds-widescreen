@@ -14,6 +14,8 @@
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-feature android:name="android.hardware.type.pc" android:required="false" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Only to ask GitHub for the newest release at start. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="SoulSilver"

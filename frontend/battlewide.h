@@ -69,19 +69,25 @@ public:
         // put them, in front, and are not moved with the wild Pokémon's side (which would
         // cut one in two at the bottom of its rows).
         uint8_t windowLayers = 0;
-        for (int b = 0; b < 4; b++)
         {
-            const uint8_t bit = 1 << b;
-            int n = 0, x0 = 256, x1 = -1, y0 = 192, y1 = -1;
+            // One pass over the screen for all four backgrounds.
+            int n[4] = {}, x0[4] = { 256, 256, 256, 256 }, x1[4] = { -1, -1, -1, -1 };
+            int y0[4] = { 192, 192, 192, 192 }, y1[4] = { -1, -1, -1, -1 };
+            static const int8_t single[16] = { -1, 0, 1, -1, 2, -1, -1, -1, 3, -1, -1, -1, -1, -1, -1, -1 };
             for (int y = 0; y < 192; y++)
                 for (int x = 0; x < 256; x++)
-                    if (LayerClass(top.flags[y * 256 + x]) == bit)
-                    {
-                        n++;
-                        x0 = std::min(x0, x); x1 = std::max(x1, x);
-                        y0 = std::min(y0, y); y1 = std::max(y1, y);
-                    }
-            if (n >= 256 && x0 > 0 && x1 < 255 && n * 10 >= (x1 - x0 + 1) * (y1 - y0 + 1) * 9) windowLayers |= bit;
+                {
+                    const uint8_t c = LayerClass(top.flags[y * 256 + x]);
+                    if (c > 0x0F) continue;
+                    const int b = single[c];
+                    if (b < 0) continue;
+                    n[b]++;
+                    x0[b] = std::min(x0[b], x); x1[b] = std::max(x1[b], x);
+                    y0[b] = std::min(y0[b], y); y1[b] = std::max(y1[b], y);
+                }
+            for (int b = 0; b < 4; b++)
+                if (n[b] >= 256 && x0[b] > 0 && x1[b] < 255 && n[b] * 10 >= (x1[b] - x0[b] + 1) * (y1[b] - y0[b] + 1) * 9)
+                    windowLayers |= 1 << b;
         }
         {
             int kept = 0;

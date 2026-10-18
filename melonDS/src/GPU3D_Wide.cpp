@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <functional>
+#include <type_traits>
 #include <mutex>
 #include <thread>
 
@@ -95,6 +96,40 @@ private:
     bool Quit = false;
 };
 
+// The widescreen rasteriser works on groups of pixels with the compiler's vector types
+// (SSE/AVX on x86, NEON on ARM): 8 at a time where AVX2 is on, otherwise 4.
+#if defined(__AVX2__)
+constexpr int Lanes = 8;
+#else
+constexpr int Lanes = 4;
+#endif
+typedef float VF __attribute__((vector_size(Lanes * 4)));
+typedef s32 VI __attribute__((vector_size(Lanes * 4)));
+static inline VF Select(VI mask, VF a, VF b) { return (VF)(((VI)a & mask) | ((VI)b & ~mask)); }
+static inline VI Select(VI mask, VI a, VI b) { return (a & mask) | (b & ~mask); }
+static inline bool Any(VI mask)
+{
+    s32 r = 0;
+    for (int i = 0; i < Lanes; i++) r |= mask[i];
+    return r != 0;
+}
+static inline VI LaneIndex()
+{
+    VI v;
+    for (int i = 0; i < Lanes; i++) v[i] = i;
+    return v;
+}
+static inline VI Clamp63(VI v) { return Select(v < 0, VI{}, Select(v > 63, VI{} + 63, v)); }
+static inline VF LaneIndexF() { return __builtin_convertvector(LaneIndex(), VF); }
+// A texture coordinate (whole texels) wrapped, mirrored or clamped to the texture's size.
+static inline VI WrapCoord(VI t, int size, bool repeat, bool mirror)
+{
+    if (!repeat) return Select(t < 0, VI{}, Select(t >= size, VI{} + (size - 1), t));
+    const VI m = t & (size - 1);
+    if (!mirror) return m;
+    return Select((t & size) != 0, (size - 1) - m, m);
+}
+
 struct WideVertex
 {
     float X, Y;      // output pixels
@@ -116,9 +151,14 @@ struct WideAccess
     static inline bool Dirty = false, NeedReal = false, PendingPublish = false;
     static inline std::vector<u32> Back;
     static inline int BackW = 0, BackH = 0;
-    static inline std::vector<s32> Depth;
-    static inline std::vector<u8> Attr; // bit 7 fog, bits 0-6 translucent polygon ID + 1
-    static inline std::vector<u16> Writer; // which opaque triangle (Tri::Order) drew the pixel
+    // Per drawing thread, for the strip of rows it is drawing (see Draw): small enough to
+    // stay in the processor's cache, unlike buffers the size of the picture.
+    struct StripBuffers
+    {
+        std::vector<s32> Depth;
+        std::vector<u8> Attr;    // bit 7 fog, bits 0-6 translucent polygon ID + 1
+        std::vector<u16> Writer; // which opaque triangle (Tri::Order) drew the pixel
+    };
     static inline std::unique_ptr<Workers> Pool;
     static inline bool Drawing = false;
 
@@ -482,9 +522,6 @@ struct WideAccess
         const SoftRenderer& soft = static_cast<const SoftRenderer&>(g.GetCurrentRenderer());
 
         Back.resize((size_t)W * H);
-        Depth.resize((size_t)W * H);
-        Attr.resize((size_t)W * H);
-        Writer.resize((size_t)W * H);
         BackW = W;
         BackH = H;
 
@@ -605,6 +642,12 @@ struct WideAccess
         if (!Pool)
         {
             int n = (int)std::thread::hardware_concurrency() - 2;
+#if defined(__x86_64__) || defined(__i386__)
+            // x86 processors mostly run two threads per core. Drawing threads on the second
+            // thread of a core slow down the emulation running on the first, and measured
+            // (6 cores, 12 threads) 3-5 threads were quicker overall than 10.
+            n = (int)std::thread::hardware_concurrency() / 2 - 1;
+#endif
             if (const char* forced = getenv("SSR_WIDE_THREADS")) n = atoi(forced);
             Pool = std::make_unique<Workers>(std::clamp(n, 1, 16));
         }
@@ -616,300 +659,407 @@ struct WideAccess
         nextStrip = 0;
         auto strip = [=](int index) {
             const int rowA = index * stripRows, rowB = std::min(H, rowA + stripRows);
-            for (int y = rowA; y < rowB; y++)
-            {
-                std::fill(Back.begin() + (size_t)y * W, Back.begin() + (size_t)(y + 1) * W, clearColor);
-                std::fill(Depth.begin() + (size_t)y * W, Depth.begin() + (size_t)(y + 1) * W, clearZ);
-                std::fill(Attr.begin() + (size_t)y * W, Attr.begin() + (size_t)(y + 1) * W, clearAttr);
-                std::fill(Writer.begin() + (size_t)y * W, Writer.begin() + (size_t)(y + 1) * W, 0xFFFF);
-            }
+            const size_t stripPixels = (size_t)(rowB - rowA) * W;
+            static thread_local StripBuffers buffers;
+            // (a group of pixels at the end of the last row reads a little past it)
+            buffers.Depth.resize((size_t)stripRows * W + Lanes);
+            buffers.Attr.resize((size_t)stripRows * W);
+            buffers.Writer.resize((size_t)stripRows * W + Lanes);
+            std::fill(Back.begin() + (size_t)rowA * W, Back.begin() + (size_t)rowB * W, clearColor);
+            std::fill(buffers.Depth.begin(), buffers.Depth.begin() + stripPixels, clearZ);
+            std::fill(buffers.Attr.begin(), buffers.Attr.begin() + stripPixels, clearAttr);
+            std::fill(buffers.Writer.begin(), buffers.Writer.begin() + stripPixels, 0xFFFF);
 
+            // One copy of the loop per kind of triangle (textured or not, Z- or W-buffered,
+            // one colour or shaded), so that each pixel tests and keeps live only what its
+            // kind needs.
+            auto raster = [&](const Tri& t, auto texC, auto wbC, auto flatC) {
+                    const WideVertex& a = t.V[0];
+                    const WideVertex& b = t.V[1];
+                    const WideVertex& c = t.V[2];
+                    double area = (double)(b.X - a.X) * (c.Y - a.Y) - (double)(c.X - a.X) * (b.Y - a.Y);
+                    if (area == 0) return;
+                    const double inv = 1.0 / area;
+                    // Barycentric weight i at (x, y) = E[i][0] * x + E[i][1] * y + E[i][2].
+                    const double E[3][3] = {
+                        { (b.Y - c.Y) * inv, (c.X - b.X) * inv, ((double)b.X * c.Y - (double)c.X * b.Y) * inv },
+                        { (c.Y - a.Y) * inv, (a.X - c.X) * inv, ((double)c.X * a.Y - (double)a.X * c.Y) * inv },
+                        { (a.Y - b.Y) * inv, (b.X - a.X) * inv, ((double)a.X * b.Y - (double)b.X * a.Y) * inv },
+                    };
+
+                    const u32 attr = t.Attr;
+                    const u32 polyAlpha = (attr >> 16) & 0x1F;
+                    const bool depthEqual = attr & (1 << 14);
+                    constexpr bool wbuffer = decltype(wbC)::value;
+                    const s32 equalTolerance = wbuffer ? 0xFF : 0x200;
+                    const u8 polyId = (u8)(((attr >> 24) & 0x3F) + 1);
+                    const u8 fogBit = (attr & (1 << 15)) ? 0x80 : 0;
+                    // In W-buffer mode the stored depth is W; the vertices carry it scaled.
+                    const float wScale = wbuffer ? a.Z * a.InvW : 0;
+                    constexpr bool textured = decltype(texC)::value;
+                    Texture* const tex = t.Tex;
+                    const u32 texParam = t.TexParam;
+                    const int texW = tex ? tex->W : 0, texH = tex ? tex->H : 0;
+                    const u32 blendMode = (attr >> 4) & 0x3;
+                    const bool highlight = blendMode == 2 && (dispCnt & (1 << 1));
+                    const bool toon = blendMode == 2 && !highlight;
+                    // Most polygons have one colour at all three corners.
+                    constexpr bool flat = decltype(flatC)::value;
+                    const int flatR = (int)a.R, flatG = (int)a.G, flatB = (int)a.B;
+
+                    // Local copies: the loop below writes through byte pointers, which would
+                    // otherwise make the compiler read all of this from memory again per pixel.
+                    const float aIW = a.InvW, bIW = b.InvW, cIW = c.InvW, aZ = a.Z, bZ = b.Z, cZ = c.Z;
+                    const float aR = a.R, bR = b.R, cR = c.R, aG = a.G, bG = b.G, cG = c.G, aB = a.B, bB = b.B, cB = c.B;
+                    const float aS = a.S, bS = b.S, cS = c.S, aT = a.T, bT = b.T, cT = c.T;
+                    u32* const texels = tex ? tex->Texels.data() : nullptr;
+                    // A texel, decoded the first time it is used in this frame.
+                    auto fetchTexel = [&](int ts, int tv) -> u32 {
+                        u32 texel = texels[(size_t)tv * texW + ts];
+                        if (!texel)
+                        {
+                            u16 tcolor;
+                            u8 talpha;
+                            softP->TextureLookup(*gpuP, tex->Param, tex->Palette, (s16)(ts << 4), (s16)(tv << 4), &tcolor, &talpha);
+                            u32 tr = (tcolor << 1) & 0x3E; if (tr) tr++;
+                            u32 tg = (tcolor >> 4) & 0x3E; if (tg) tg++;
+                            u32 tb = (tcolor >> 9) & 0x3E; if (tb) tb++;
+                            texel = 0x80000000 | tr | (tg << 8) | (tb << 16) | ((u32)talpha << 24);
+                            texels[(size_t)tv * texW + ts] = texel;
+                        }
+                        return texel;
+                    };
+                    const bool frontFirst = t.FrontFirst;
+                    const u16 order = t.Order;
+                    const int Wl = W;
+                    u32* const backData = Back.data();
+                    // (the strip's buffers start at its first row)
+                    s32* const depthData = buffers.Depth.data() - (ptrdiff_t)rowA * W;
+                    u8* const attrData = buffers.Attr.data() - (ptrdiff_t)rowA * W;
+                    u16* const writerData = buffers.Writer.data() - (ptrdiff_t)rowA * W;
+                    const u16* const toonTable = toonCopy;
+                    // Vertices are placed to a sixteenth of a DS pixel, which is a visible fraction
+                    // of an output pixel, so where three polygons meet along an edge a sliver can
+                    // stay open. Each polygon is grown by a third of an output pixel to close them.
+                    const double margin[3] = {
+                        0.34 * std::sqrt(E[0][0] * E[0][0] + E[0][1] * E[0][1]),
+                        0.34 * std::sqrt(E[1][0] * E[1][0] + E[1][1] * E[1][1]),
+                        0.34 * std::sqrt(E[2][0] * E[2][0] + E[2][1] * E[2][1]),
+                    };
+
+                    const double xmin = std::min({ (double)a.X, (double)b.X, (double)c.X });
+                    const double xmax = std::max({ (double)a.X, (double)b.X, (double)c.X });
+                    const int y0 = std::max(t.Y0, rowA), y1 = std::min(t.Y1, rowB - 1);
+                    for (int y = y0; y <= y1; y++)
+                    {
+                        const double py = y + 0.5;
+                        // The span of this row: where all three weights are non-negative.
+                        double lo = 0, hi = Wl;
+                        bool empty = false;
+                        for (int i = 0; i < 3; i++)
+                        {
+                            const double k = E[i][1] * py + E[i][2] + margin[i];
+                            if (E[i][0] > 1e-12)
+                                lo = std::max(lo, -k / E[i][0]);
+                            else if (E[i][0] < -1e-12)
+                                hi = std::min(hi, -k / E[i][0]);
+                            else if (k < -1e-6)
+                                empty = true;
+                        }
+                        if (empty) continue;
+                        // At a sharp corner the widened edges meet well beyond the vertex, which
+                        // would draw a streak along that row; the span ends where the triangle does.
+                        lo = std::max(lo, xmin - 0.4);
+                        hi = std::min(hi, xmax + 0.4);
+                        int x0 = (int)std::ceil(lo - 0.5 - 0.02), x1 = (int)std::floor(hi - 0.5 + 0.02);
+                        if (x0 < 0) x0 = 0;
+                        if (x1 >= Wl) x1 = Wl - 1;
+                        if (x1 < x0) continue;
+
+                        u32* color = backData + (size_t)y * Wl;
+                        s32* depth = depthData + (size_t)y * Wl;
+                        u8* pattr = attrData + (size_t)y * Wl;
+                        u16* writer = writerData + (size_t)y * Wl;
+
+                        const float l0 = (float)(E[0][0] * (x0 + 0.5) + E[0][1] * py + E[0][2]);
+                        const float l1 = (float)(E[1][0] * (x0 + 0.5) + E[1][1] * py + E[1][2]);
+                        const float s0 = (float)E[0][0], s1 = (float)E[1][0];
+                        // Up to the depth test and the texel's place, a group of pixels at a time (SIMD);
+                        // what passes is then textured, shaded and written one pixel at a time.
+                        for (int xb = x0; xb <= x1; xb += Lanes)
+                        {
+                            const int n = std::min(Lanes, x1 - xb + 1);
+                            const VF k = (float)(xb - x0) + LaneIndexF();
+                            const VF f0 = l0 + k * s0, f1 = l1 + k * s1;
+                            // Samples a hair outside the triangle (the widened spans) are pulled
+                            // back onto it, and all of them slightly towards its middle, so that
+                            // texture coordinates never reach past the polygon's own texels.
+                            VF w0 = Select(f0 < 0, VF{}, f0), w1 = Select(f1 < 0, VF{}, f1), w2 = 1.0f - w0 - w1;
+                            const VI outside = w2 < 0;
+                            if (Any(outside))
+                            {
+                                const VF kk = 1.0f / (w0 + w1);
+                                w0 = Select(outside, w0 * kk, w0);
+                                w1 = Select(outside, w1 * kk, w1);
+                                w2 = Select(outside, VF{}, w2);
+                            }
+                            w0 = w0 * 0.9994f + 0.0002f;
+                            w1 = w1 * 0.9994f + 0.0002f;
+                            w2 = w2 * 0.9994f + 0.0002f;
+                            // Perspective-correct weights.
+                            VF q0 = w0 * aIW, q1 = w1 * bIW, q2 = w2 * cIW;
+                            const VF qs = q0 + q1 + q2;
+                            VI ok = (qs > 0) & (LaneIndex() < n);
+                            const VF iq = 1.0f / qs;
+                            // In W-buffer mode the stored depth is W; the vertices carry it scaled.
+                            const VI z = wbuffer ? __builtin_convertvector(wScale * iq, VI) : __builtin_convertvector(w0 * aZ + w1 * bZ + w2 * cZ, VI);
+                            VI dz;
+                            memcpy(&dz, depth + xb, sizeof(dz));
+                            if (depthEqual)
+                            {
+                                const VI diff = dz - z;
+                                ok &= (diff >= -equalTolerance) & (diff <= equalTolerance);
+                            }
+                            else if (frontFirst)
+                            {
+                                // On equal depth the one first in the game's order wins.
+                                VI wr;
+                                for (int i = 0; i < Lanes; i++) wr[i] = writer[xb + i];
+                                ok &= (z < dz) | ((z == dz) & ((s32)order < wr));
+                            }
+                            else
+                                ok &= z < dz;
+                            if (!Any(ok)) continue;
+                            q0 *= iq;
+                            q1 *= iq;
+                            q2 *= iq;
+                            VI vts{}, vtv{};
+                            if (textured)
+                            {
+                                // (+32768 keeps the value positive so the conversion rounds down)
+                                vts = (__builtin_convertvector(q0 * aS + q1 * bS + q2 * cS + 32768.0f, VI) - 32768) >> 4;
+                                vtv = (__builtin_convertvector(q0 * aT + q1 * bT + q2 * cT + 32768.0f, VI) - 32768) >> 4;
+                                vts = WrapCoord(vts, texW, texParam & (1 << 16), texParam & (1 << 18));
+                                vtv = WrapCoord(vtv, texH, texParam & (1 << 17), texParam & (1 << 19));
+                            }
+                            if (!highlight && !toon)
+                            {
+                                // The usual case, on the whole group: the texel and alpha test, the colour, and
+                                // what goes into the picture; only the writes are made one pixel at a time.
+                                VI alphaV = VI{} + (s32)polyAlpha, texel{};
+                                if (textured)
+                                {
+                                    for (int i = 0; i < n; i++)
+                                        if (ok[i]) texel[i] = (s32)fetchTexel(vts[i], vtv[i]);
+                                    if (!(blendMode & 1))
+                                        alphaV = ((((texel >> 24) & 0x1F) + 1) * (s32)(polyAlpha + 1) - 1) >> 5;
+                                }
+                                if (polyAlpha == 0) alphaV = VI{} + 31; // wireframe polygons are drawn filled here
+                                ok &= alphaV > (s32)alphaRef;
+                                if (!Any(ok)) continue;
+                                VI vr = VI{} + flatR, vg = VI{} + flatG, vb = VI{} + flatB;
+                                if (!flat)
+                                {
+                                    vr = Clamp63(__builtin_convertvector(q0 * aR + q1 * bR + q2 * cR + 0.5f, VI));
+                                    vg = Clamp63(__builtin_convertvector(q0 * aG + q1 * bG + q2 * cG + 0.5f, VI));
+                                    vb = Clamp63(__builtin_convertvector(q0 * aB + q1 * bB + q2 * cB + 0.5f, VI));
+                                }
+                                VI vR = vr, vG = vg, vB = vb;
+                                if (textured)
+                                {
+                                    const VI tr = texel & 0x3F, tg = (texel >> 8) & 0x3F, tb = (texel >> 16) & 0x3F, ta = (texel >> 24) & 0x1F;
+                                    if (blendMode & 1)
+                                    {
+                                        // decal
+                                        const VI none = ta == 0, full = ta == 31;
+                                        vR = Select(none, vr, Select(full, tr, (tr * ta + vr * (31 - ta)) >> 5));
+                                        vG = Select(none, vg, Select(full, tg, (tg * ta + vg * (31 - ta)) >> 5));
+                                        vB = Select(none, vb, Select(full, tb, (tb * ta + vb * (31 - ta)) >> 5));
+                                    }
+                                    else
+                                    {
+                                        // modulate
+                                        vR = ((tr + 1) * (vr + 1) - 1) >> 6;
+                                        vG = ((tg + 1) * (vg + 1) - 1) >> 6;
+                                        vB = ((tb + 1) * (vb + 1) - 1) >> 6;
+                                    }
+                                }
+                                vR = (vR << 2) | (vR >> 4);
+                                vG = (vG << 2) | (vG >> 4);
+                                vB = (vB << 2) | (vB >> 4);
+                                for (int i = 0; i < n; i++)
+                                {
+                                    if (!ok[i]) continue;
+                                    const int x = xb + i;
+                                    if (alphaV[i] == 31)
+                                    {
+                                        color[x] = 0xFF000000 | ((u32)vR[i] << 16) | ((u32)vG[i] << 8) | (u32)vB[i];
+                                        depth[x] = z[i];
+                                        pattr[x] = fogBit;
+                                        if (frontFirst) writer[x] = order;
+                                        continue;
+                                    }
+                                    const s32 zl = z[i];
+                                    const u32 alpha = (u32)alphaV[i];
+                                    u32 r = vR[i], gr = vG[i], bl = vB[i];
+                                    // Translucent pixels of one polygon ID are not drawn over each other.
+                                    if ((pattr[x] & 0x7F) == polyId) continue;
+                                    const u32 dst = color[x];
+                                    u32 da = dst >> 24;
+                                    if (da && blendEnabled)
+                                    {
+                                        const u32 f = alpha + 1;
+                                        r = (r * f + ((dst >> 16) & 0xFF) * (32 - f)) >> 5;
+                                        gr = (gr * f + ((dst >> 8) & 0xFF) * (32 - f)) >> 5;
+                                        bl = (bl * f + (dst & 0xFF) * (32 - f)) >> 5;
+                                    }
+                                    da = std::max(da, (alpha << 3) | (alpha >> 2));
+                                    color[x] = (da << 24) | (r << 16) | (gr << 8) | bl;
+                                    if (attr & (1 << 11))
+                                    {
+                                        depth[x] = zl;
+                                        if (frontFirst) writer[x] = order;
+                                    }
+                                    pattr[x] = (u8)(polyId | (pattr[x] & fogBit));
+                                }
+                            }
+                            else
+                                for (int i = 0; i < n; i++)
+                                {
+                                    if (!ok[i]) continue;
+                                    const int x = xb + i;
+                                    const s32 zl = z[i];
+                                    const float pq0 = q0[i], pq1 = q1[i], pq2 = q2[i];
+                                    // The alpha test first: it needs only the texel, and a quarter of the
+                                    // pixels (the clear parts of billboards) stop there.
+                                    u32 r, gr, bl, alpha, texel = 0;
+                                    if (textured)
+                                    {
+                                        const int ts = vts[i], tv = vtv[i];
+                                        texel = fetchTexel(ts, tv);
+                                        const u32 ta = (texel >> 24) & 0x1F;
+                                        alpha = (blendMode & 1) ? polyAlpha : ((ta + 1) * (polyAlpha + 1) - 1) >> 5;
+                                    }
+                                    else
+                                        alpha = polyAlpha;
+                                    if (polyAlpha == 0) alpha = 31; // wireframe polygons are drawn filled here
+                                    if (alpha <= alphaRef) continue;
+
+                                    int vr = flatR, vg = flatG, vb = flatB;
+                                    if (!flat)
+                                    {
+                                        vr = std::clamp((int)(pq0 * aR + pq1 * bR + pq2 * cR + 0.5f), 0, 63);
+                                        vg = std::clamp((int)(pq0 * aG + pq1 * bG + pq2 * cG + 0.5f), 0, 63);
+                                        vb = std::clamp((int)(pq0 * aB + pq1 * bB + pq2 * cB + 0.5f), 0, 63);
+                                    }
+                                    const int rawR = vr;
+                                    if (highlight)
+                                        vg = vb = vr;
+                                    else if (toon)
+                                    {
+                                        u16 tc = toonTable[vr >> 1];
+                                        vr = (tc << 1) & 0x3E; if (vr) vr++;
+                                        vg = (tc >> 4) & 0x3E; if (vg) vg++;
+                                        vb = (tc >> 9) & 0x3E; if (vb) vb++;
+                                    }
+
+                                    if (textured)
+                                    {
+                                        const u32 tr = texel & 0x3F, tg = (texel >> 8) & 0x3F, tb = (texel >> 16) & 0x3F, ta = (texel >> 24) & 0x1F;
+                                        if (blendMode & 1)
+                                        {
+                                            // decal
+                                            if (ta == 0) { r = vr; gr = vg; bl = vb; }
+                                            else if (ta == 31) { r = tr; gr = tg; bl = tb; }
+                                            else
+                                            {
+                                                r = ((tr * ta) + (vr * (31 - ta))) >> 5;
+                                                gr = ((tg * ta) + (vg * (31 - ta))) >> 5;
+                                                bl = ((tb * ta) + (vb * (31 - ta))) >> 5;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // modulate
+                                            r = ((tr + 1) * (vr + 1) - 1) >> 6;
+                                            gr = ((tg + 1) * (vg + 1) - 1) >> 6;
+                                            bl = ((tb + 1) * (vb + 1) - 1) >> 6;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        r = vr;
+                                        gr = vg;
+                                        bl = vb;
+                                    }
+                                    if (highlight)
+                                    {
+                                        u16 tc = toonTable[rawR >> 1];
+                                        u32 hr = (tc << 1) & 0x3E; if (hr) hr++;
+                                        u32 hg = (tc >> 4) & 0x3E; if (hg) hg++;
+                                        u32 hb = (tc >> 9) & 0x3E; if (hb) hb++;
+                                        r = std::min<u32>(63, r + hr);
+                                        gr = std::min<u32>(63, gr + hg);
+                                        bl = std::min<u32>(63, bl + hb);
+                                    }
+
+                                    r = (r << 2) | (r >> 4);
+                                    gr = (gr << 2) | (gr >> 4);
+                                    bl = (bl << 2) | (bl >> 4);
+
+                                    if (alpha == 31)
+                                    {
+                                        color[x] = 0xFF000000 | (r << 16) | (gr << 8) | bl;
+                                        depth[x] = zl;
+                                        pattr[x] = fogBit;
+                                        if (frontFirst) writer[x] = order;
+                                    }
+                                    else
+                                    {
+                                        // Translucent pixels of one polygon ID are not drawn over each other.
+                                        if ((pattr[x] & 0x7F) == polyId) continue;
+                                        const u32 dst = color[x];
+                                        u32 da = dst >> 24;
+                                        if (da && blendEnabled)
+                                        {
+                                            const u32 f = alpha + 1;
+                                            r = (r * f + ((dst >> 16) & 0xFF) * (32 - f)) >> 5;
+                                            gr = (gr * f + ((dst >> 8) & 0xFF) * (32 - f)) >> 5;
+                                            bl = (bl * f + (dst & 0xFF) * (32 - f)) >> 5;
+                                        }
+                                        da = std::max(da, (alpha << 3) | (alpha >> 2));
+                                        color[x] = (da << 24) | (r << 16) | (gr << 8) | bl;
+                                        if (attr & (1 << 11))
+                                        {
+                                            depth[x] = zl;
+                                            if (frontFirst) writer[x] = order;
+                                        }
+                                        pattr[x] = (u8)(polyId | (pattr[x] & fogBit));
+                                    }
+                                }
+                        }
+                    }
+
+            };
+            using T = std::true_type;
+            using F = std::false_type;
             for (const Tri& t : tris)
             {
                 if (t.Y1 < rowA || t.Y0 >= rowB) continue;
                 const WideVertex& a = t.V[0];
                 const WideVertex& b = t.V[1];
                 const WideVertex& c = t.V[2];
-                double area = (double)(b.X - a.X) * (c.Y - a.Y) - (double)(c.X - a.X) * (b.Y - a.Y);
-                if (area == 0) continue;
-                const double inv = 1.0 / area;
-                // Barycentric weight i at (x, y) = E[i][0] * x + E[i][1] * y + E[i][2].
-                const double E[3][3] = {
-                    { (b.Y - c.Y) * inv, (c.X - b.X) * inv, ((double)b.X * c.Y - (double)c.X * b.Y) * inv },
-                    { (c.Y - a.Y) * inv, (a.X - c.X) * inv, ((double)c.X * a.Y - (double)a.X * c.Y) * inv },
-                    { (a.Y - b.Y) * inv, (b.X - a.X) * inv, ((double)a.X * b.Y - (double)b.X * a.Y) * inv },
-                };
-
-                const u32 attr = t.Attr;
-                const u32 polyAlpha = (attr >> 16) & 0x1F;
-                const bool depthEqual = attr & (1 << 14);
-                const bool wbuffer = t.WBuffer;
-                const s32 equalTolerance = wbuffer ? 0xFF : 0x200;
-                const u8 polyId = (u8)(((attr >> 24) & 0x3F) + 1);
-                const u8 fogBit = (attr & (1 << 15)) ? 0x80 : 0;
-                // In W-buffer mode the stored depth is W; the vertices carry it scaled.
-                const float wScale = wbuffer ? a.Z * a.InvW : 0;
-                Texture* const tex = t.Tex;
-                const u32 texParam = t.TexParam;
-                const int texW = tex ? tex->W : 0, texH = tex ? tex->H : 0;
-                const u32 blendMode = (attr >> 4) & 0x3;
-                const bool highlight = blendMode == 2 && (dispCnt & (1 << 1));
-                const bool toon = blendMode == 2 && !highlight;
-                // Most polygons have one colour at all three corners.
                 const bool flat = a.R == b.R && a.R == c.R && a.G == b.G && a.G == c.G && a.B == b.B && a.B == c.B;
-                const int flatR = (int)a.R, flatG = (int)a.G, flatB = (int)a.B;
-
-                // Local copies: the loop below writes through byte pointers, which would
-                // otherwise make the compiler read all of this from memory again per pixel.
-                const float aIW = a.InvW, bIW = b.InvW, cIW = c.InvW, aZ = a.Z, bZ = b.Z, cZ = c.Z;
-                const float aR = a.R, bR = b.R, cR = c.R, aG = a.G, bG = b.G, cG = c.G, aB = a.B, bB = b.B, cB = c.B;
-                const float aS = a.S, bS = b.S, cS = c.S, aT = a.T, bT = b.T, cT = c.T;
-                u32* const texels = tex ? tex->Texels.data() : nullptr;
-                const bool frontFirst = t.FrontFirst;
-                const u16 order = t.Order;
-                const int Wl = W;
-                u32* const backData = Back.data();
-                s32* const depthData = Depth.data();
-                u8* const attrData = Attr.data();
-                u16* const writerData = Writer.data();
-                const u16* const toonTable = toonCopy;
-                // Vertices are placed to a sixteenth of a DS pixel, which is a visible fraction
-                // of an output pixel, so where three polygons meet along an edge a sliver can
-                // stay open. Each polygon is grown by a third of an output pixel to close them.
-                const double margin[3] = {
-                    0.34 * std::sqrt(E[0][0] * E[0][0] + E[0][1] * E[0][1]),
-                    0.34 * std::sqrt(E[1][0] * E[1][0] + E[1][1] * E[1][1]),
-                    0.34 * std::sqrt(E[2][0] * E[2][0] + E[2][1] * E[2][1]),
-                };
-
-                const double xmin = std::min({ (double)a.X, (double)b.X, (double)c.X });
-                const double xmax = std::max({ (double)a.X, (double)b.X, (double)c.X });
-                const int y0 = std::max(t.Y0, rowA), y1 = std::min(t.Y1, rowB - 1);
-                for (int y = y0; y <= y1; y++)
+                switch ((t.Tex ? 4 : 0) | (t.WBuffer ? 2 : 0) | (flat ? 1 : 0))
                 {
-                    const double py = y + 0.5;
-                    // The span of this row: where all three weights are non-negative.
-                    double lo = 0, hi = Wl;
-                    bool empty = false;
-                    for (int i = 0; i < 3; i++)
-                    {
-                        const double k = E[i][1] * py + E[i][2] + margin[i];
-                        if (E[i][0] > 1e-12)
-                            lo = std::max(lo, -k / E[i][0]);
-                        else if (E[i][0] < -1e-12)
-                            hi = std::min(hi, -k / E[i][0]);
-                        else if (k < -1e-6)
-                            empty = true;
-                    }
-                    if (empty) continue;
-                    // At a sharp corner the widened edges meet well beyond the vertex, which
-                    // would draw a streak along that row; the span ends where the triangle does.
-                    lo = std::max(lo, xmin - 0.4);
-                    hi = std::min(hi, xmax + 0.4);
-                    int x0 = (int)std::ceil(lo - 0.5 - 0.02), x1 = (int)std::floor(hi - 0.5 + 0.02);
-                    if (x0 < 0) x0 = 0;
-                    if (x1 >= Wl) x1 = Wl - 1;
-                    if (x1 < x0) continue;
-
-                    u32* color = backData + (size_t)y * Wl;
-                    s32* depth = depthData + (size_t)y * Wl;
-                    u8* pattr = attrData + (size_t)y * Wl;
-                    u16* writer = writerData + (size_t)y * Wl;
-
-                    const double l0 = E[0][0] * (x0 + 0.5) + E[0][1] * py + E[0][2];
-                    const double l1 = E[1][0] * (x0 + 0.5) + E[1][1] * py + E[1][2];
-                    const float s0 = (float)E[0][0], s1 = (float)E[1][0];
-                    float f0 = (float)l0, f1 = (float)l1;
-                    for (int x = x0; x <= x1; x++, f0 += s0, f1 += s1)
-                    {
-                        // Samples a hair outside the triangle (the widened spans) are pulled
-                        // back onto it, and all of them slightly towards its middle, so that
-                        // texture coordinates never reach past the polygon's own texels.
-                        float w0 = f0 < 0 ? 0 : f0, w1 = f1 < 0 ? 0 : f1, w2 = 1.0f - w0 - w1;
-                        if (w2 < 0)
-                        {
-                            const float k = 1.0f / (w0 + w1);
-                            w0 *= k;
-                            w1 *= k;
-                            w2 = 0;
-                        }
-                        w0 = w0 * 0.9994f + 0.0002f;
-                        w1 = w1 * 0.9994f + 0.0002f;
-                        w2 = w2 * 0.9994f + 0.0002f;
-                        // Perspective-correct weights.
-                        float q0 = w0 * aIW, q1 = w1 * bIW, q2 = w2 * cIW;
-                        float qs = q0 + q1 + q2;
-                        if (qs <= 0) continue;
-                        // A Z-buffered polygon's depth needs no division, so the depth test
-                        // (which most pixels fail, being drawn near to far) comes first.
-                        s32 z = 0;
-                        const s32 dz = depth[x];
-                        if (!wbuffer)
-                        {
-                            z = (s32)(w0 * aZ + w1 * bZ + w2 * cZ);
-                            if (depthEqual)
-                            {
-                                s32 diff = dz - z;
-                                if (diff < -equalTolerance || diff > equalTolerance) continue;
-                            }
-                            else if (z > dz || (z == dz && !(frontFirst && order < writer[x])))
-                                continue;
-                        }
-                        float iq = 1.0f / qs;
-                        if (wbuffer)
-                        {
-                            z = (s32)(wScale * iq);
-                            if (depthEqual)
-                            {
-                                s32 diff = dz - z;
-                                if (diff < -equalTolerance || diff > equalTolerance) continue;
-                            }
-                            else if (z > dz || (z == dz && !(frontFirst && order < writer[x])))
-                                continue;
-                        }
-
-                        q0 *= iq;
-                        q1 *= iq;
-                        q2 *= iq;
-                        // The alpha test first: it needs only the texel, and a quarter of the
-                        // pixels (the clear parts of billboards) stop there.
-                        u32 r, gr, bl, alpha, texel = 0;
-                        if (tex)
-                        {
-                            // (+32768 keeps the value positive so the conversion rounds down)
-                            int ts = ((int)(q0 * aS + q1 * bS + q2 * cS + 32768.0f) - 32768) >> 4;
-                            int tv = ((int)(q0 * aT + q1 * bT + q2 * cT + 32768.0f) - 32768) >> 4;
-                            if (texParam & (1 << 16))
-                            {
-                                if ((texParam & (1 << 18)) && (ts & texW))
-                                    ts = (texW - 1) - (ts & (texW - 1));
-                                else
-                                    ts &= texW - 1;
-                            }
-                            else
-                                ts = ts < 0 ? 0 : ts >= texW ? texW - 1 : ts;
-                            if (texParam & (1 << 17))
-                            {
-                                if ((texParam & (1 << 19)) && (tv & texH))
-                                    tv = (texH - 1) - (tv & (texH - 1));
-                                else
-                                    tv &= texH - 1;
-                            }
-                            else
-                                tv = tv < 0 ? 0 : tv >= texH ? texH - 1 : tv;
-
-                            texel = texels[(size_t)tv * texW + ts];
-                            if (!texel)
-                            {
-                                u16 tcolor;
-                                u8 talpha;
-                                softP->TextureLookup(*gpuP, tex->Param, tex->Palette, (s16)(ts << 4), (s16)(tv << 4), &tcolor, &talpha);
-                                u32 tr = (tcolor << 1) & 0x3E; if (tr) tr++;
-                                u32 tg = (tcolor >> 4) & 0x3E; if (tg) tg++;
-                                u32 tb = (tcolor >> 9) & 0x3E; if (tb) tb++;
-                                texel = 0x80000000 | tr | (tg << 8) | (tb << 16) | ((u32)talpha << 24);
-                                texels[(size_t)tv * texW + ts] = texel;
-                            }
-                            const u32 ta = (texel >> 24) & 0x1F;
-                            alpha = (blendMode & 1) ? polyAlpha : ((ta + 1) * (polyAlpha + 1) - 1) >> 5;
-                        }
-                        else
-                            alpha = polyAlpha;
-                        if (polyAlpha == 0) alpha = 31; // wireframe polygons are drawn filled here
-                        if (alpha <= alphaRef) continue;
-
-                        int vr = flatR, vg = flatG, vb = flatB;
-                        if (!flat)
-                        {
-                            vr = std::clamp((int)(q0 * aR + q1 * bR + q2 * cR + 0.5f), 0, 63);
-                            vg = std::clamp((int)(q0 * aG + q1 * bG + q2 * cG + 0.5f), 0, 63);
-                            vb = std::clamp((int)(q0 * aB + q1 * bB + q2 * cB + 0.5f), 0, 63);
-                        }
-                        const int rawR = vr;
-                        if (highlight)
-                            vg = vb = vr;
-                        else if (toon)
-                        {
-                            u16 tc = toonTable[vr >> 1];
-                            vr = (tc << 1) & 0x3E; if (vr) vr++;
-                            vg = (tc >> 4) & 0x3E; if (vg) vg++;
-                            vb = (tc >> 9) & 0x3E; if (vb) vb++;
-                        }
-
-                        if (tex)
-                        {
-                            const u32 tr = texel & 0x3F, tg = (texel >> 8) & 0x3F, tb = (texel >> 16) & 0x3F, ta = (texel >> 24) & 0x1F;
-                            if (blendMode & 1)
-                            {
-                                // decal
-                                if (ta == 0) { r = vr; gr = vg; bl = vb; }
-                                else if (ta == 31) { r = tr; gr = tg; bl = tb; }
-                                else
-                                {
-                                    r = ((tr * ta) + (vr * (31 - ta))) >> 5;
-                                    gr = ((tg * ta) + (vg * (31 - ta))) >> 5;
-                                    bl = ((tb * ta) + (vb * (31 - ta))) >> 5;
-                                }
-                            }
-                            else
-                            {
-                                // modulate
-                                r = ((tr + 1) * (vr + 1) - 1) >> 6;
-                                gr = ((tg + 1) * (vg + 1) - 1) >> 6;
-                                bl = ((tb + 1) * (vb + 1) - 1) >> 6;
-                            }
-                        }
-                        else
-                        {
-                            r = vr;
-                            gr = vg;
-                            bl = vb;
-                        }
-                        if (highlight)
-                        {
-                            u16 tc = toonTable[rawR >> 1];
-                            u32 hr = (tc << 1) & 0x3E; if (hr) hr++;
-                            u32 hg = (tc >> 4) & 0x3E; if (hg) hg++;
-                            u32 hb = (tc >> 9) & 0x3E; if (hb) hb++;
-                            r = std::min<u32>(63, r + hr);
-                            gr = std::min<u32>(63, gr + hg);
-                            bl = std::min<u32>(63, bl + hb);
-                        }
-
-                        r = (r << 2) | (r >> 4);
-                        gr = (gr << 2) | (gr >> 4);
-                        bl = (bl << 2) | (bl >> 4);
-
-                        if (alpha == 31)
-                        {
-                            color[x] = 0xFF000000 | (r << 16) | (gr << 8) | bl;
-                            depth[x] = z;
-                            pattr[x] = fogBit;
-                            if (frontFirst) writer[x] = order;
-                        }
-                        else
-                        {
-                            // Translucent pixels of one polygon ID are not drawn over each other.
-                            if ((pattr[x] & 0x7F) == polyId) continue;
-                            const u32 dst = color[x];
-                            u32 da = dst >> 24;
-                            if (da && blendEnabled)
-                            {
-                                const u32 f = alpha + 1;
-                                r = (r * f + ((dst >> 16) & 0xFF) * (32 - f)) >> 5;
-                                gr = (gr * f + ((dst >> 8) & 0xFF) * (32 - f)) >> 5;
-                                bl = (bl * f + (dst & 0xFF) * (32 - f)) >> 5;
-                            }
-                            da = std::max(da, (alpha << 3) | (alpha >> 2));
-                            color[x] = (da << 24) | (r << 16) | (gr << 8) | bl;
-                            if (attr & (1 << 11))
-                            {
-                                depth[x] = z;
-                                if (frontFirst) writer[x] = order;
-                            }
-                            pattr[x] = (u8)(polyId | (pattr[x] & fogBit));
-                        }
-                    }
+                case 0: raster(t, F(), F(), F()); break;
+                case 1: raster(t, F(), F(), T()); break;
+                case 2: raster(t, F(), T(), F()); break;
+                case 3: raster(t, F(), T(), T()); break;
+                case 4: raster(t, T(), F(), F()); break;
+                case 5: raster(t, T(), F(), T()); break;
+                case 6: raster(t, T(), T(), F()); break;
+                case 7: raster(t, T(), T(), T()); break;
                 }
             }
 
@@ -918,8 +1068,8 @@ struct WideAccess
                 for (int y = rowA; y < rowB; y++)
                 {
                     u32* color = &Back[(size_t)y * W];
-                    const s32* depth = &Depth[(size_t)y * W];
-                    const u8* pattr = &Attr[(size_t)y * W];
+                    const s32* depth = &buffers.Depth[(size_t)(y - rowA) * W];
+                    const u8* pattr = &buffers.Attr[(size_t)(y - rowA) * W];
                     for (int x = 0; x < W; x++)
                     {
                         if (!(pattr[x] & 0x80) || !(color[x] >> 24)) continue;

@@ -26,8 +26,8 @@ accept such work.
 
 ## Screenshots
 
-The overworld drawn across a 16:9 screen, and battles with the touch-screen
-buttons laid out along the bottom (one screen, played with a controller):
+The overworld and battles drawn across a 16:9 screen, with the touch-screen
+buttons laid out along the bottom in battle (one screen, played with a controller):
 
 | | |
 |---|---|
@@ -106,6 +106,10 @@ The **MENU** button or Back opens the pause menu. Messages and frame timings go
 to `log.txt` in `Android/data/io.github.clickingmaster.ssrecomp/files` on the
 phone's storage (open it with a file manager, or from a PC over USB), which helps
 with bug reports.
+
+When a newer version is released, the app says so at start (it asks GitHub,
+its only use of the internet): update the setup program, press **Build for
+Android** again and install the new APK over the old one.
 
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
@@ -301,7 +305,8 @@ still pop in at the far left and right (none found so far); there are no
 edge-marking outlines; 2D weather or
 overlays do not extend beyond the 4:3 area; "WORLD DETAIL" above 720 costs
 frame time (about 5 ms at 720 lines, 12 at 1080, 18 at 1440 on a 6-core
-desktop CPU).
+desktop CPU). On slow devices, 384, 288 or 192 (the DS's own sharpness) cost
+the least; "FPS COUNTER" in the same menu shows whether the game keeps up.
 
 ### 60 fps
 
