@@ -1152,6 +1152,7 @@ int main(int argc, char** argv)
     SDL_AudioDeviceID audio = 0;
     Pads pads;
     Layout layout = LayoutFromName(cfg.layout);
+    bool singleScreenRom = false; // a SINGLE_SCREEN build of the decompilation (see the main loop)
     AutoFocus focus;
     focus.mode = cfg.focusMode;
     focus.manualFlip = opt.swapped;
@@ -2743,6 +2744,21 @@ int main(int argc, char** argv)
         if (!paused && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
         prevPad = ps;
 
+        // A decompilation build with SINGLE_SCREEN already puts everything on the engine of the
+        // touch screen (the game swaps it with SELECT), so the view is just that screen: none of
+        // the merging or widescreen applies. The build carries a tag, which is searched for in
+        // main memory once the game has unpacked itself.
+        if (!singleScreenRom && !opt.layoutGiven && frame % 30 == 15 && frame < 1800)
+        {
+            static const char tag[] = "SSRECOMP-SINGLE-SCREEN-1";
+            const uint8_t* ram = nds->MainRAM;
+            if (std::search(ram, ram + nds->MainRAMMask + 1, tag, tag + sizeof(tag) - 1) != ram + nds->MainRAMMask + 1)
+            {
+                singleScreenRom = true;
+                layout.mode = LayoutMode::Bottom;
+                fprintf(stderr, "single-screen build detected: showing the visible screen\n");
+            }
+        }
         SDL_Rect rects[2];
         LayoutRects(layout, outW, outH, rects);
         const bool merged = layout.mode == LayoutMode::Merged;
@@ -3443,7 +3459,7 @@ int main(int argc, char** argv)
     melonDS::Wide.Owner = nullptr;
     if (!opt.headless)
     {
-        cfg.layout = LayoutName(layout.mode);
+        if (!singleScreenRom) cfg.layout = LayoutName(layout.mode); // the automatic choice is not the player's setting
         cfg.focusMode = focus.mode;
         cfg.Save(opt.config);
     }

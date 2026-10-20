@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A single-screen build of the decompilation (the one-screen game) is recognised when it
+  starts and shown as the screen the game itself has chosen, with no merging or
+  widescreen changes. The choice is not saved in the settings.
+
 ## v0.4.2 — Faster widescreen
 
 **Downloads:** the same setup programs as before; update from the setup window
