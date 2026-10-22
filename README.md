@@ -1,5 +1,5 @@
-THIS PROJECT IS NOT BEING WORKED ON AND WILL NOT RECEIVE UPDATES
-I am working on this now which is superior to this project: [pokeheartgold-single-screen](https://github.com/ClickingMaster/pokeheartgold-single-screen)
+# THIS PROJECT IS NOT BEING WORKED ON AND WILL NOT RECEIVE UPDATES
+## I am working on this now which is superior to this project: [pokeheartgold-single-screen](https://github.com/ClickingMaster/pokeheartgold-single-screen)
 
 
 # ssrecomp
