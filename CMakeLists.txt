@@ -120,14 +120,19 @@ elseif(SSR_SWITCH)
     if(NOT SSR_NRO_VERSION)
         set(SSR_NRO_VERSION "dev")
     endif()
-    set(SSR_NRO_ICON "")
-    if(EXISTS "${DEVKITPRO}/libnx/default_icon.jpg")
-        set(SSR_NRO_ICON "--icon=${DEVKITPRO}/libnx/default_icon.jpg")
-    endif()
-    add_custom_command(TARGET ssrecomp POST_BUILD
-        COMMAND "${SSR_NACPTOOL}" --create "ssrecomp" "ssrecomp" "${SSR_NRO_VERSION}" "${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nacp"
-        COMMAND "${SSR_ELF2NRO}" "$<TARGET_FILE:ssrecomp>" "${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nro"
-                "--nacp=${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nacp" ${SSR_NRO_ICON}
+    # The .nro is packed on every build (a few seconds), so that changing only the icon needs
+    # no rebuild. The icon is icon.jpg in the build folder when there is one (your own, a
+    # 256x256 JPEG; kept out of the source), otherwise libnx's default.
+    set(SSR_NRO_TITLE "ssrecomp" CACHE STRING "Title shown in the Homebrew Menu")
+    add_custom_target(ssrecomp_nro ALL
+        COMMAND "${CMAKE_COMMAND}"
+            "-DNACPTOOL=${SSR_NACPTOOL}" "-DELF2NRO=${SSR_ELF2NRO}"
+            "-DELF=$<TARGET_FILE:ssrecomp>" "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nro"
+            "-DNACP=${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nacp"
+            "-DTITLE=${SSR_NRO_TITLE}" "-DVERSION=${SSR_NRO_VERSION}"
+            "-DICON=${CMAKE_CURRENT_BINARY_DIR}/icon.jpg" "-DDEFAULT_ICON=${DEVKITPRO}/libnx/default_icon.jpg"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/make_nro.cmake"
+        DEPENDS ssrecomp
         COMMENT "Making ssrecomp.nro"
         VERBATIM)
 else()

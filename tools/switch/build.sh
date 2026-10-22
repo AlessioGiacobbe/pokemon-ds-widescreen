@@ -60,7 +60,7 @@ if [ ! -f "$BUILD/build.ninja" ]; then
 fi
 
 say "Compiling with $JOBS jobs (the first time takes a while)"
-ninja -C "$BUILD" -j "$JOBS" ssrecomp
+ninja -C "$BUILD" -j "$JOBS" ssrecomp_nro
 
 NRO="$BUILD/ssrecomp.nro"
 [ -f "$NRO" ] || fail "the build finished but $NRO was not made"

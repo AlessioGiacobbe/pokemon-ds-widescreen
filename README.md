@@ -136,6 +136,10 @@ your PC from your ROM. It needs Linux, or Windows with WSL2 (Ubuntu 24.04).
    album there is not enough memory to load it, and it takes a few seconds to
    load from the SD card.
 
+For an icon of your own in the Homebrew Menu, put a 256×256 JPEG at
+`build-switch/icon.jpg` and run `tools/switch/build.sh` again; only the `.nro` is
+repacked.
+
 The `.nro` contains your copy of the game: never share it. The save
 (`soulsilver.sav`), settings (`ssrecomp.cfg`) and `game.log`, with the frame
 timings, are written to `/switch/ssrecomp/`.

@@ -1,0 +1,23 @@
+# Packs the Switch executable into an .nro for the Homebrew Menu. Run at build time by the
+# ssrecomp_nro target (CMakeLists.txt), so that whether there is an icon of your own is
+# decided when building, not when configuring.
+#
+# In: NACPTOOL, ELF2NRO, ELF, OUT, NACP, TITLE, VERSION, ICON (may be missing), DEFAULT_ICON.
+
+execute_process(COMMAND "${NACPTOOL}" --create "${TITLE}" "ssrecomp" "${VERSION}" "${NACP}"
+    RESULT_VARIABLE rc)
+if(rc)
+    message(FATAL_ERROR "nacptool failed (${rc})")
+endif()
+
+set(args "${ELF}" "${OUT}" "--nacp=${NACP}")
+if(EXISTS "${ICON}")
+    message(STATUS "Icon: ${ICON}")
+    list(APPEND args "--icon=${ICON}")
+elseif(EXISTS "${DEFAULT_ICON}")
+    list(APPEND args "--icon=${DEFAULT_ICON}")
+endif()
+execute_process(COMMAND "${ELF2NRO}" ${args} RESULT_VARIABLE rc)
+if(rc)
+    message(FATAL_ERROR "elf2nro failed (${rc})")
+endif()
