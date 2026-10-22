@@ -987,6 +987,11 @@ struct Settings
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "cpu_boost") cpuBoost = v == "1";
         }
+#ifdef __SWITCH__
+        // The Switch's buttons are labelled where the DS's are, so labels and positions are
+        // the same thing there (see M_BUTTONS).
+        byLabel = true;
+#endif
     }
 
     void Save(const std::string& path) const
@@ -2385,7 +2390,11 @@ int main(int argc, char** argv)
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
+#ifdef __SWITCH__
+            { "BUTTONS", "AS LABELLED" },
+#else
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
+#endif
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
             { "SAVE STATE", "" },
@@ -2833,7 +2842,10 @@ int main(int argc, char** argv)
                 cfg.showFps = !cfg.showFps;
                 break;
             case M_BUTTONS:
+#ifndef __SWITCH__
+                // (On the Switch there is nothing to choose: its labels are the DS's positions.)
                 cfg.byLabel = !cfg.byLabel;
+#endif
                 break;
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
