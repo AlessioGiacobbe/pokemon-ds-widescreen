@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The setup program for macOS can now check for updates and update itself from
+  the setup window and with `--update`, matching Linux and Windows.
 - A single-screen build of the decompilation (the one-screen game) is recognised when it
   starts and shown as the screen the game itself has chosen, with no merging or
   widescreen changes. The choice is not saved in the settings.
