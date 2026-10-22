@@ -1483,13 +1483,19 @@ int main(int argc, char** argv)
     struct Bw2Funcs
     {
         int field = -1, fieldMenu = -1, bag = -1, battle = -1;
+        int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
     } bw2;
     if (funcWatchOn)
     {
         bw2.field = funcWatch.Find("FieldmapProc_Update");     // the overworld, every frame
         bw2.fieldMenu = funcWatch.Find("EventFieldMenu_Callback"); // the X menu over the overworld
         bw2.bag = funcWatch.Find("ItemMenuProc_Main");         // the Bag
-        bw2.battle = funcWatch.Find("BattleProc_Main");        // any battle
+        bw2.battle = funcWatch.Find("BtlMain_ProcMain");       // any battle
+        bw2.battleCommand = funcWatch.Find("BtlvCore_WaitCommandSelect"); // FIGHT / BAG / POKEMON / RUN
+        bw2.battleMove = funcWatch.Find("BtlvCore_WaitMoveSelect");       // the four moves
+        bw2.party = funcWatch.Find("PokeListProc_Main");       // the party
+        bw2.trainerCard = funcWatch.Find("TrainerCard_Main");
+        bw2.townMap = funcWatch.Find("TownMap_ProcMain");      // the town map and Fly
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
     }
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
@@ -1499,26 +1505,74 @@ int main(int argc, char** argv)
             sc.items = { FullScreen(screen) };
         };
         const bool wideView = viewWidth >= 300;
+        // A panel of touch-screen controls in the lower right corner of the view, below the
+        // player's HP box, keeping the game's own arrangement so that the D-pad moves the
+        // highlight where it looks like it should.
+        auto cornerPanel = [&](Element crop, float scale) {
+            const float pad = 3;
+            const float w = crop.sw * scale, h = crop.sh * scale;
+            const float x = (wideView ? 128 + viewWidth / 2 : 256.0f) - w - pad - 2;
+            const float y = 192 - h - pad - 2;
+            sc.items.push_back(FillRect(x - pad, y - pad, (int)(w + 2 * pad), (int)(h + 2 * pad), 0x14141C));
+            sc.items.back().border = true;
+            crop.dx = x;
+            crop.dy = y;
+            crop.scale = scale;
+            sc.items.push_back(crop);
+        };
         if (funcWatch.Ran(bw2.battle, 2))
         {
             // The battle is drawn in 3D on the top screen, so the widescreen renderer shows
             // more of the arena; the HP boxes and messages are 2D and stay where they are.
             only("battle", 0);
             sc.wide = wideView;
+            if (funcWatch.Ran(bw2.battleMove, 1))
+                cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two
+            else if (funcWatch.Ran(bw2.battleCommand, 1))
+                cornerPanel(Crop(1, 0, 78, 256, 114), 0.5f);  // FIGHT above BAG, RUN and POKEMON
         }
         else if (funcWatch.Ran(bw2.fieldMenu, 2))
         {
-            // The menu's buttons as a panel at the right edge, mostly beside the overworld.
+            // The menu's buttons in one column at the right edge, mostly beside the overworld.
             only("start-menu", 0);
             sc.wide = wideView;
             // The strip along the bottom of the top screen (BG1, with an arrow down) only says
             // to look at the other screen; without it the overworld shows there instead.
             sc.items[0].drop = LAYER_BG1;
-            const float scale = wideView ? 0.55f : 0.45f;
-            const int sy = 22, sh = 96; // the button grid on the touch screen
-            const float x = wideView ? 128 + viewWidth / 2 - 256 * scale - 3 : 256 - 256 * scale - 3;
-            sc.items.push_back({ 1, 0, sy, 256, sh, x, (192 - sh * scale) / 2, scale, 0, 255, false });
+            // The touch screen holds up to six buttons, two to a row, in a fixed grid: 126 x 44
+            // pixels each, rows 48 apart from y = 22. A slot is used when its button's left
+            // edge (a light frame) is there; the menu fills the slots row by row.
+            std::vector<Element> buttons;
+            for (int row = 0; row < 3; row++)
+                for (int col = 0; col < 2; col++)
+                {
+                    const int bx = col ? 130 : 2, by = 22 + row * 48;
+                    const uint32_t c = screens[1].pixels[(by + 20) * 256 + bx + 2];
+                    const int lum = (((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF)) / 3;
+                    if (lum > 100) buttons.push_back(Crop(1, bx, by, 126, 44));
+                }
+            if (buttons.empty())
+                // Not drawn yet (the menu is opening): the whole touch screen, small.
+                buttons.push_back(Crop(1, 0, 0, 256, 192));
+            const float scale = wideView ? 0.5f : 0.4f, gap = 2, pad = 3;
+            float colW = 0, colH = -gap;
+            for (const Element& b : buttons)
+            {
+                colW = std::max(colW, b.sw * scale);
+                colH += b.sh * scale + gap;
+            }
+            const float x = (wideView ? 128 + viewWidth / 2 : 256.0f) - colW - pad - 2;
+            float y = (192 - colH) / 2;
+            sc.items.push_back(FillRect(x - pad, y - pad, (int)(colW + 2 * pad), (int)(colH + 2 * pad), 0x14141C));
             sc.items.back().border = true;
+            for (Element b : buttons)
+            {
+                b.dx = x;
+                b.dy = y;
+                b.scale = scale;
+                sc.items.push_back(b);
+                y += b.sh * scale + gap;
+            }
         }
         else if (funcWatch.Ran(bw2.field, 16))
         {
@@ -1527,6 +1581,10 @@ int main(int argc, char** argv)
         }
         else if (funcWatch.Ran(bw2.bag, 2))
             only("bag", 1);
+        else if (funcWatch.Ran(bw2.party, 2))
+            only("party", 1);         // the top screen only has a backdrop
+        else if (funcWatch.Ran(bw2.trainerCard, 2))
+            only("trainer-card", 1);  // likewise
         else
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
         (void)screens;
@@ -3242,7 +3300,9 @@ int main(int argc, char** argv)
             if (funcWatchOn)
             {
                 out.close();
-                funcWatch.Dump((opt.shotDir.empty() ? std::string(".") : opt.shotDir) + name, 1);
+                // SSR_FUNCS_WINDOW=<frames> widens the window (test aid: functions that run once a step).
+                const char* window = getenv("SSR_FUNCS_WINDOW");
+                funcWatch.Dump((opt.shotDir.empty() ? std::string(".") : opt.shotDir) + name, window ? (unsigned)atoi(window) : 1);
             }
         }
 
