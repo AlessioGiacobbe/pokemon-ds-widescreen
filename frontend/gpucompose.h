@@ -190,7 +190,9 @@ private:
             bool any = false;
             for (int y = 0; y < 192; y++)
             {
-                bool ext = LayerClass(top.flags[y * 256 + sx]) != LAYER_3D;
+                const uint8_t cls = LayerClass(top.flags[y * 256 + sx]);
+                // (Not a layer the scene leaves out: that one is not drawn on the screen either.)
+                bool ext = cls != LAYER_3D && !(cls & scene.items[0].drop);
                 Edge[y] = ext ? (0xFF000000 | top.pixels[y * 256 + sx]) : 0;
                 any |= ext;
             }

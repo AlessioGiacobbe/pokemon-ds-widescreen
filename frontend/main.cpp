@@ -54,6 +54,7 @@
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
 #include "switch_platform.h"
+#include "funcwatch.h"
 
 #ifdef __ANDROID__
 // The app holds the player's own game, so it cannot update itself as the setup window does:
@@ -400,6 +401,8 @@ struct Options
     bool swapped = false;
     bool logSections = false;
     bool noWide = false;                 // turn the widescreen 3D renderer off
+    std::string funcs;                   // function table for a game that is not recompiled (tools/bw2/funcmap.py); needs --interp
+    bool forceField = false;             // test aid: treat every frame as the overworld (for games other than SoulSilver)
     bool benchCompose = false;           // headless: compose the merged picture every frame, to time it
     bool autoFocus = true;
     bool layoutGiven = false;
@@ -490,6 +493,8 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--swap") o.swapped = true;
         else if (a == "--log-sections") o.logSections = true;
         else if (a == "--no-wide") o.noWide = true;
+        else if (a == "--force-field") o.forceField = true;
+        else if (a == "--funcs") o.funcs = next();
         else if (a == "--bench-compose") o.benchCompose = true;
         else if (a == "--no-auto-focus") o.autoFocus = false;
         else if (a == "--state-save") o.stateSave = next();
@@ -1152,7 +1157,12 @@ int main(int argc, char** argv)
 
     // Function tracing: a probe on every known function.
     std::vector<std::pair<int, std::string>> traceProbes;
-    if (!opt.traceFuncsAt.empty())
+    // A game that is not recompiled: which of its functions run comes from a table and a hook
+    // on the interpreter instead of recompiled-code probes.
+    static FuncWatch funcWatch;
+    const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs);
+    if (funcWatchOn) funcWatch.Attach(*nds);
+    if (!opt.traceFuncsAt.empty() && !funcWatchOn)
     {
         std::ifstream f(opt.symbols);
         std::string sec, name;
@@ -1374,6 +1384,7 @@ int main(int argc, char** argv)
         return singleView() ? 1 - normal : normal;
     };
     auto fieldActive = [&]() {
+        if (opt.forceField) return true; // test aid for other games: treat every frame as the overworld
         unsigned last = rc_probe_last_frame(probeFieldMap);
         return (last && last + 16 >= rc_current_frame()) || fieldHeldBySave;
     };
@@ -1465,6 +1476,63 @@ int main(int argc, char** argv)
     // selection they have moved it to (reset whenever the ROM's published selection changes).
     std::string stripNav; int stripSel = 0, stripPubSel = -1, stripPubMenu = 0;
     // Chooses what the single merged view shows this frame.
+    // Pokemon Black 2 / White 2 (a game that is not recompiled): the layout follows which of the
+    // game's own functions ran in the last few frames (FuncWatch, from the pokebw2
+    // decompilation's names). A first set of screens; anything not recognised shows both screens
+    // side by side, so nothing is ever hidden.
+    struct Bw2Funcs
+    {
+        int field = -1, fieldMenu = -1, bag = -1, battle = -1;
+    } bw2;
+    if (funcWatchOn)
+    {
+        bw2.field = funcWatch.Find("FieldmapProc_Update");     // the overworld, every frame
+        bw2.fieldMenu = funcWatch.Find("EventFieldMenu_Callback"); // the X menu over the overworld
+        bw2.bag = funcWatch.Find("ItemMenuProc_Main");         // the Bag
+        bw2.battle = funcWatch.Find("BattleProc_Main");        // any battle
+        fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
+    }
+    auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
+        Scene sc;
+        auto only = [&](const char* name, int screen) {
+            sc.name = name;
+            sc.items = { FullScreen(screen) };
+        };
+        const bool wideView = viewWidth >= 300;
+        if (funcWatch.Ran(bw2.battle, 2))
+        {
+            // The battle is drawn in 3D on the top screen, so the widescreen renderer shows
+            // more of the arena; the HP boxes and messages are 2D and stay where they are.
+            only("battle", 0);
+            sc.wide = wideView;
+        }
+        else if (funcWatch.Ran(bw2.fieldMenu, 2))
+        {
+            // The menu's buttons as a panel at the right edge, mostly beside the overworld.
+            only("start-menu", 0);
+            sc.wide = wideView;
+            // The strip along the bottom of the top screen (BG1, with an arrow down) only says
+            // to look at the other screen; without it the overworld shows there instead.
+            sc.items[0].drop = LAYER_BG1;
+            const float scale = wideView ? 0.55f : 0.45f;
+            const int sy = 22, sh = 96; // the button grid on the touch screen
+            const float x = wideView ? 128 + viewWidth / 2 - 256 * scale - 3 : 256 - 256 * scale - 3;
+            sc.items.push_back({ 1, 0, sy, 256, sh, x, (192 - sh * scale) / 2, scale, 0, 255, false });
+            sc.items.back().border = true;
+        }
+        else if (funcWatch.Ran(bw2.field, 16))
+        {
+            only("top", 0);
+            sc.wide = wideView;
+        }
+        else if (funcWatch.Ran(bw2.bag, 2))
+            only("bag", 1);
+        else
+            sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+        (void)screens;
+        return sc;
+    };
+
     auto pickScene = [&](bool cursorInUse, float viewWidth, const ScreenImage* screens) {
         Scene sc;
         auto only = [&](const char* name, int screen) {
@@ -2951,8 +3019,8 @@ int main(int argc, char** argv)
                 ww = ww * cfg.wideLines / wh;
                 wh = cfg.wideLines;
             }
-            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 &&
-                (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20));
+            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (funcWatchOn ? scene.wide :
+                (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20)));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
             melonDS::Wide.Width = ww;
@@ -3151,6 +3219,7 @@ int main(int argc, char** argv)
             for (int i = 0; i < speed; i++)
             {
                 rc_frame++;
+                if (funcWatchOn) funcWatch.NextFrame();
                 nds->RunFrame();
                 int avail = nds->SPU.GetOutputSize();
                 if (avail > (int)audioBuf.size() / 2) avail = (int)audioBuf.size() / 2;
@@ -3170,6 +3239,11 @@ int main(int argc, char** argv)
             unsigned now = rc_current_frame();
             for (auto& tp : traceProbes)
                 if (rc_probe_last_frame(tp.first) + 1 >= now) out << tp.second << "\n";
+            if (funcWatchOn)
+            {
+                out.close();
+                funcWatch.Dump((opt.shotDir.empty() ? std::string(".") : opt.shotDir) + name, 1);
+            }
         }
 
         if (opt.logSections)
@@ -3235,7 +3309,8 @@ int main(int argc, char** argv)
             // game stops polling it while its buttons animate between menus.
             const bool writing = saveWriting();
             fieldHeldBySave = writing && fieldActive();
-            Scene picked = pickScene(frame < cursorShownUntil, view.width, screenImages);
+            Scene picked = funcWatchOn ? pickSceneBw2(view.width, screenImages)
+                                       : pickScene(frame < cursorShownUntil, view.width, screenImages);
             // An application's own layout stays while it fades out: the game is still ending it
             // (and its picture is still what is on the screens) when only a general layout
             // would be chosen, until the overworld runs again or a moment has passed.
