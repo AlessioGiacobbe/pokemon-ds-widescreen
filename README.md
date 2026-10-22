@@ -1,3 +1,7 @@
+THIS PROJECT IS NOT BEING WORKED ON AND WILL NOT RECEIVE UPDATES
+I am working on this now which is superior to this project: [pokeheartgold-single-screen](https://github.com/ClickingMaster/pokeheartgold-single-screen)
+
+
 # ssrecomp
 
 A native build of Pokémon SoulSilver for single-screen devices. The game's ARM9
