@@ -881,7 +881,18 @@ static PadState ReadPad(Pads& pads)
     for (SDL_GameController* pad : pads.controllers)
     {
         for (int i = 0; i < PAD_COUNT; i++)
-            st.btn[i] |= SDL_GameControllerGetButton(pad, (SDL_GameControllerButton)i) != 0;
+        {
+            int from = i;
+#ifdef __SWITCH__
+            // SDL on the Switch maps its own controllers by Xbox positions: its "A" is the
+            // bottom button, which the Switch labels B (and its "X" the left one, labelled Y).
+            // Everything here takes PAD_A to be the button printed A, so the pairs are swapped back.
+            static const int labelled[] = { SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_A,
+                                            SDL_CONTROLLER_BUTTON_Y, SDL_CONTROLLER_BUTTON_X };
+            if (i <= PAD_Y) from = labelled[i];
+#endif
+            st.btn[i] |= SDL_GameControllerGetButton(pad, (SDL_GameControllerButton)from) != 0;
+        }
         auto axis = [&](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(pad, a) / 32767.0f; };
         merge(st.lx, axis(SDL_CONTROLLER_AXIS_LEFTX));
         merge(st.ly, axis(SDL_CONTROLLER_AXIS_LEFTY));
