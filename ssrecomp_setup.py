@@ -647,6 +647,15 @@ def install_update(update, progress):
     latest, _page, url, sums_url = update
     target = self_path()
     name = url.rsplit('/', 1)[1]
+    is_zip = name.endswith('.zip')
+    if is_zip:
+        if not os.access(os.path.dirname(target), os.W_OK):
+            raise RuntimeError('Cannot update the app in this folder. Move it to a folder '
+                               'you can write to, then try again.')
+        ditto = shutil.which('ditto')
+        if not ditto:
+            raise RuntimeError('Updating the macOS app requires ditto. '
+                               'Restore /usr/bin/ditto or download the update manually.')
     sums = {}
     with https_open(sums_url) as r:
         for line in r.read().decode().splitlines():   # "<sha256>  <file>"
@@ -656,7 +665,6 @@ def install_update(update, progress):
     digest = sums.get(name)
     if not digest:
         raise RuntimeError('The release has no checksum for ' + name + '.')
-    is_zip = name.endswith('.zip')
     download_file = (target + '.download') if is_zip else (target + '.new')
     h = hashlib.sha256()
     with https_open(url) as r, open(download_file, 'wb') as f:
@@ -672,20 +680,7 @@ def install_update(update, progress):
     if is_zip:
         extract_dir = tempfile.mkdtemp(prefix='ssrecomp-update-', dir=os.path.dirname(target))
         try:
-            if shutil.which('ditto'):
-                subprocess.run(['ditto', '-x', '-k', download_file, extract_dir], check=True)
-            else:
-                import zipfile
-                with zipfile.ZipFile(download_file) as z:
-                    for member in z.infolist():
-                        extracted_path = os.path.join(extract_dir, member.filename)
-                        z.extract(member, extract_dir)
-                        mode = member.external_attr >> 16
-                        if mode:
-                            try:
-                                os.chmod(extracted_path, mode)
-                            except OSError:
-                                pass
+            subprocess.run([ditto, '-x', '-k', download_file, extract_dir], check=True)
             apps = [os.path.join(extract_dir, f) for f in os.listdir(extract_dir) if f.endswith('.app')]
             if not apps:
                 raise RuntimeError('No .app bundle found in the downloaded archive.')
@@ -693,9 +688,15 @@ def install_update(update, progress):
             old = target + '.old'
             if os.path.exists(old):
                 shutil.rmtree(old) if os.path.isdir(old) else os.remove(old)
-            if os.path.exists(target):
+            had_target = os.path.exists(target)
+            if had_target:
                 os.replace(target, old)
-            os.replace(new_app, target)
+            try:
+                os.replace(new_app, target)
+            except OSError:
+                if had_target:
+                    os.replace(old, target)
+                raise
             try:
                 shutil.rmtree(old) if os.path.isdir(old) else os.remove(old)
             except OSError:

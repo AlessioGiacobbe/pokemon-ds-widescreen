@@ -150,6 +150,32 @@ class DarwinSetupTests(unittest.TestCase):
                 self.assertEqual(res[2], expected_asset)
 
     def test_macos_install_update_replaces_app_bundle(self):
+        self.check_macos_install_update()
+
+    def test_macos_install_update_rolls_back_failed_swap(self):
+        self.check_macos_install_update(failure='swap')
+
+    def test_macos_install_update_preserves_app_on_extraction_failure(self):
+        self.check_macos_install_update(failure='extract')
+
+    def test_macos_install_update_rejects_bad_checksum(self):
+        self.check_macos_install_update(failure='checksum')
+
+    def test_macos_install_update_checks_before_downloading(self):
+        update = ('0.5.0', 'https://page', 'https://dl/app.zip', 'https://dl/SHA256SUMS.txt')
+        for writable, ditto, message in ((False, '/usr/bin/ditto', 'folder you can write to'),
+                                        (True, None, 'requires ditto')):
+            with self.subTest(writable=writable, ditto=ditto), \
+                 patch.object(setup, 'self_path', return_value='/Applications/ssrecomp-setup.app'), \
+                 patch.object(os, 'access', return_value=writable) as access, \
+                 patch.object(shutil, 'which', return_value=ditto), \
+                 patch.object(setup, 'https_open') as download:
+                with self.assertRaisesRegex(RuntimeError, message):
+                    setup.install_update(update, lambda f, l: None)
+                access.assert_called_once_with('/Applications', os.W_OK)
+                download.assert_not_called()
+
+    def check_macos_install_update(self, failure=None):
         with tempfile.TemporaryDirectory(prefix='ssrecomp mac update ') as tmp:
             app = Path(tmp) / 'ssrecomp-setup.app'
             (app / 'Contents/MacOS').mkdir(parents=True)
@@ -173,7 +199,7 @@ class DarwinSetupTests(unittest.TestCase):
                         z.writestr(zinfo, full.read_bytes())
 
             zip_bytes = zip_path.read_bytes()
-            zip_sha256 = hashlib.sha256(zip_bytes).hexdigest()
+            zip_sha256 = hashlib.sha256(zip_bytes).hexdigest() if failure != 'checksum' else '0' * 64
             sums_text = f'{zip_sha256}  ssrecomp-setup-macos-arm64.zip\n'
 
             def fake_open(url):
@@ -187,13 +213,45 @@ class DarwinSetupTests(unittest.TestCase):
                 return mock_resp
 
             update_info = ('0.5.0', 'https://page', 'https://dl/ssrecomp-setup-macos-arm64.zip', 'https://dl/SHA256SUMS.txt')
+            replace = os.replace
+            run = subprocess.run
+
+            def swap(source, dest):
+                if failure == 'swap' and Path(source).name == app.name and Path(source).parent != app.parent:
+                    raise OSError('simulated swap failure')
+                replace(source, dest)
+
+            def extract(command, **kwargs):
+                self.assertEqual(command[:4], ['/usr/bin/ditto', '-x', '-k', str(app) + '.download'])
+                self.assertTrue(kwargs['check'])
+                self.assertTrue(app.exists())
+                if failure == 'extract':
+                    raise subprocess.CalledProcessError(1, command)
+                if sys.platform == 'darwin':
+                    return run(command, **kwargs)
+                shutil.copytree(new_bundle, Path(command[4]) / new_bundle.name)
+
             with patch.object(setup, 'DARWIN', True), patch.object(setup, 'self_path', return_value=str(app)), \
-                 patch.object(setup, 'https_open', side_effect=fake_open):
-                result = setup.install_update(update_info, lambda f, l: None)
-            self.assertEqual(result, str(app))
-            self.assertEqual((app / 'Contents/MacOS/ssrecomp-setup').read_text(), '#!/bin/sh\necho v2\n')
+                 patch.object(setup, 'https_open', side_effect=fake_open), \
+                 patch.object(shutil, 'which', return_value='/usr/bin/ditto'), \
+                 patch.object(subprocess, 'run', side_effect=extract) as unpack, \
+                 patch.object(os, 'replace', side_effect=swap):
+                if failure:
+                    error = {'swap': OSError, 'extract': subprocess.CalledProcessError,
+                             'checksum': RuntimeError}[failure]
+                    with self.assertRaises(error):
+                        setup.install_update(update_info, lambda f, l: None)
+                else:
+                    self.assertEqual(setup.install_update(update_info, lambda f, l: None), str(app))
+                if failure == 'checksum':
+                    unpack.assert_not_called()
+                else:
+                    unpack.assert_called_once()
+            expected = '#!/bin/sh\necho v1\n' if failure else '#!/bin/sh\necho v2\n'
+            self.assertEqual((app / 'Contents/MacOS/ssrecomp-setup').read_text(), expected)
             self.assertFalse((Path(tmp) / 'ssrecomp-setup.app.download').exists())
             self.assertFalse((Path(tmp) / 'ssrecomp-setup.app.old').exists())
+            self.assertFalse(list(Path(tmp).glob('ssrecomp-update-*')))
 
     def test_macos_restart_app_bundle(self):
         with patch.object(setup, 'DARWIN', True), patch.object(setup, 'WINDOWS', False), \
