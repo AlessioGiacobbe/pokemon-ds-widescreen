@@ -1,3 +1,7 @@
+# THIS PROJECT IS NOT BEING WORKED ON AND WILL NOT RECEIVE UPDATES
+## I am working on this now which is superior to this project: [pokeheartgold-single-screen](https://github.com/ClickingMaster/pokeheartgold-single-screen)
+
+
 # ssrecomp
 
 A native build of Pokémon SoulSilver for single-screen devices. The game's ARM9
@@ -556,6 +560,13 @@ fights battles by pressing A and tapping the left-hand moves in turn, `--pos-eve
 `tools/navrun.sh` wraps these; `tools/grind.sh` loops grass walking and healing to gain levels.
 `--log-sections` also prints each change of merged scene, which shows where a new screen appeared in a long run. Tile coordinates of doors and people are in the
 decompilation's `files/fielddata/eventdata/zone_event/*.json`.
+
+## Thanks
+
+Thank you to [DarthMDev](https://github.com/DarthMDev) for the macOS side of the
+project: the native macOS build and setup program
+([#7](https://github.com/ClickingMaster/ssrecomp/pull/7)) and its self-updating
+([#11](https://github.com/ClickingMaster/ssrecomp/pull/11)).
 
 ## License
 

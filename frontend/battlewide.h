@@ -24,11 +24,10 @@ public:
     // sweeping past as a battle opens, a Pokémon or trainer crossing the edge). Returns
     // false (and the battle is drawn as before) if the top screen is not built the way
     // described above.
-    bool Build(melonDS::NDS& nds, const ScreenImage& top, int extend, const WideImage* world, float viewWidth, WideImage& out)
+    bool Build(melonDS::NDS& nds, const ScreenImage& top, int extend, const WideImage* world, float viewWidth, WideImage& out, int unitNum)
     {
         using namespace melonDS;
         if (extend <= 0 || !top.flags) return false;
-        const int unitNum = (nds.PowerControl9 & (1 << 15)) ? 0 : 1;
         const GPU2D::Unit& unit = unitNum == 0 ? nds.GPU.GPU2D_A : nds.GPU.GPU2D_B;
         const u32 dispcnt = unit.DispCnt;
         if ((dispcnt & 7) != 0 || ((dispcnt >> 16) & 3) != 1) return false; // all text layers, normal display

@@ -1152,6 +1152,10 @@ int main(int argc, char** argv)
     SDL_AudioDeviceID audio = 0;
     Pads pads;
     Layout layout = LayoutFromName(cfg.layout);
+    const uint8_t* singleScreenFlag = nullptr; // set by the ROM: nonzero while a scene needs both screens
+    LayoutMode preSingleLayout = LayoutMode::Merged;
+    uint32_t singleFieldFrame = 0; // the last frame the overworld ran in a single-screen build
+    bool singleScreenRom = false; // a SINGLE_SCREEN build of the decompilation (see the main loop)
     AutoFocus focus;
     focus.mode = cfg.focusMode;
     focus.manualFlip = opt.swapped;
@@ -1297,6 +1301,13 @@ int main(int argc, char** argv)
     // The overworld's main function is not entered for stretches of about ten frames while
     // some scripts run (a nurse bowing, for one), so it gets a longer memory than the rest:
     // otherwise the widescreen picture and the menu layout drop out for those frames.
+    // A single-screen build of the game shows one screen, the bottom one, and the merged pipeline
+    // treats it as the "top" screen, so the widescreen 3D and the battle widening apply to it.
+    auto singleView = [&]() { return singleScreenRom && !opt.layoutGiven && singleScreenFlag && *singleScreenFlag == 0; };
+    auto topUnitOf = [&]() {
+        const int normal = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+        return singleView() ? 1 - normal : normal;
+    };
     auto fieldActive = [&]() {
         unsigned last = rc_probe_last_frame(probeFieldMap);
         return (last && last + 16 >= rc_current_frame()) || fieldHeldBySave;
@@ -1385,6 +1396,9 @@ int main(int argc, char** argv)
     // Whether an application driven from the bottom screen is starting, running or ending
     // (worked out each frame before the scene is chosen).
     bool appBottomNow = false;
+    // The command strip's own cursor: d-pad presses seen by the frontend this frame, and the
+    // selection they have moved it to (reset whenever the ROM's published selection changes).
+    std::string stripNav; int stripSel = 0, stripPubSel = -1, stripPubMenu = 0;
     // Chooses what the single merged view shows this frame.
     auto pickScene = [&](bool cursorInUse, float viewWidth, const ScreenImage* screens) {
         Scene sc;
@@ -1392,6 +1406,70 @@ int main(int argc, char** argv)
             sc.name = name;
             sc.items = { FullScreen(screen) };
         };
+        if (singleView())
+        {
+            // The game has put everything on the visible screen: the world is widened on a wide
+            // view, a battle's edges are continued, and any other screen's bars take its colours.
+            only("single", 0);
+            if (sectionActive("OVY_12"))
+            {
+                sc.name = "battle";
+                // The bag and party screens are 4:3 pages: no scene to continue past their edges.
+                sc.edgeFill = viewWidth >= 300 && !singleScreenFlag[3];
+                // The ROM says which command panel is up (1 main, 2 fight only, 4 moves) and what
+                // is chosen. On a wide view they stand as a strip along the bottom, as in the
+                // recomp of the original game, with the scene above left alone.
+                const int menu = singleScreenFlag[1], sel = singleScreenFlag[2];
+                if (menu != stripPubMenu || sel != stripPubSel) { stripPubMenu = menu; stripPubSel = sel; stripSel = sel; }
+                // Same moves as the ROM's main menu: left/right along the row, up/down between rows of 2.
+                if (menu == 1 || menu == 2)
+                    for (char k : stripNav)
+                        stripSel = k == 'L' ? std::max(0, stripSel - 1) : k == 'R' ? std::min(3, stripSel + 1)
+                                 : k == 'U' ? (stripSel >= 2 ? stripSel - 2 : stripSel)
+                                            : (stripSel < 2 ? stripSel + 2 : stripSel);
+                stripNav.clear();
+                const int shown = (menu == 1 || menu == 2) ? stripSel : sel;
+                if (viewWidth >= 300 && (menu == 1 || menu == 2 || menu == 4))
+                {
+                    const float L = 128 - viewWidth / 2;
+                    sc.name = menu == 4 ? "battle-moves" : "battle-cmd";
+                    sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 55, 0x20242C));
+                    sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 1, 0x5A6270));
+                    Element label = { 0, 16, 153, 62, 16, L + 4.5f, 139.5f, 1.0f, 0, 255, false };
+                    Element label2 = { 0, 16, 169, 80, 16, L + 64.5f, 139.5f, 1.0f, 0, 255, false };
+                    if (menu != 4) {
+                        sc.items.push_back(FillRect(L + 4, 139, 141, 16, 0xFFFFFF));
+                        sc.items.push_back(label);
+                        sc.items.push_back(label2);
+                    }
+                    const size_t firstButton = sc.items.size();
+                    const float gap = 6;
+                    const bool moves = menu == 4;
+                    const int bw = moves ? 78 : 50, bh = moves ? 22 : 18;
+                    const float sb = std::min(33.0f / bh, (viewWidth - 8 - 3 * gap) / (4 * bw));
+                    float x = 128 - (4 * bw * sb + 3 * gap) / 2;
+                    const float y = 156.5f + (33 - bh * sb) / 2;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        const int sx = moves ? 5 + (i & 1) * 80 : 133 + (i & 1) * 52;
+                        const int sy = moves ? 141 + (i >> 1) * 24 : 149 + (i >> 1) * 20;
+                        Element b = { 0, sx, sy, bw, bh, x, y, sb, 0, 255, false };
+                        b.border = true;
+                        b.borderColor = i == shown ? 0xF04040 : 0x101218;
+                        b.borderWidth = i == shown ? 16 : 6;
+                        sc.items.push_back(b);
+                        x += bw * sb + gap;
+                    }
+                    (void)firstButton;
+                }
+            }
+            else
+            {
+                if (sectionActive("field")) singleFieldFrame = rc_current_frame();
+                sc.wide = viewWidth >= 300 && (fieldActive() || (singleFieldFrame && rc_current_frame() - singleFieldFrame < 20));
+            }
+            return sc;
+        }
         auto startMenu = [&]() {
             only("start-menu", 0);
             // On a wide view the panel stands at the right edge, mostly beside the overworld.
@@ -2731,6 +2809,10 @@ int main(int argc, char** argv)
         if (!paused && !swallowMenuButtons)
         {
             keys |= PadKeys(ps, cfg.byLabel);
+            // Only presses made while the command strip is up count; anything done in the bag or
+            // party screens must not move it afterwards, and its next showing starts from the ROM.
+            const bool stripUp = singleScreenFlag && (singleScreenFlag[1] == 1 || singleScreenFlag[1] == 2);
+            if (!stripUp) { stripNav.clear(); stripPubSel = -1; }
             if (cfg.padTouch)
             {
                 if (pressed(PAD_RS)) focus.manualFlip = !focus.manualFlip;
@@ -2743,10 +2825,38 @@ int main(int argc, char** argv)
         if (!paused && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
         prevPad = ps;
 
+        // A decompilation build with SINGLE_SCREEN puts everything on the engine of the touch
+        // screen. It carries a tag, searched for in main memory once the game has unpacked itself,
+        // and a flag next to it that the game sets while a scene needs both screens (the intro).
+        if (!singleScreenRom && !opt.layoutGiven && frame % 30 == 15 && frame < 1800)
+        {
+            static const char tag[] = "SSRECOMP-SINGLE-SCREEN-1";
+            const uint8_t* ram = nds->MainRAM;
+            const uint8_t* end = ram + nds->MainRAMMask + 1;
+            const uint8_t* hit = std::search(ram, end, tag, tag + sizeof(tag) - 1);
+            if (hit != end)
+            {
+                singleScreenRom = true;
+                singleScreenFlag = hit + 32; // the build info struct: 32 bytes of tag, then the flag
+                preSingleLayout = layout.mode;
+                fprintf(stderr, "single-screen build detected\n");
+            }
+        }
+        // The ROM says per scene whether it wants both screens (the intro movie).
+        if (singleScreenRom && !opt.layoutGiven)
+            layout.mode = *singleScreenFlag ? preSingleLayout : LayoutMode::Merged;
         SDL_Rect rects[2];
         LayoutRects(layout, outW, outH, rects);
         const bool merged = layout.mode == LayoutMode::Merged;
         const MergedView view = MergedMakeView(outW, outH);
+        // A single-screen build's visible screen is the touch screen: touches land on it directly.
+        auto touchAt = [&](float bx, float by, int& tx, int& ty) {
+            if (!singleView()) return MergedTouch(scene, bx, by, tx, ty);
+            if (bx < 0 || bx >= 256 || by < 0 || by >= 192) return false;
+            tx = (int)bx;
+            ty = (int)by;
+            return true;
+        };
         // Widescreen 3D: on while the overworld is running in the merged view on a wide
         // output. It is drawn at the size of the picture, up to 1440 lines.
         static int wideFrames = 0;
@@ -2760,7 +2870,7 @@ int main(int argc, char** argv)
                 wh = cfg.wideLines;
             }
             const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 &&
-                (fieldActive() || menuReturn > 0 || scene.edgeFill);
+                (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
             melonDS::Wide.Width = ww;
@@ -2782,10 +2892,10 @@ int main(int argc, char** argv)
                     world.h = melonDS::Wide.FrontH;
                 }
                 const float vw = MergedMakeView(outW, outH).width;
-                const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
-                const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(),
+                const int tu = topUnitOf();
+                const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][singleView() ? 1 : 0].get(),
                     static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
-                if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage))
+                if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage, tu))
                 {
                     scene.wide = true;
                     return;
@@ -2800,7 +2910,7 @@ int main(int argc, char** argv)
                 wideImage.h = melonDS::Wide.FrontH;
                 // Fades: the game darkens or whitens its screen with the master brightness
                 // register, or with a brightness effect on the 3D layer.
-                int topUnit = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+                int topUnit = topUnitOf();
                 const auto& unit = topUnit == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
                 int mode = (unit.MasterBrightness >> 14) & 3, f = std::min(16, unit.MasterBrightness & 0x1F);
                 if ((mode != 1 && mode != 2) || !f)
@@ -2835,7 +2945,7 @@ int main(int argc, char** argv)
                 if (merged)
                 {
                     float bx = (mouseX - view.originX) / view.unit, by = (mouseY - view.originY) / view.unit;
-                    if (MergedTouch(scene, bx, by, touchX, touchY)) touching = true;
+                    if (touchAt(bx, by, touchX, touchY)) touching = true;
                 }
                 else if (LayoutTouch(rects[1], mouseX, mouseY, touchX, touchY)) touching = true;
             }
@@ -2862,7 +2972,7 @@ int main(int argc, char** argv)
                     touchX = (int)cursorX;
                     touchY = (int)cursorY;
                 }
-                else if (MergedTouch(scene, cursorX, cursorY, touchX, touchY)) touching = true;
+                else if (touchAt(cursorX, cursorY, touchX, touchY)) touching = true;
             }
         }
 
@@ -2898,12 +3008,21 @@ int main(int argc, char** argv)
                     if (dir)
                         for (int i = battleSel + dir; i >= 0 && i < 4; i += dir)
                             if (usable(i)) { battleSel = i; break; }
+                if (cmd)
+                {
+                    if (edge & (1 << KEY_LEFT)) stripNav += 'L';
+                    if (edge & (1 << KEY_RIGHT)) stripNav += 'R';
+                    if (edge & (1 << KEY_UP)) stripNav += 'U';
+                    if (edge & (1 << KEY_DOWN)) stripNav += 'D';
+                }
                 if (opt.logSections && edge) fprintf(stderr, "[strip] frame %u: keys %03x, chosen %d\n", frame, edge, battleSel);
                 if (edge & (1 << KEY_A))
                 {
                     stripTouch = 4;
-                    stripTouchX = cmd ? cmdX[battleSel] : movX[battleSel];
-                    stripTouchY = cmd ? cmdY[battleSel] : movY[battleSel];
+                    // On the command row the chosen button is the one the border shows (stripSel).
+                    const int pick = cmd ? stripSel : battleSel;
+                    stripTouchX = cmd ? cmdX[pick] : movX[pick];
+                    stripTouchY = cmd ? cmdY[pick] : movY[pick];
                 }
                 // B in the move list touches CANCEL. Given to the game as a key, the first
                 // press only brought up its own cursor. On the command row it does nothing.
@@ -2999,11 +3118,11 @@ int main(int argc, char** argv)
                 fprintf(stderr, "[lockstep] %u frames identical (%zu instructions in the last one)\n", frame, TraceLog.size());
         }
 
-        const u32* top = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get();
-        const u32* bot = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
+        const u32* top = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][singleView() ? 1 : 0].get();
+        const u32* bot = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][singleView() ? 0 : 1].get();
         // The two screens with their per-pixel layer flags, for the merged view.
         auto& renderer2d = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
-        const int topUnit = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+        const int topUnit = topUnitOf();
         const ScreenImage screenImages[2] = {
             { top, renderer2d.LayerFlags[topUnit] },
             { bot, renderer2d.LayerFlags[1 - topUnit] },
@@ -3061,7 +3180,7 @@ int main(int argc, char** argv)
             // that points at the other screen. It means nothing here, so the layers it is
             // drawn on are left out and the overworld shows through.
             {
-                int topUnit = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+                int topUnit = topUnitOf();
                 // The strip of the X menu on the top screen: 2D across the full width of its
                 // lower rows, with the 3D world above it.
                 const uint8_t* tf = screenImages[0].flags;
@@ -3249,7 +3368,7 @@ int main(int argc, char** argv)
         {
             // BG0 red, BG1 green, BG2 blue, BG3 yellow, backdrop black, 3D magenta, sprites white.
             auto& r2d = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
-            int topUnit = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+            int topUnit = topUnitOf();
             std::vector<uint32_t> img(256 * 384);
             for (int scr = 0; scr < 2; scr++)
             {
@@ -3443,7 +3562,7 @@ int main(int argc, char** argv)
     melonDS::Wide.Owner = nullptr;
     if (!opt.headless)
     {
-        cfg.layout = LayoutName(layout.mode);
+        if (!singleScreenRom) cfg.layout = LayoutName(layout.mode); // the automatic choice is not the player's setting
         cfg.focusMode = focus.mode;
         cfg.Save(opt.config);
     }
