@@ -53,6 +53,7 @@
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
+#include "switch_platform.h"
 
 #ifdef __ANDROID__
 // The app holds the player's own game, so it cannot update itself as the setup window does:
@@ -347,6 +348,20 @@ static void FlushSave(const std::string& path)
     bool ok = fwrite(Host::SaveData.data(), 1, Host::SaveData.size(), f) == Host::SaveData.size();
     ok = fclose(f) == 0 && ok;
     if (!ok) return;
+#ifdef __SWITCH__
+    // The Switch's file system will not rename onto an existing file, so the old save steps
+    // aside first, and comes back if the new one cannot take its place.
+    const std::string old = path + ".old";
+    remove(old.c_str());
+    const bool hadOld = rename(path.c_str(), old.c_str()) == 0;
+    if (rename(tmp.c_str(), path.c_str()) != 0)
+    {
+        if (hadOld) rename(old.c_str(), path.c_str());
+        fprintf(stderr, "cannot write save %s\n", path.c_str());
+        return;
+    }
+    if (hadOld) remove(old.c_str());
+#else
     // std::filesystem::rename replaces an existing file on Windows too (plain rename()
     // fails there when the target exists, which kept every save after the first).
     std::error_code err;
@@ -356,6 +371,7 @@ static void FlushSave(const std::string& path)
         fprintf(stderr, "cannot write save %s: %s\n", path.c_str(), err.message().c_str());
         return;
     }
+#endif
     Host::SaveIsDirty = false;
 }
 
@@ -521,6 +537,10 @@ static void SetClock(NDS& nds, bool fixed)
     int y = 2026, mo = 1, d = 1, h = 12, mi = 0, sec = 0;
     if (const char* c = getenv("SSR_CLOCK"))
         sscanf(c, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi);
+#ifdef __SWITCH__
+    // (localtime() below gives UTC there: the console's own time zone is asked for instead.)
+    else if (!fixed && SwitchPlatform::LocalTime(y, mo, d, h, mi, sec)) {}
+#endif
     else if (!fixed)
     {
         time_t now = time(nullptr);
@@ -932,6 +952,7 @@ struct Settings
     // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
+    bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
 
     void Load(const std::string& path)
     {
@@ -953,6 +974,7 @@ struct Settings
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
+            else if (k == "cpu_boost") cpuBoost = v == "1";
         }
     }
 
@@ -969,6 +991,9 @@ struct Settings
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
+#ifdef __SWITCH__
+        f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
+#endif
     }
 };
 
@@ -1059,12 +1084,26 @@ int main(int argc, char** argv)
         argv = androidArgv.data();
     }
 #endif
+#ifdef __SWITCH__
+    // Started from the Homebrew Menu: the ROM, save and settings are in the app's folder
+    // on the SD card (sdmc:/switch/ssrecomp), and the log goes there too.
+    if (!SwitchPlatform::Start(argc, argv)) return 1;
+#endif
     if (!ParseArgs(argc, argv, opt))
     {
         Usage();
         return 2;
     }
     if (opt.save.empty()) opt.save = opt.rom + ".sav";
+#ifdef __SWITCH__
+    {
+        // A save left aside by FlushSave when the console went off between its two renames.
+        const std::string old = opt.save + ".old";
+        FILE* f = fopen(opt.save.c_str(), "rb");
+        if (f) fclose(f);
+        else if (rename(old.c_str(), opt.save.c_str()) == 0) fprintf(stderr, "[switch] save restored from %s\n", old.c_str());
+    }
+#endif
 
     std::vector<uint8_t> rom = ReadFile(opt.rom);
     if (rom.empty())
@@ -1131,7 +1170,17 @@ int main(int argc, char** argv)
     const std::string quickState = opt.save + ".state";
 
     Settings cfg;
+#ifdef __SWITCH__
+    // The Switch's processor is several times slower than a PC's, so the first start leaves
+    // out what costs the most: the widescreen world is drawn at the DS's own sharpness and the
+    // in-between frames are off. Both can be raised in the pause menu, and are remembered.
+    cfg.wideLines = 192;
+    cfg.fps60 = false;
+#endif
     if (!opt.headless) cfg.Load(opt.config);
+#ifdef __SWITCH__
+    if (!opt.headless) SwitchPlatform::SetCpuBoost(cfg.cpuBoost);
+#endif
     if (opt.layoutGiven || opt.headless) cfg.layout = opt.layout;
     if (opt.fullscreen) cfg.fullscreen = true;
     if (!opt.autoFocus) cfg.focusMode = 1;
@@ -2315,7 +2364,12 @@ int main(int argc, char** argv)
             { "SCREEN LAYOUT", LayoutName(layout.mode) },
             { "LARGE SCREEN", large[focus.mode] },
             { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
+#ifdef __SWITCH__
+            // Always full screen there; the same place in the menu holds the processor's speed.
+            { "CPU BOOST", cfg.cpuBoost ? "ON" : "OFF" },
+#else
             { "FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
+#endif
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -2742,12 +2796,17 @@ int main(int argc, char** argv)
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
                 break;
             case M_FULLSCREEN:
+#ifdef __SWITCH__
+                cfg.cpuBoost = !cfg.cpuBoost;
+                if (!SwitchPlatform::SetCpuBoost(cfg.cpuBoost) && cfg.cpuBoost) say("CPU BOOST NEEDS SYSTEM 7.0.0+");
+#else
                 cfg.fullscreen = !cfg.fullscreen;
                 if (window)
                 {
                     SDL_SetWindowFullscreen(window, cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                     SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
                 }
+#endif
                 break;
             case M_SMOOTH:
                 cfg.smooth = !cfg.smooth;
@@ -3574,6 +3633,9 @@ int main(int argc, char** argv)
             sqrt(AudioSumSq / AudioSamples));
     if (!opt.noSave) FlushSave(opt.save);
     if (!opt.headless) SDL_Quit();
+#ifdef __SWITCH__
+    SwitchPlatform::Finish();
+#endif
     if (nds->ARM9.RecompEnable) rc_print_stats();
     if (opt.lockstep)
     {

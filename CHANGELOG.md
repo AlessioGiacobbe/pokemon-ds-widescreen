@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Nintendo Switch (experimental):** a homebrew `.nro` for consoles with custom
+  firmware, built on the PC from your ROM with `tools/switch/build.sh` (see README,
+  "Nintendo Switch"). The pause menu's FULLSCREEN is CPU BOOST there, the
+  widescreen world starts at the DS's own sharpness and 60 FPS starts off.
+
 - The setup program for macOS can now check for updates and update itself from
   the setup window and with `--update`, matching Linux and Windows.
 - A single-screen build of the decompilation (the one-screen game) is recognised when it

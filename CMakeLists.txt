@@ -24,8 +24,31 @@ set(ENABLE_GDBSTUB OFF CACHE BOOL "" FORCE)
 set(ENABLE_LTO_RELEASE OFF CACHE BOOL "" FORCE)
 add_subdirectory(melonDS EXCLUDE_FROM_ALL)
 
+# Nintendo Switch homebrew: built with devkitPro's toolchain file ($DEVKITPRO/cmake/Switch.cmake),
+# which sets NINTENDO_SWITCH. See tools/switch/build.sh.
+if(NINTENDO_SWITCH OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+    set(SSR_SWITCH ON)
+    if(NOT DEVKITPRO)
+        set(DEVKITPRO "$ENV{DEVKITPRO}")
+    endif()
+    if(NOT DEVKITPRO)
+        set(DEVKITPRO /opt/devkitpro)
+    endif()
+else()
+    set(SSR_SWITCH OFF)
+endif()
+
 option(SSR_MACOS_SOURCE_DEPS "Build SDL2 and libpng for the selected macOS target" ${APPLE})
-if(APPLE AND NOT ANDROID AND SSR_MACOS_SOURCE_DEPS)
+if(SSR_SWITCH)
+    # SDL2 from devkitPro's portlibs (the switch-sdl2 package), linked statically with what it
+    # needs (EGL and Mesa for OpenGL ES, libnx), which only its pkg-config file lists.
+    if(NOT PKG_CONFIG_EXECUTABLE)
+        find_program(PKG_CONFIG_EXECUTABLE NAMES aarch64-none-elf-pkg-config
+            HINTS "${DEVKITPRO}/portlibs/switch/bin" NO_CMAKE_FIND_ROOT_PATH)
+    endif()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL2 REQUIRED sdl2)
+elseif(APPLE AND NOT ANDROID AND SSR_MACOS_SOURCE_DEPS)
     include(cmake/MacDependencies.cmake)
 else()
     find_package(SDL2 REQUIRED)
@@ -51,15 +74,11 @@ set(SSRECOMP_SOURCES
     runtime/recomp_mem.cpp
     "${SSR_GENERATED_DIR}/apps_table.cpp"
     $<TARGET_OBJECTS:gamecode>)
-if(ANDROID)
-    # On Android the game is the library libmain.so that SDL's Java activity loads
-    # (tools/android/apk.py packs it into an APK). SDL2 is one built for Android
-    # (CMAKE_PREFIX_PATH); no libpng: screenshots are a desktop test aid.
-    add_library(ssrecomp SHARED ${SSRECOMP_SOURCES})
-    set_target_properties(ssrecomp PROPERTIES OUTPUT_NAME main)
-    target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime)
-    # The app's version, for its check for a newer release: the newest one in CHANGELOG.md.
-    set(SSR_VERSION "")
+
+# The app's version (Android: for its check for a newer release; Switch: shown in the
+# Homebrew Menu): the newest one in CHANGELOG.md.
+set(SSR_VERSION "")
+if(ANDROID OR SSR_SWITCH)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md")
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS CHANGELOG.md)
         file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md" SSR_RELEASES REGEX "^## v[0-9]")
@@ -68,8 +87,49 @@ if(ANDROID)
             string(REGEX REPLACE "^## v([0-9.]+).*" "\\1" SSR_VERSION "${SSR_VERSION}")
         endif()
     endif()
+endif()
+
+if(ANDROID)
+    # On Android the game is the library libmain.so that SDL's Java activity loads
+    # (tools/android/apk.py packs it into an APK). SDL2 is one built for Android
+    # (CMAKE_PREFIX_PATH); no libpng: screenshots are a desktop test aid.
+    add_library(ssrecomp SHARED ${SSRECOMP_SOURCES})
+    set_target_properties(ssrecomp PROPERTIES OUTPUT_NAME main)
+    target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime)
     target_compile_definitions(ssrecomp PRIVATE SSR_NO_PNG SSR_VERSION="${SSR_VERSION}")
     target_link_libraries(ssrecomp PRIVATE core SDL2::SDL2 android log)
+elseif(SSR_SWITCH)
+    # On the Switch the game is an .nro, a program for the Homebrew Menu, made from the
+    # executable below. Like the Android app it holds the player's own game, so it is built
+    # on the player's PC and never shared. No libpng: screenshots are a desktop test aid.
+    add_executable(ssrecomp ${SSRECOMP_SOURCES} frontend/switch_platform.cpp)
+    # main.cpp includes <SDL2/SDL.h>, so the folder above SDL2's own is needed too.
+    pkg_get_variable(SDL2_INCLUDEDIR sdl2 includedir)
+    target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime "${SDL2_INCLUDEDIR}" ${SDL2_STATIC_INCLUDE_DIRS})
+    target_compile_options(ssrecomp PRIVATE ${SDL2_STATIC_CFLAGS_OTHER})
+    target_compile_definitions(ssrecomp PRIVATE SSR_NO_PNG SSR_VERSION="${SSR_VERSION}")
+    target_link_directories(ssrecomp PRIVATE ${SDL2_STATIC_LIBRARY_DIRS})
+    target_link_libraries(ssrecomp PRIVATE core ${SDL2_STATIC_LIBRARIES} nx m)
+
+    find_program(SSR_NACPTOOL nacptool HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
+    find_program(SSR_ELF2NRO elf2nro HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
+    if(NOT SSR_NACPTOOL OR NOT SSR_ELF2NRO)
+        message(FATAL_ERROR "nacptool and elf2nro were not found in ${DEVKITPRO}/tools/bin: install switch-dev with dkp-pacman")
+    endif()
+    set(SSR_NRO_VERSION "${SSR_VERSION}")
+    if(NOT SSR_NRO_VERSION)
+        set(SSR_NRO_VERSION "dev")
+    endif()
+    set(SSR_NRO_ICON "")
+    if(EXISTS "${DEVKITPRO}/libnx/default_icon.jpg")
+        set(SSR_NRO_ICON "--icon=${DEVKITPRO}/libnx/default_icon.jpg")
+    endif()
+    add_custom_command(TARGET ssrecomp POST_BUILD
+        COMMAND "${SSR_NACPTOOL}" --create "ssrecomp" "ssrecomp" "${SSR_NRO_VERSION}" "${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nacp"
+        COMMAND "${SSR_ELF2NRO}" "$<TARGET_FILE:ssrecomp>" "${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nro"
+                "--nacp=${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nacp" ${SSR_NRO_ICON}
+        COMMENT "Making ssrecomp.nro"
+        VERBATIM)
 else()
     add_executable(ssrecomp ${SSRECOMP_SOURCES})
     target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime ${SDL2_INCLUDE_DIRS})

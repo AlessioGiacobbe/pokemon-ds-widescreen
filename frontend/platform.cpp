@@ -10,6 +10,7 @@
 
 #include "Platform.h"
 #include "SPI_Firmware.h"
+#include "SsrThreads.h"
 #include "host.h"
 
 namespace melonDS::Platform
@@ -104,7 +105,10 @@ void Log(LogLevel level, const char* fmt, ...)
 }
 
 struct Thread { std::thread t; };
-Thread* Thread_Create(std::function<void()> func) { return new Thread { std::thread(func) }; }
+Thread* Thread_Create(std::function<void()> func)
+{
+    return new Thread { std::thread([func = std::move(func)] { SsrHelperThreadStart(); func(); }) };
+}
 void Thread_Free(Thread* thread)
 {
     if (thread->t.joinable()) thread->t.join();

@@ -115,6 +115,35 @@ When a newer version is released, the app says so at start (it asks GitHub,
 its only use of the internet): update the setup program, press **Build for
 Android** again and install the new APK over the old one.
 
+### Nintendo Switch (experimental)
+
+A homebrew version for a Switch running custom firmware (Atmosphère), built on
+your PC from your ROM. It needs Linux, or Windows with WSL2 (Ubuntu 24.04).
+
+1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) (its pacman),
+   then the Switch toolchain and SDL2: `sudo dkp-pacman -S switch-dev switch-sdl2`.
+   Also install what the PC build needs (CMake, Ninja, Python 3; see below).
+2. From this folder: `tools/switch/build.sh your-soulsilver-us.nds`. The ROM is
+   only needed the first time; the game's recompiled code in `gen/` is shared with
+   the PC build. The result is `build-switch/ssrecomp.nro`.
+3. On the SD card, make `/switch/ssrecomp/` and copy `ssrecomp.nro` and your ROM
+   into it, the ROM renamed to `rom.nds`.
+4. **Hold R while starting any game** and choose ssrecomp in the Homebrew Menu.
+   It is about 400 MB (the whole game's recompiled code), so started from the
+   album there is not enough memory to load it, and it takes a few seconds to
+   load from the SD card.
+
+The `.nro` contains your copy of the game: never share it. The save
+(`soulsilver.sav`), settings (`ssrecomp.cfg`) and `game.log`, with the frame
+timings, are written to `/switch/ssrecomp/`.
+
+The Switch's processor is several times slower than a PC's, so the first start
+draws the widescreen world at the DS's own sharpness (WORLD DETAIL 192) and
+leaves 60 FPS off; both can be raised in the pause menu (+ and − together).
+There, CPU BOOST (on by default) runs the processor at about 1.8 GHz instead of
+1 GHz, as games do while loading; it needs system version 7.0.0 or later. The
+touch screen works in handheld mode, like a mouse on a PC.
+
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
 Windows, `~/Library/Application Support/ssrecomp` on macOS), where the game is

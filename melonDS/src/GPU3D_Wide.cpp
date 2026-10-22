@@ -18,6 +18,7 @@
 #include "GPU.h"
 #include "GPU3D.h"
 #include "GPU3D_Soft.h"
+#include "SsrThreads.h"
 
 namespace melonDS
 {
@@ -34,7 +35,7 @@ class Workers
 public:
     explicit Workers(int n)
     {
-        for (int i = 0; i < n; i++) Threads.emplace_back([this, i] { Loop(i); });
+        for (int i = 0; i < n; i++) Threads.emplace_back([this, i] { SsrHelperThreadStart(); Loop(i); });
     }
     ~Workers()
     {
@@ -647,6 +648,11 @@ struct WideAccess
             // thread of a core slow down the emulation running on the first, and measured
             // (6 cores, 12 threads) 3-5 threads were quicker overall than 10.
             n = (int)std::thread::hardware_concurrency() / 2 - 1;
+#endif
+#ifdef __SWITCH__
+            // Games get three of the Switch's four cores; the emulation keeps the first, so
+            // the drawing threads share the other two with the DS-resolution render thread.
+            n = 2;
 #endif
             if (const char* forced = getenv("SSR_WIDE_THREADS")) n = atoi(forced);
             Pool = std::make_unique<Workers>(std::clamp(n, 1, 16));
