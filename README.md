@@ -122,7 +122,10 @@ your PC from your ROM. It needs Linux, or Windows with WSL2 (Ubuntu 24.04).
 
 1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) (its pacman),
    then the Switch toolchain and SDL2: `sudo dkp-pacman -S switch-dev switch-sdl2`.
-   Also install what the PC build needs (CMake, Ninja, Python 3; see below).
+   Also install what the PC build needs (CMake, Ninja, Python 3; see below). If
+   devkitPro's servers refuse the download (403), use their Docker image instead:
+   `docker run --rm -v "$PWD:$PWD" -w "$PWD" devkitpro/devkita64 bash tools/switch/build.sh`
+   (generate `gen/` first, as in step 2, since the ROM is outside the container).
 2. From this folder: `tools/switch/build.sh your-soulsilver-us.nds`. The ROM is
    only needed the first time; the game's recompiled code in `gen/` is shared with
    the PC build. The result is `build-switch/ssrecomp.nro`.

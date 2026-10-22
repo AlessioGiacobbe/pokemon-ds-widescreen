@@ -4,9 +4,10 @@
 #   tools/switch/build.sh [your-soulsilver-us.nds]
 #
 # Needs devkitPro with the switch-dev and switch-sdl2 packages (see README, "Nintendo
-# Switch"), plus what the PC build needs to generate the game's code (Python 3, CMake,
-# Ninja). The ROM is only needed the first time, or when gen/ is missing: the recompiled
-# code in gen/ is the same for every platform and is shared with the PC build.
+# Switch"), CMake and Ninja, and Python 3 to generate the game's code. devkitPro's
+# devkitpro/devkita64 Docker image has all of these. The ROM is only needed the first time,
+# or when gen/ is missing: the recompiled code in gen/ is the same for every platform and
+# is shared with the PC build.
 #
 # The result, build-switch/ssrecomp.nro, holds your game's code: keep it to yourself.
 set -euo pipefail
@@ -25,8 +26,8 @@ fail() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
     fail "devkitPro's Switch toolchain is not in $DEVKITPRO. Install devkitPro, then: sudo dkp-pacman -S switch-dev switch-sdl2"
 [ -f "$DEVKITPRO/portlibs/switch/lib/libSDL2.a" ] ||
     fail "SDL2 for the Switch is missing: sudo dkp-pacman -S switch-sdl2"
-for tool in cmake ninja python3; do
-    command -v "$tool" >/dev/null || fail "$tool is not installed (sudo apt install cmake ninja-build python3)"
+for tool in cmake ninja; do
+    command -v "$tool" >/dev/null || fail "$tool is not installed (sudo apt install cmake ninja-build)"
 done
 
 # The game's code, generated from the ROM (once).
@@ -34,6 +35,7 @@ if [ ! -f gen/sources.cmake ]; then
     ROM="${1:-}"
     [ -n "$ROM" ] || fail "gen/ is missing: give your SoulSilver (US) ROM, e.g. tools/switch/build.sh ~/soulsilver.nds"
     [ -f "$ROM" ] || fail "no such file: $ROM"
+    command -v python3 >/dev/null || fail "python3 is not installed (sudo apt install python3)"
     say "Recompiling the game's code from $ROM"
     python3 tools/recomp.py --rom "$ROM" --layout layouts/soulsilver-us.json melonDS/src gen
     python3 tools/apps.py --layout layouts/soulsilver-us.json gen
