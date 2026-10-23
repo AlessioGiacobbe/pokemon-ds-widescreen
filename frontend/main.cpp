@@ -3674,19 +3674,21 @@ int main(int argc, char** argv)
 
         if (audio && got > 0)
         {
-            // How much longer than a DS frame the frames are taking (smoothed): above full
-            // speed's 1 the sound is stretched to match (see AudioStretch), steered towards
-            // 50 ms of sound waiting in the queue.
+            // How much longer than a DS frame the frames are taking: above full speed's 1 the
+            // sound is stretched to match (see AudioStretch), steered towards 100 ms of sound
+            // waiting in the queue. Averaged over about a second, so that frames that come
+            // quicker and slower in turn do not make the music speed up and slow down with
+            // them (the queue takes up the difference).
             const int queued = (int)SDL_GetQueuedAudioSize(audio) / 4;
             const uint64_t t = SDL_GetPerformanceCounter();
             if (audioTick)
             {
                 const double dt = (double)(t - audioTick) / perfFreq;
-                if (dt < 0.25) audioSlow += (std::min(dt / frameTime, 4.0) - audioSlow) * 0.1;
+                if (dt < 0.25) audioSlow += (std::min(dt / frameTime, 4.0) - audioSlow) * 0.03;
             }
             audioTick = t;
             double slowdown = speed == 1 ? audioSlow : 1.0;
-            if (audioStretch.Stretching() && speed == 1) slowdown *= 1.0 + 0.3 * (2400 - queued) / 2400.0;
+            if (audioStretch.Stretching() && speed == 1) slowdown *= 1.0 + 0.5 * (4800 - queued) / 4800.0;
             audioOut.clear();
             audioStretch.Process(audioBuf.data(), got, slowdown, audioOut);
             // Drop audio rather than let latency grow if the queue backs up.

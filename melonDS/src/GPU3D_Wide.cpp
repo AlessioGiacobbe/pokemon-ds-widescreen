@@ -35,7 +35,7 @@ class Workers
 public:
     explicit Workers(int n)
     {
-        for (int i = 0; i < n; i++) Threads.emplace_back([this, i] { SsrHelperThreadStart(); Loop(i); });
+        for (int i = 0; i < n; i++) Threads.emplace_back([this, i] { SsrHelperThreadStart(i + 1); Loop(i); });
     }
     ~Workers()
     {

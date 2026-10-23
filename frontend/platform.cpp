@@ -107,7 +107,7 @@ void Log(LogLevel level, const char* fmt, ...)
 struct Thread { std::thread t; };
 Thread* Thread_Create(std::function<void()> func)
 {
-    return new Thread { std::thread([func = std::move(func)] { SsrHelperThreadStart(); func(); }) };
+    return new Thread { std::thread([func = std::move(func)] { SsrHelperThreadStart(0); func(); }) };
 }
 void Thread_Free(Thread* thread)
 {
