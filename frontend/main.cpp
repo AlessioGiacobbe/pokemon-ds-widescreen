@@ -1776,6 +1776,10 @@ int main(int argc, char** argv)
             // both screens are shown side by side, so nothing is hidden.
             if (lastKnownBw2Frame && funcWatch.CurrentFrame() - lastKnownBw2Frame <= 45)
                 return lastKnownBw2;
+            // Both screens one colour (a fade to black or white between two screens, however
+            // long): the last layout stays, rather than the two screens side by side popping up.
+            if (lastKnownBw2Frame && screens && AutoFocus::Blank(screens[0].pixels) && AutoFocus::Blank(screens[1].pixels))
+                return lastKnownBw2;
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
             (void)screens;
             return sc;
@@ -3306,7 +3310,14 @@ int main(int argc, char** argv)
                 ww = ww * cfg.wideLines / wh;
                 wh = cfg.wideLines;
             }
-            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (funcWatchOn ? scene.wide :
+            // Black 2: the renderer keeps going for 5 seconds after a wide layout and through a
+            // whole battle (its party and Bag pages are not wide), so that coming back to the
+            // world or the arena shows it straight away instead of a few frames with bars.
+            static uint32_t lastWideScene = 0;
+            if (funcWatchOn && scene.wide) lastWideScene = frame;
+            const bool bw2KeepWide = funcWatchOn && (scene.wide || (lastWideScene && frame - lastWideScene < 300) ||
+                funcWatch.Ran(bw2.battle, 2));
+            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (funcWatchOn ? bw2KeepWide :
                 (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20)));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
