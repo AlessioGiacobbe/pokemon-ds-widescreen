@@ -42,6 +42,8 @@ public:
             first = false;
             if (useWide && isFirst && wide->placed) continue;
             if (useWide && isFirst) el.drop |= LAYER_3D;
+            if (el.wideOnly && !useWide) continue;
+            if (!useWide) el.holeCount = 0;
             const float s = v.unit * el.scale;
             SDL_Rect dst;
             dst.x = (int)(v.originX + el.dx * v.unit);
@@ -86,7 +88,7 @@ public:
             const bool nearest = el.crisp || !smooth;
             const bool keyed = el.keys[0] != 0xFFFFFFFF;
             const bool spriteKey = el.dropSpriteCorner > 0 && src.flags;
-            const bool plain = !(el.drop && src.flags) && !keyed && !spriteKey && el.alpha == 255 && el.cutX >= 256;
+            const bool plain = !(el.drop && src.flags) && !keyed && !spriteKey && el.alpha == 255 && el.cutX >= 256 && !el.holeCount;
             SDL_Texture* tex = Slot(slot++, el.sw, el.sh);
             if (!tex) continue;
             SDL_SetTextureScaleMode(tex, nearest ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
@@ -111,7 +113,7 @@ public:
                     for (int x = 0; x < el.sw; x++)
                     {
                         uint32_t c = row[x] & 0xFFFFFF;
-                        bool skip = (el.sx + x >= el.cutX && sy >= el.cutY) ||
+                        bool skip = el.Skips(el.sx + x, sy) ||
                             (el.drop && frow && (LayerClass(frow[x]) & el.drop)) ||
                             (spriteKey && LayerClass(frow[x]) == LAYER_OBJ && std::min(x, el.sw - 1 - x) < el.dropSpriteCorner &&
                                 std::min(y, el.sh - 1 - y) < el.dropSpriteCorner) ||

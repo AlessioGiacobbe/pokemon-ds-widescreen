@@ -68,6 +68,22 @@ struct Element
     uint32_t borderColor = 0x282830;
     int borderWidth = 0;  // in 8ths of a base pixel; 0 = the usual 6
     float borderRadius = 0; // rounds the outline's corners: radius of its inner edge, in base pixels
+    // Up to two more rectangles of the source (x0, y0, x1, y1, exclusive) that are not drawn:
+    // where a part of the screen is drawn elsewhere instead (Black 2's HP boxes in a wide battle).
+    // (They apply only over a widescreen world, which shows through them; without one the
+    // piece is drawn whole, and pieces marked wideOnly, the parts drawn elsewhere, are not.)
+    int holeCount = 0;
+    int holes[2][4] = {};
+    bool wideOnly = false;
+
+    // Whether source pixel (x, y) is left out by the cut corner or a hole.
+    bool Skips(int x, int y) const
+    {
+        if (x >= cutX && y >= cutY) return true;
+        for (int i = 0; i < holeCount; i++)
+            if (x >= holes[i][0] && y >= holes[i][1] && x < holes[i][2] && y < holes[i][3]) return true;
+        return false;
+    }
 };
 
 // The columns [x0, x1) a rounded rectangle covers in output row y (pixel centres), or
@@ -197,6 +213,8 @@ inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenI
 {
     const int sx = side ? 255 : 0;
     const EdgeContinuation none = { 0, 0, 16 };
+    // (Nor where the piece leaves the screen out: that part is drawn elsewhere.)
+    if (scene.items[0].Skips(sx, sy)) return none;
     const uint8_t cls = LayerClass(top.flags[sy * 256 + sx]);
     // (Not a layer the scene leaves out: that one is not drawn on the screen either.)
     if (cls == LAYER_3D || (cls & scene.items[0].drop)) return none;
@@ -225,7 +243,7 @@ inline bool MergedEdgesArePicture(const Scene& scene, const ScreenImage screens[
         for (int y = 0; y < 192; y++)
         {
             const uint8_t cls = LayerClass(top.flags[y * 256 + (side ? 255 : 0)]);
-            if (cls != LAYER_3D && !(cls & scene.items[0].drop) && top.edgeFlat[y * 2 + side] == 2 && !(top.edgeBlend[y * 2 + side] >> 8))
+            if (!scene.items[0].Skips(side ? 255 : 0, y) && cls != LAYER_3D && !(cls & scene.items[0].drop) && top.edgeFlat[y * 2 + side] == 2 && !(top.edgeBlend[y * 2 + side] >> 8))
                 rows++;
         }
         if (rows >= 64) return true;
@@ -421,10 +439,12 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     for (const Element& item : scene.items)
     {
         if (placed && &item == &scene.items[0]) continue;
+        if (item.wideOnly && !useWide) continue;
         Piece p;
         p.el = item;
         // Over a widescreen world only the 2D parts of the top screen are drawn.
         if (useWide && !placed && pieces.empty()) p.el.drop |= LAYER_3D;
+        if (!useWide) p.el.holeCount = 0;
         p.s = v.unit * p.el.scale;
         p.x0 = (int)(v.originX + p.el.dx * v.unit);
         p.y0 = (int)(v.originY + p.el.dy * v.unit);
@@ -605,7 +625,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                 const int* col = p.col.data();
                 const bool keyed = el.keys[0] != 0xFFFFFFFF;
                 const bool spriteKey = el.dropSpriteCorner > 0 && src.flags;
-                const bool plain = !(el.drop && src.flags) && !keyed && !spriteKey && el.alpha == 255 && el.cutX >= 256;
+                const bool plain = !(el.drop && src.flags) && !keyed && !spriteKey && el.alpha == 255 && el.cutX >= 256 && !el.holeCount;
                 for (int oy = oya; oy < oyb; oy++)
                 {
                     int sy = (int)((oy - y0 + 0.5f) / s);
@@ -623,7 +643,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                     for (int x = xa; x < xb; x++)
                     {
                         int sx = col[x];
-                        if (sx >= el.cutX && sy >= el.cutY) continue;
+                        if (el.Skips(sx, sy)) continue;
                         if (el.drop && frow && (LayerClass(frow[sx]) & el.drop)) continue;
                         uint32_t c = row[sx];
                         if (spriteKey && LayerClass(frow[sx]) == LAYER_OBJ &&
@@ -674,7 +694,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                     {
                         int srcX = el.sx + (el.flipX ? el.sw - 1 - px[k] : px[k]);
                         int srcY = el.sy + (el.flipY ? el.sh - 1 - py[k] : py[k]);
-                        if (srcX >= el.cutX && srcY >= el.cutY) continue;
+                        if (el.Skips(srcX, srcY)) continue;
                         int si = srcY * 256 + srcX;
                         if (el.drop && src.flags && (LayerClass(src.flags[si]) & el.drop)) continue;
                         uint32_t c = src.pixels[si];

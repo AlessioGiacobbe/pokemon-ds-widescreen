@@ -1528,6 +1528,8 @@ int main(int argc, char** argv)
         int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
         int options = -1, summary = -1, dexList = -1, dexEntry = -1, box = -1;
         int startContinue = -1, confirmDialog = -1;
+        int battleList = -1, battleBag = -1, battleChoice = -1, battleYesNo = -1;
+        int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
     int cgearStep = 0, cgearKey = 0;
@@ -1555,6 +1557,14 @@ int main(int argc, char** argv)
         bw2.box = bw2Find("Box2Proc_Main");             // the PC's boxes
         bw2.startContinue = bw2Find("StartMenu_Continue"); // CONTINUE chosen on the start menu
         bw2.confirmDialog = bw2Find("ConfirmDialog_Update"); // a YES / NO question
+        bw2.battleList = bw2Find("BPlistMain_Task");    // the party in a battle (POKEMON, or after fainting)
+        bw2.battleBag = bw2Find("BBagMain_Task");       // the Bag in a battle
+        bw2.battleChoice = bw2Find("BChoiceMain_Task"); // a choice on the touch screen in a battle
+        bw2.battleYesNo = bw2Find("BtlvInput_YesNoTask"); // YES / NO in a battle ("Use next Pokemon?")
+        bw2.setupSingle = bw2Find("BtlMain_SetupAloneSingle"); // which kind of battle starts
+        bw2.setupDouble = bw2Find("BtlMain_SetupAloneDouble");
+        bw2.setupTriple = bw2Find("BtlMain_SetupAloneTriple");
+        bw2.setupRotation = bw2Find("BtlMain_SetupAloneRotation");
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
@@ -1591,12 +1601,74 @@ int main(int argc, char** argv)
             // The player asked for the other screen (right stick click, F1): an escape hatch
             // for whatever a layout leaves out.
             only("manual", focus.wantBottom ? 0 : 1);
+        else if (funcWatch.Ran(bw2.battle, 2) && (funcWatch.Ran(bw2.battleList, 2) || funcWatch.Ran(bw2.battleBag, 2)))
+            // The party (after POKEMON, or to send out the next one after fainting) or the Bag:
+            // a whole touch-screen page, shown as it is.
+            only("battle-list", 1);
+        else if (funcWatch.Ran(bw2.battle, 2) && (funcWatch.Ran(bw2.battleChoice, 4) || funcWatch.Ran(bw2.battleYesNo, 4)))
+            // A question on the top screen ("Use next Pokemon?") answered on the touch screen:
+            // both, side by side.
+            sc = Stack("battle-choice", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
         else if (funcWatch.Ran(bw2.battle, 2))
         {
             // The battle is drawn in 3D on the top screen, so the widescreen renderer shows
-            // more of the arena; the HP boxes and messages are 2D and stay where they are.
+            // more of the arena; the messages are 2D and stay where they are.
             only("battle", 0);
             sc.wide = wideView;
+            // A single battle on a wide view: the HP boxes go to the top corners of the view,
+            // out of the way of the touch-screen panel in the lower right (the player's box
+            // was under it, and ran into the edge of the screen). Where they were, the wide
+            // arena shows. A double, triple or rotation battle keeps the game's own places.
+            int kind = 0; // 1 single, 2 another kind, 0 not seen (a snapshot loaded mid-battle)
+            uint32_t seen = 0;
+            const int setups[4] = { bw2.setupSingle, bw2.setupDouble, bw2.setupTriple, bw2.setupRotation };
+            for (int k = 0; k < 4; k++)
+                if (funcWatch.LastFrame(setups[k]) > seen)
+                {
+                    seen = funcWatch.LastFrame(setups[k]);
+                    kind = k == 0 ? 1 : 2;
+                }
+            if (!kind && screens && screens[0].flags)
+            {
+                // Not seen: a single battle has one box at each of these places.
+                auto height = [&](int x0, int y0, int x1, int y1) {
+                    int top = 999, bottom = -1;
+                    for (int y = y0; y < y1; y++)
+                        for (int x = x0; x < x1; x++)
+                        {
+                            const uint8_t cl = LayerClass(screens[0].flags[y * 256 + x]);
+                            if (cl != LAYER_3D && cl != LAYER_BACKDROP) { top = std::min(top, y); bottom = std::max(bottom, y); }
+                        }
+                    return bottom - top + 1;
+                };
+                const int enemyH = height(0, 0, 128, 100), mineH = height(128, 60, 256, 142);
+                kind = enemyH > 0 && enemyH <= 32 && mineH > 0 && mineH <= 34 ? 1 : 2;
+            }
+            // (The compositor leaves the boxes where they are in any frame without the wide arena.)
+            if (wideView && kind == 1)
+            {
+                // The enemy's box covers x 4-109, y 30-51 of the top screen, the player's x 142-255,
+                // y 110-138 (with room for them to shake when hit).
+                Element& top = sc.items[0];
+                top.holeCount = 2;
+                const int enemy[4] = { 0, 26, 116, 56 }, mine[4] = { 138, 106, 256, 142 };
+                std::copy(enemy, enemy + 4, top.holes[0]);
+                std::copy(mine, mine + 4, top.holes[1]);
+                Element e = Crop(0, enemy[0], enemy[1], enemy[2] - enemy[0], enemy[3] - enemy[1]);
+                e.dx = viewLeft - 2;
+                e.dy = -1;
+                e.drop = LAYER_3D | LAYER_BACKDROP;
+                e.crisp = true;
+                e.wideOnly = true;
+                sc.items.push_back(e);
+                Element m = Crop(0, mine[0], mine[1], mine[2] - mine[0], mine[3] - mine[1]);
+                m.dx = viewRight - (mine[2] - mine[0]);
+                m.dy = -1;
+                m.drop = LAYER_3D | LAYER_BACKDROP;
+                m.crisp = true;
+                m.wideOnly = true;
+                sc.items.push_back(m);
+            }
             if (funcWatch.Ran(bw2.battleMove, 1))
                 cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two (49 high)
             else if (funcWatch.Ran(bw2.battleCommand, 1))
@@ -1887,7 +1959,7 @@ int main(int argc, char** argv)
                 auto drawn = [&](int sx, int sy) {
                     const uint32_t c = px[sy * 256 + sx] & 0xFFFFFF;
                     return c != page && !(sy >= e->sy + e->sh - e->keyRing && c == edge) &&
-                        (sx < e->cutX || sy < e->cutY);
+                        !e->Skips(sx, sy);
                 };
                 struct Block { int y0, y1, x0, x1; };
                 std::vector<Block> blocks;
