@@ -41,6 +41,16 @@ public:
     // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
     // Bits 0-3 are BG0-BG3, 0x20 the backdrop, 0x40 the 3D layer, 0x80 a sprite.
     u8 LayerFlags[2][256*192] = {};
+    // ssrecomp: the first and last pixel of each line (index line * 2 + side), for continuing
+    // them beside the screen in a wide view (frontend/merged.h). EdgeColour: the topmost
+    // layer's own colour before any blending (XRGB8888, as the finished line has it).
+    // EdgeBlend: how it mixes with the 3D world, eva | evb << 8 (in 16ths, as the DS blends:
+    // own * eva + 3D * evb): 16 if it covers it (or there is no 3D below), 16 << 8 if the 3D
+    // layer is on top. EdgeFlat: whether the 8 pixels at that edge all have that colour and
+    // layer (a fill, as opposed to a picture).
+    u32 EdgeColour[2][192 * 2] = {};
+    u16 EdgeBlend[2][192 * 2] = {};
+    u8 EdgeFlat[2][192 * 2] = {};
     // ssrecomp: each line's background scroll registers (BG0-3 x and y), per 2D engine.
     u16 LineScroll[2][192][4][2] = {};
     // ssrecomp: each line's colour effect and master brightness registers (BLDCNT, BLDY,
@@ -137,6 +147,8 @@ private:
         return rb | g | 0xFF000000;
     }
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
+    // ssrecomp: fills EdgeColour and EdgeFlat for a line (before it is composited).
+    void RecordEdges(u32 line);
 
     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
     void DrawScanlineBGMode6(u32 line);

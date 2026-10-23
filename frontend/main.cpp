@@ -1216,9 +1216,10 @@ int main(int argc, char** argv)
     Settings cfg;
 #ifdef __SWITCH__
     // The Switch's processor is several times slower than a PC's, so the first start leaves
-    // out what costs the most: the widescreen world is drawn at the DS's own sharpness and the
-    // in-between frames are off. Both can be raised in the pause menu, and are remembered.
-    cfg.wideLines = 192;
+    // out what costs the most: the widescreen world is drawn at 288 lines (192, the DS's own
+    // sharpness, looks blocky on its screen) and the in-between frames are off. Both can be
+    // changed in the pause menu, and are remembered.
+    cfg.wideLines = 288;
     cfg.fps60 = false;
 #endif
     if (!opt.headless) cfg.Load(opt.config);
@@ -1533,6 +1534,7 @@ int main(int argc, char** argv)
     uint32_t lastKnownBw2Frame = 0;
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
         Scene sc;
+        sc.smartEdges = true;
         auto only = [&](const char* name, int screen) {
             sc.name = name;
             sc.items = { FullScreen(screen) };
@@ -1573,7 +1575,9 @@ int main(int argc, char** argv)
         }
         else if (funcWatch.Ran(bw2.fieldMenu, 8)) // (it skips a few frames while the menu opens)
         {
-            // The menu's buttons in one column at the right edge, mostly beside the overworld.
+            // The menu's buttons at the right edge, mostly beside the overworld, in the game's
+            // own grid of two columns, so that the D-pad moves the highlight where it looks
+            // like it should.
             only("start-menu", 0);
             sc.wide = wideView;
             // The strip along the bottom of the top screen (BG1, with an arrow down) only says
@@ -1582,36 +1586,38 @@ int main(int argc, char** argv)
             // The touch screen holds up to six buttons, two to a row, in a fixed grid: 126 x 44
             // pixels each, rows 48 apart from y = 22. A slot is used when its button's left
             // edge (a light frame) is there; the menu fills the slots row by row.
-            std::vector<Element> buttons;
+            struct Slot { Element crop; int row, col; };
+            std::vector<Slot> buttons;
+            int rows = 0;
             for (int row = 0; row < 3; row++)
                 for (int col = 0; col < 2; col++)
                 {
                     const int bx = col ? 130 : 2, by = 22 + row * 48;
                     const uint32_t c = screens[1].pixels[(by + 20) * 256 + bx + 2];
                     const int lum = (((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF)) / 3;
-                    if (lum > 100) buttons.push_back(Crop(1, bx, by, 126, 44));
+                    if (lum > 100)
+                    {
+                        buttons.push_back({ Crop(1, bx, by, 126, 44), row, col });
+                        rows = row + 1;
+                    }
                 }
-            if (buttons.empty())
-                // Not drawn yet (the menu is opening): the whole touch screen, small.
-                buttons.push_back(Crop(1, 0, 0, 256, 192));
-            const float scale = wideView ? 0.5f : 0.4f, gap = 2, pad = 3;
-            float colW = 0, colH = -gap;
-            for (const Element& b : buttons)
+            // (None drawn: the menu is opening or closing. The overworld alone then.)
+            if (!buttons.empty())
             {
-                colW = std::max(colW, b.sw * scale);
-                colH += b.sh * scale + gap;
-            }
-            const float x = (wideView ? 128 + viewWidth / 2 : 256.0f) - colW - pad - 2;
-            float y = (192 - colH) / 2;
-            sc.items.push_back(FillRect(x - pad, y - pad, (int)(colW + 2 * pad), (int)(colH + 2 * pad), 0x14141C));
-            sc.items.back().border = true;
-            for (Element b : buttons)
-            {
-                b.dx = x;
-                b.dy = y;
-                b.scale = scale;
-                sc.items.push_back(b);
-                y += b.sh * scale + gap;
+                const float scale = wideView ? 0.45f : 0.4f, gap = 2, pad = 3;
+                const float bw = 126 * scale, bh = 44 * scale;
+                const float w = 2 * bw + gap, h = rows * bh + (rows - 1) * gap;
+                const float x = (wideView ? 128 + viewWidth / 2 : 256.0f) - w - pad - 2;
+                const float y = (192 - h) / 2;
+                sc.items.push_back(FillRect(x - pad, y - pad, (int)(w + 2 * pad), (int)(h + 2 * pad), 0x14141C));
+                sc.items.back().border = true;
+                for (Slot b : buttons)
+                {
+                    b.crop.dx = x + b.col * (bw + gap);
+                    b.crop.dy = y + b.row * (bh + gap);
+                    b.crop.scale = scale;
+                    sc.items.push_back(b.crop);
+                }
             }
         }
         else if (funcWatch.Ran(bw2.field, 16))
@@ -3427,8 +3433,8 @@ int main(int argc, char** argv)
         auto& renderer2d = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
         const int topUnit = topUnitOf();
         const ScreenImage screenImages[2] = {
-            { top, renderer2d.LayerFlags[topUnit] },
-            { bot, renderer2d.LayerFlags[1 - topUnit] },
+            { top, renderer2d.LayerFlags[topUnit], renderer2d.EdgeColour[topUnit], renderer2d.EdgeBlend[topUnit], renderer2d.EdgeFlat[topUnit] },
+            { bot, renderer2d.LayerFlags[1 - topUnit], renderer2d.EdgeColour[1 - topUnit], renderer2d.EdgeBlend[1 - topUnit], renderer2d.EdgeFlat[1 - topUnit] },
         };
         const bool fieldNow = rc_probe_last_frame(probeFieldMap) + 1 >= rc_current_frame() && rc_probe_last_frame(probeFieldMap);
         for (u32 sec = 0; sec < rc_num_sections; sec++)
@@ -3540,8 +3546,20 @@ int main(int argc, char** argv)
                 }
             }
         }
+        // Black 2: a picture in 2D covering the world (the Surf and Fly cut-ins) is shown at 4:3:
+        // continuing it beside the screen would only make streaks.
+        // (Back to wide only after 10 frames without one: the cut-in's flashes come in between.)
+        if (funcWatchOn)
+        {
+            static uint32_t pictureFrame = 0;
+            if (scene.wide && MergedEdgesArePicture(scene, screenImages)) pictureFrame = frame ? frame : 1;
+            scene.narrow = scene.wide && pictureFrame && frame - pictureFrame < 10;
+        }
         if (opt.logSections)
         {
+            static bool lastNarrow = false;
+            if (scene.narrow != lastNarrow) fprintf(stderr, "[wide] frame %u: %s\n", frame, scene.narrow ? "4:3 (a 2D picture covers the edges)" : "wide again");
+            lastNarrow = scene.narrow;
             static std::string lastScene;
             if (lastScene != scene.name)
             {
@@ -3860,30 +3878,54 @@ int main(int argc, char** argv)
         }
     }
 
-    Sampler::Stop();
-    // The 3D render thread must be finished before anything it draws from is torn down.
-    static_cast<melonDS::SoftRenderer&>(nds->GPU.GetRenderer3D()).SetThreaded(false, nds->GPU);
-    // The widescreen picture may still be being drawn in the background: its threads read
-    // data that is destroyed when the program ends (this crashed on exit now and then).
-    melonDS::WideWait();
-    melonDS::Wide.Owner = nullptr;
+    // Shutting down. The save and the settings are written first, before anything that could
+    // go wrong; each step is logged, so that a log shows how far it got if it ever stops.
+    auto exitStep = [](const char* what) {
+        fprintf(stderr, "[exit] %s\n", what);
+        fflush(stderr);
+    };
+    exitStep("saving");
+    if (!opt.noSave) FlushSave(opt.save);
     if (!opt.headless)
     {
         if (!singleScreenRom) cfg.layout = LayoutName(layout.mode); // the automatic choice is not the player's setting
         cfg.focusMode = focus.mode;
         cfg.Save(opt.config);
     }
+    Sampler::Stop();
+    // The 3D render thread must be finished before anything it draws from is torn down.
+    exitStep("3D render thread");
+    static_cast<melonDS::SoftRenderer&>(nds->GPU.GetRenderer3D()).SetThreaded(false, nds->GPU);
+    // The widescreen picture may still be being drawn in the background: its threads read
+    // data that is destroyed when the program ends (this crashed on exit now and then). Its
+    // threads are ended here too, rather than by the program's own clean-up at the very end.
+    exitStep("widescreen threads");
+    melonDS::WideWait();
+    melonDS::WideShutdown();
+    melonDS::Wide.Owner = nullptr;
     if (nds->GPU.GPU3D.InterpolationEnabled)
         fprintf(stderr, "[60fps] %u in-between frames drawn in %u frames\n", nds->GPU.GPU3D.InterpolatedFrames, frame);
     if (opt.countChanges) fprintf(stderr, "[changes] top screen changed on %u of %u frames\n", TopChanges, frame);
     if (opt.audioStats && AudioSamples)
         fprintf(stderr, "[audio] %llu samples, peak %d, rms %.1f\n", (unsigned long long)AudioSamples, AudioPeak,
             sqrt(AudioSumSq / AudioSamples));
-    if (!opt.noSave) FlushSave(opt.save);
-    if (!opt.headless) SDL_Quit();
+    if (!opt.headless)
+    {
+        if (audio)
+        {
+            exitStep("audio");
+            SDL_PauseAudioDevice(audio, 1);
+            SDL_ClearQueuedAudio(audio);
+            SDL_CloseAudioDevice(audio);
+        }
+        exitStep("SDL");
+        SDL_Quit();
+    }
 #ifdef __SWITCH__
+    exitStep("processor speed");
     SwitchPlatform::Finish();
 #endif
+    exitStep("done");
     if (nds->ARM9.RecompEnable) rc_print_stats();
     if (opt.lockstep)
     {

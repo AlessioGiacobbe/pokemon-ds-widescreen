@@ -32,4 +32,6 @@ extern WideState Wide;
 // Blocks until the widescreen picture being drawn in the background is finished (the frontend
 // calls it before shutting down).
 void WideWait();
+// Ends its drawing threads (the frontend calls it before shutting down, after WideWait).
+void WideShutdown();
 }

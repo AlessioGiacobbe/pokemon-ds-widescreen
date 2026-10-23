@@ -23,7 +23,7 @@ public:
     {
         uint32_t bg = 0;
         if (scene.bgScreen >= 0) bg = screens[scene.bgScreen].pixels[scene.bgY * 256 + scene.bgX] & 0xFFFFFF;
-        const bool useWide = scene.wide && wide && wide->pixels && wide->w > 0 && wide->h > 0;
+        const bool useWide = scene.wide && !scene.narrow && wide && wide->pixels && wide->w > 0 && wide->h > 0;
         const MergedView v = MergedMakeView(outW, outH);
 
         SDL_SetRenderDrawBlendMode(R, SDL_BLENDMODE_NONE);
@@ -184,24 +184,55 @@ private:
         if (!top.flags) return;
         const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
         const int y0 = (int)v.originY, h = (int)(192 * v.unit + 0.5f);
+        // Each row's continuation is rgb * eva / 16 + world * evb / 16 (see EdgeContinuation):
+        // drawn premultiplied, with evb / 16 as the alpha that the world below is multiplied
+        // by. Where the renderer can't blend that way, the usual blending comes close.
+        if (EdgeMode == SDL_BLENDMODE_INVALID)
+            EdgeMode = SDL_ComposeCustomBlendMode(SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_SRC_ALPHA, SDL_BLENDOPERATION_ADD,
+                SDL_BLENDFACTOR_ZERO, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
         for (int side = 0; side < 2; side++)
         {
-            const int sx = side == 0 ? 0 : 255;
             bool any = false;
             for (int y = 0; y < 192; y++)
             {
-                const uint8_t cls = LayerClass(top.flags[y * 256 + sx]);
-                // (Not a layer the scene leaves out: that one is not drawn on the screen either.)
-                bool ext = cls != LAYER_3D && !(cls & scene.items[0].drop);
-                Edge[y] = ext ? (0xFF000000 | top.pixels[y * 256 + sx]) : 0;
-                any |= ext;
+                const EdgeContinuation c = MergedEdgeContinuation(scene, top, y, side);
+                any |= !c.none();
+                uint32_t r = (c.rgb >> 16) & 0xFF, g = (c.rgb >> 8) & 0xFF, b = c.rgb & 0xFF;
+                if (!EdgeCustomFailed)
+                {
+                    r = std::min(255u, r * c.eva / 16);
+                    g = std::min(255u, g * c.eva / 16);
+                    b = std::min(255u, b * c.eva / 16);
+                    Edge[y] = (uint32_t)std::min(255, c.evb * 255 / 16) << 24 | r << 16 | g << 8 | b;
+                }
+                else
+                {
+                    // src * a + world * (1 - a), with a = 1 - evb / 16 and src scaled to match.
+                    const int a = 16 - std::min(c.evb, 16);
+                    if (a > 0)
+                    {
+                        r = std::min(255u, r * c.eva / a);
+                        g = std::min(255u, g * c.eva / a);
+                        b = std::min(255u, b * c.eva / a);
+                    }
+                    Edge[y] = (uint32_t)(a * 255 / 16) << 24 | r << 16 | g << 8 | b;
+                }
             }
             if (!any) continue;
             SDL_Rect dst = side == 0 ? SDL_Rect { 0, y0, left, h } : SDL_Rect { right, y0, outW - right, h };
             if (dst.w <= 0) continue;
             SDL_Texture* e = Make(EdgeTex[side], 1, 192);
             if (!e) continue;
-            SDL_SetTextureBlendMode(e, SDL_BLENDMODE_BLEND);
+            if (EdgeCustomFailed || SDL_SetTextureBlendMode(e, EdgeMode) != 0)
+            {
+                if (!EdgeCustomFailed)
+                {
+                    EdgeCustomFailed = true;
+                    side--; // the same side again, with the colours for the usual blending
+                    continue;
+                }
+                SDL_SetTextureBlendMode(e, SDL_BLENDMODE_BLEND);
+            }
             SDL_SetTextureScaleMode(e, SDL_ScaleModeNearest);
             SDL_UpdateTexture(e, nullptr, Edge, 4);
             SDL_RenderCopy(R, e, nullptr, &dst);
@@ -247,4 +278,6 @@ private:
     std::vector<SDL_Rect> Spans;
     std::vector<uint32_t> Buf;
     uint32_t Edge[192];
+    SDL_BlendMode EdgeMode = SDL_BLENDMODE_INVALID;
+    bool EdgeCustomFailed = false;
 };

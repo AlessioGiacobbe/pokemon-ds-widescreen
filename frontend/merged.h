@@ -116,6 +116,14 @@ struct Scene
     // HP boxes that run off the screen carry on to the edge of the view instead of
     // stopping at black.
     bool edgeFill = false;
+    // With `wide`: 2D reaching the top screen's edge is continued beside it only where it is
+    // a fill (the same colour for 8 pixels: a wipe, a flash, a window), not a picture (a
+    // snapshot of the world shown in 2D, which would turn into streaks), and a translucent
+    // fill is blended with the wide world instead of the screen's own 3D (stripes otherwise).
+    bool smartEdges = false;
+    // With `wide`: this frame shows the top screen at 4:3 after all, while the widescreen
+    // renderer keeps running (a picture in 2D covers the world; see MergedEdgesArePicture).
+    bool narrow = false;
 };
 
 // A plain rectangle, for the backing of a group of pieces.
@@ -148,6 +156,12 @@ struct ScreenImage
 {
     const uint32_t* pixels;   // 256x192 XRGB
     const uint8_t* flags;     // 256x192 renderer flags, may be null
+    // Each row's first and last pixel before blending, how it is blended with the 3D world,
+    // and whether the pixels next to it match (GPU2D::SoftRenderer::EdgeColour, EdgeBlend and
+    // EdgeFlat); may be null. See Scene::smartEdges.
+    const uint32_t* edge = nullptr;
+    const uint16_t* edgeBlend = nullptr;
+    const uint8_t* edgeFlat = nullptr;
 };
 
 // Mapping between base pixels and output pixels.
@@ -168,6 +182,54 @@ inline MergedView MergedMakeView(int outW, int outH)
     v.originY = (outH - 192 * v.unit) / 2;
     v.width = outW / v.unit;
     return v;
+}
+
+// What continues the top screen's row sy beside it in a wide view (side 0 left, 1 right):
+// rgb * eva / 16 + the wide world * evb / 16 (eva 0, evb 16: nothing, the world shows).
+struct EdgeContinuation
+{
+    uint32_t rgb;
+    int eva, evb;
+    bool none() const { return eva == 0 && evb == 16; }
+};
+
+inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenImage& top, int sy, int side)
+{
+    const int sx = side ? 255 : 0;
+    const EdgeContinuation none = { 0, 0, 16 };
+    const uint8_t cls = LayerClass(top.flags[sy * 256 + sx]);
+    // (Not a layer the scene leaves out: that one is not drawn on the screen either.)
+    if (cls == LAYER_3D || (cls & scene.items[0].drop)) return none;
+    const EdgeContinuation finished = { top.pixels[sy * 256 + sx] & 0xFFFFFF, 16, 0 };
+    if (!scene.smartEdges || !top.edge || !top.edgeBlend || !top.edgeFlat) return finished;
+    if (!top.edgeFlat[sy * 2 + side]) return none;
+    const uint16_t blend = top.edgeBlend[sy * 2 + side];
+    const int eva = blend & 0xFF, evb = blend >> 8;
+    // Not mixed with the 3D world: as the screen shows it (with any fade or brightening).
+    if (evb == 0) return finished;
+    return { top.edge[sy * 2 + side] & 0xFFFFFF, eva, evb };
+}
+
+// Whether a picture in 2D (not a fill, not blended with the world) reaches a third or more of
+// the top screen's left or right edge: the Surf and Fly cut-ins show a snapshot of the world
+// in 2D, which no continuation beside the screen would match.
+inline bool MergedEdgesArePicture(const Scene& scene, const ScreenImage screens[2])
+{
+    if (scene.items.empty() || scene.items[0].screen < 0) return false;
+    const ScreenImage& top = screens[scene.items[0].screen];
+    if (!top.flags || !top.edgeBlend || !top.edgeFlat) return false;
+    for (int side = 0; side < 2; side++)
+    {
+        int rows = 0;
+        for (int y = 0; y < 192; y++)
+        {
+            const uint8_t cls = LayerClass(top.flags[y * 256 + (side ? 255 : 0)]);
+            if (cls != LAYER_3D && !(cls & scene.items[0].drop) && !top.edgeFlat[y * 2 + side] && !(top.edgeBlend[y * 2 + side] >> 8))
+                rows++;
+        }
+        if (rows >= 64) return true;
+    }
+    return false;
 }
 
 inline Element FullScreen(int screen)
@@ -330,7 +392,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
 {
     uint32_t bg = 0xFF000000;
     if (scene.bgScreen >= 0) bg |= screens[scene.bgScreen].pixels[scene.bgY * 256 + scene.bgX] & 0xFFFFFF;
-    const bool useWide = scene.wide && wide && wide->pixels && wide->w > 0 && wide->h > 0;
+    const bool useWide = scene.wide && !scene.narrow && wide && wide->pixels && wide->w > 0 && wide->h > 0;
     out.resize((size_t)outW * outH);
     const MergedView v = MergedMakeView(outW, outH);
 
@@ -478,13 +540,26 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                     if (sy >= 0 && sy < 192)
                     {
                         const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
-                        // (Not a layer the scene leaves out: that one is not drawn on the screen either.)
-                        const uint8_t dropped = scene.items[0].drop;
-                        const uint8_t cl = LayerClass(top.flags[sy * 256]), cr = LayerClass(top.flags[sy * 256 + 255]);
-                        if (cl != LAYER_3D && !(cl & dropped))
-                            std::fill(dst, dst + std::min(left, outW), 0xFF000000 | top.pixels[sy * 256]);
-                        if (cr != LAYER_3D && !(cr & dropped) && right < outW)
-                            std::fill(dst + std::max(right, 0), dst + outW, 0xFF000000 | top.pixels[sy * 256 + 255]);
+                        for (int side = 0; side < 2; side++)
+                        {
+                            const EdgeContinuation c = MergedEdgeContinuation(scene, top, sy, side);
+                            if (c.none()) continue;
+                            const int xa = side ? std::max(right, 0) : 0, xb = side ? outW : std::min(left, outW);
+                            if (c.evb == 0 && c.eva == 16)
+                            {
+                                if (xa < xb) std::fill(dst + xa, dst + xb, 0xFF000000 | c.rgb);
+                                continue;
+                            }
+                            const uint32_t r = ((c.rgb >> 16) & 0xFF) * c.eva, g = ((c.rgb >> 8) & 0xFF) * c.eva, b = (c.rgb & 0xFF) * c.eva;
+                            for (int x = xa; x < xb; x++)
+                            {
+                                const uint32_t d = dst[x];
+                                const uint32_t nr = std::min<uint32_t>(255, (r + ((d >> 16) & 0xFF) * c.evb) / 16);
+                                const uint32_t ng = std::min<uint32_t>(255, (g + ((d >> 8) & 0xFF) * c.evb) / 16);
+                                const uint32_t nb = std::min<uint32_t>(255, (b + (d & 0xFF) * c.evb) / 16);
+                                dst[x] = 0xFF000000 | nr << 16 | ng << 8 | nb;
+                            }
+                        }
                     }
                 }
             }

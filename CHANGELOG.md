@@ -5,8 +5,9 @@
 - **Nintendo Switch (experimental):** a homebrew `.nro` for consoles with custom
   firmware, built on the PC from your ROM with `tools/switch/build.sh` (see README,
   "Nintendo Switch"). The pause menu's FULLSCREEN is CPU BOOST there, the
-  widescreen world starts at the DS's own sharpness and 60 FPS starts off. The
-  buttons follow the Switch's own labels (A is the right button).
+  widescreen world starts at 1.5 times the DS's sharpness (WORLD DETAIL 288) and
+  60 FPS starts off. The buttons follow the Switch's own labels (A is the right
+  button). Quitting saves and closes cleanly (each step is written to `game.log`).
 
 - The setup program for macOS can now check for updates and update itself from
   the setup window and with `--update`, matching Linux and Windows.

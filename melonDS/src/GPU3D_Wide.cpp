@@ -163,6 +163,13 @@ struct WideAccess
     static inline std::unique_ptr<Workers> Pool;
     static inline bool Drawing = false;
 
+    // Ends the drawing threads (at the end of the program; a new pool is made if needed).
+    static void Shutdown()
+    {
+        Wait();
+        Pool.reset();
+    }
+
     // Blocks until the picture being drawn in the background is finished.
     static void Wait()
     {
@@ -1134,6 +1141,7 @@ struct WideAccess
 };
 
 void WideWait() { WideAccess::Wait(); }
+void WideShutdown() { WideAccess::Shutdown(); }
 void WideOnFlush(GPU3D& g) { WideAccess::OnFlush(g); }
 void WideOnRender(GPU& gpu, bool showingInterp) { WideAccess::OnRender(gpu, showingInterp); }
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,

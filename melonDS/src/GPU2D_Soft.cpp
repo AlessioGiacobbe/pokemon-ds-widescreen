@@ -109,6 +109,52 @@ inline __attribute__((always_inline)) u32 SoftRenderer::ColorComposite(int i, u3
     return val1;
 }
 
+void SoftRenderer::RecordEdges(u32 line)
+{
+    // The 6 bits per channel of a layer pixel as the finished line has them (see the end of
+    // DrawScanline).
+    auto toXRGB = [](u32 v) -> u32 {
+        u32 r = (v << 18) & 0xFC0000, g = (v << 2) & 0xFC00, b = (v >> 14) & 0xFC;
+        u32 c = r | g | b;
+        return c | ((c & 0xC0C0C0) >> 6);
+    };
+    const u32 blendCnt = CurUnit->BlendCnt;
+    for (int side = 0; side < 2; side++)
+    {
+        const int i = side ? 255 : 0;
+        const u32 val1 = BGOBJLine[i], val2 = BGOBJLine[256 + i];
+        const u32 flag1 = val1 >> 24, flag2 = val2 >> 24;
+        u32 eva = 16, evb = 0; // shows as it is
+        if ((flag1 & 0xC0) == 0x40)
+            eva = 0, evb = 16; // the 3D layer is on top
+        else if ((flag2 & 0xC0) == 0x40)
+        {
+            // Over a 3D pixel: blended with it? The same choice as ColorComposite's.
+            if ((flag1 & 0x80) && (blendCnt & 0x0100))
+            {
+                // A semi-transparent sprite.
+                if (flag1 & 0x40) eva = flag1 & 0x1F, evb = 16 - eva;
+                else eva = CurUnit->EVA, evb = CurUnit->EVB;
+            }
+            else
+            {
+                const u32 target1 = (flag1 & 0x80) ? 0x10 : flag1;
+                if ((blendCnt & target1) && (WindowMask[i] & 0x20) && ((blendCnt >> 6) & 3) == 1 && (blendCnt & 0x0100))
+                    eva = CurUnit->EVA, evb = CurUnit->EVB;
+            }
+        }
+        EdgeColour[CurUnit->Num][line * 2 + side] = toXRGB(val1);
+        EdgeBlend[CurUnit->Num][line * 2 + side] = (u16)(eva | evb << 8);
+        bool flat = true;
+        for (int k = 1; k < 8 && flat; k++)
+        {
+            const u32 v = BGOBJLine[side ? 255 - k : k];
+            flat = (v & 0x3F3F3F) == (val1 & 0x3F3F3F) && (v >> 24) == flag1;
+        }
+        EdgeFlat[CurUnit->Num][line * 2 + side] = flat;
+    }
+}
+
 // ssrecomp: most lines of a frame come out the same as in the frame before (a menu on the
 // bottom screen, the overworld standing still). A line is drawn again only if something it
 // is made from changed: the engine's registers, the sprite pixels of the line (drawn
@@ -863,6 +909,7 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
     if (!GPU.GPU3D.IsRendererAccelerated())
     {
         u8* layerFlags = line < 192 ? &LayerFlags[CurUnit->Num][line * 256] : nullptr;
+        if (line < 192) RecordEdges(line);
         u8* objPrio = line < 192 ? &ObjPrio[CurUnit->Num][line * 256] : nullptr;
         const u32* objLine = OBJLine[CurUnit->Num];
         for (int i = 0; i < 256; i++)
