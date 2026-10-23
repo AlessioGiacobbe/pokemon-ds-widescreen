@@ -1166,6 +1166,9 @@ int main(int argc, char** argv)
         ref->ARM9.TraceHook = TraceRecord;
         nds->ARM9.TraceHook = TraceCompare;
     }
+    // The cartridge has its own copy now; Black 2's ROM is about 300 MB, which counts on the Switch.
+    rom.clear();
+    rom.shrink_to_fit();
 
     std::vector<ScriptEvent> script;
     if (!opt.script.empty()) script = LoadScript(opt.script);

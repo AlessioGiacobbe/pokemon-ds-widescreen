@@ -116,7 +116,28 @@ bool Start(int& argc, char**& argv)
         ShowMessage(problem);
         return false;
     }
-    g_args = { argc > 0 && argv[0] ? argv[0] : "ssrecomp", rom, "--save", dir + "/soulsilver.sav", "--fullscreen" };
+    // The save is named after the game (SoulSilver's name is the one earlier builds used).
+    char code[5] = {};
+    if (FILE* f = fopen(rom.c_str(), "rb"))
+    {
+        if (fseek(f, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, f) != 4) code[0] = 0;
+        fclose(f);
+    }
+    std::string saveName = "game.sav";
+    if (!strcmp(code, "IPGE")) saveName = "soulsilver.sav";
+    else if (!strcmp(code, "IREO")) saveName = "black2.sav";
+    else if (!strcmp(code, "IRBO")) saveName = "black.sav";
+    fprintf(stderr, "[switch] game code %s, save %s\n", code[0] ? code : "?", saveName.c_str());
+    g_args = { argc > 0 && argv[0] ? argv[0] : "ssrecomp", rom, "--save", dir + "/" + saveName, "--fullscreen" };
+    // A game that is not recompiled (Black 2) comes with its function table, made on the PC
+    // by tools/bw2/funcmap.py; its layouts follow the functions that run.
+    struct stat st;
+    if (stat((dir + "/funcs.txt").c_str(), &st) == 0)
+    {
+        g_args.push_back("--funcs");
+        g_args.push_back(dir + "/funcs.txt");
+        g_args.push_back("--interp");
+    }
     for (auto& a : g_args) g_argv.push_back(a.data());
     g_argv.push_back(nullptr);
     argc = (int)g_args.size();
