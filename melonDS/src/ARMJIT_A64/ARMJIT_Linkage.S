@@ -95,6 +95,60 @@ ARM_RestoreContext:
 
     br x18
 
+#ifdef __SWITCH__
+// ssrecomp: back to the JIT code that faulted, from the Switch's exception handler
+// (ARMJIT_Memory.cpp). x0: libnx's ThreadExceptionDump, x1: where to go on. Every register is
+// put back as it was, the NEON registers and the flags too, but for x17, which carries the
+// address of the jump at the end (no JIT code keeps a value in x17).
+.global ARM_RestoreExceptionDump
+ARM_RestoreExceptionDump:
+    str x1, [x0, #272]
+
+    add x2, x0, #288
+    ldp q0, q1, [x2, #0]
+    ldp q2, q3, [x2, #32]
+    ldp q4, q5, [x2, #64]
+    ldp q6, q7, [x2, #96]
+    ldp q8, q9, [x2, #128]
+    ldp q10, q11, [x2, #160]
+    ldp q12, q13, [x2, #192]
+    ldp q14, q15, [x2, #224]
+    ldp q16, q17, [x2, #256]
+    ldp q18, q19, [x2, #288]
+    ldp q20, q21, [x2, #320]
+    ldp q22, q23, [x2, #352]
+    ldp q24, q25, [x2, #384]
+    ldp q26, q27, [x2, #416]
+    ldp q28, q29, [x2, #448]
+    ldp q30, q31, [x2, #480]
+
+    ldr w2, [x0, #800]
+    and w2, w2, #0xF0000000
+    msr nzcv, x2
+
+    mov x16, x0
+    ldp x0, x1, [x16, #16]
+    ldp x2, x3, [x16, #32]
+    ldp x4, x5, [x16, #48]
+    ldp x6, x7, [x16, #64]
+    ldp x8, x9, [x16, #80]
+    ldp x10, x11, [x16, #96]
+    ldp x12, x13, [x16, #112]
+    ldp x14, x15, [x16, #128]
+    ldp x18, x19, [x16, #160]
+    ldp x20, x21, [x16, #176]
+    ldp x22, x23, [x16, #192]
+    ldp x24, x25, [x16, #208]
+    ldp x26, x27, [x16, #224]
+    ldr x28, [x16, #240]
+    ldp x29, x30, [x16, #248]
+    ldr x17, [x16, #264]
+    mov sp, x17
+    ldr x17, [x16, #272]
+    ldr x16, [x16, #144]
+    br x17
+#endif
+
 #if !defined(__APPLE__) && !defined(__WIN32__)
 .section .note.GNU-stack,"",@progbits
 #endif

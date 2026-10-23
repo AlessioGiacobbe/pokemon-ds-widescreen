@@ -27,7 +27,9 @@
 #  include "TinyVector.h"
 #  include "ARM.h"
 #  if defined(__SWITCH__)
-     // ssrecomp: no fast memory on the Switch (see ARMJIT_Memory.cpp)
+     // ssrecomp: libnx's own header is not included here (its names would clash with
+     // melonDS's in every file that includes this one); the one type needed is declared.
+     struct VirtmemReservation;
 #  elif defined(_WIN32)
 #    include <vector>
 #    include <windows.h>
@@ -173,6 +175,19 @@ private:
     u8* MemoryBase = nullptr;
 
 #if defined(__SWITCH__)
+public:
+    // ssrecomp: fast memory on the Switch (ARMJIT_Memory.cpp). SwitchFault is the part of the
+    // process's exception handler for memory accesses of the JIT: true, with the address to
+    // go on at, when the access was dealt with.
+    static bool SwitchFault(u64 faultAddr, u64& pc) noexcept;
+private:
+    bool SetUpSwitchFastMem() noexcept;
+    void TearDownSwitchFastMem() noexcept;
+    ::VirtmemReservation* FastMem9Reservation = nullptr;
+    ::VirtmemReservation* FastMem7Reservation = nullptr;
+    u8* MemoryHeap = nullptr;        // the heap buffer that holds the DS's memory
+    u8* MemoryBaseCodeMem = nullptr; // the same memory as code memory, mappable into the address spaces
+    static bool SwitchFastMem;       // fast memory is set up (and works)
 #elif defined(_WIN32)
     struct VirtmemPlaceholder
     {

@@ -565,6 +565,7 @@ static void SetClock(NDS& nds, bool fixed)
 }
 
 static bool UseJit = false;
+static bool UseFastMem = false; // the JIT's fast memory came on (MakeConsole)
 // The pause menu's EMULATION row: on the Switch, in builds with melonDS's JIT (Black 2).
 #if defined(__SWITCH__) && defined(JIT_ENABLED)
 #define SSR_MENU_EMULATION 1
@@ -598,6 +599,9 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
     }
     else args.JIT = std::nullopt;
     auto nds = std::make_unique<NDS>(std::move(args));
+#ifdef JIT_ENABLED
+    UseFastMem = UseJit && nds->JIT.FastMemoryEnabled();
+#endif
     nds->SetNDSCart(std::move(cart));
     nds->Reset();
     nds->SetupDirectBoot("game.nds");
@@ -994,6 +998,7 @@ struct Settings
     bool showFps = false; // frames shown per second, in a corner
     bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
     bool jit = true;      // Switch, games that are not recompiled: melonDS's JIT (read at start-up)
+    bool fastMem = true;  // ... and its fast memory (also read at start-up)
     bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
 
     void Load(const std::string& path)
@@ -1018,6 +1023,7 @@ struct Settings
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "cpu_boost") cpuBoost = v == "1";
             else if (k == "jit") jit = v == "1";
+            else if (k == "fastmem") fastMem = v == "1";
             else if (k == "cgear_start") cgearOff = v != "ask";
         }
 #ifdef __SWITCH__
@@ -1043,6 +1049,7 @@ struct Settings
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
         f << "jit=" << (jit ? 1 : 0) << "\n";
+        f << "fastmem=" << (fastMem ? 1 : 0) << "\n";
         f << "cgear_start=" << (cgearOff ? "off" : "ask") << "\n";
 #endif
     }
@@ -1175,6 +1182,9 @@ int main(int argc, char** argv)
     fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
     auto nds = MakeConsole(rom, sav, opt.headless);
     if (!nds) return 1;
+#ifdef __SWITCH__
+    if (UseJit) fprintf(stderr, "[switch] fast memory: %s\n", UseFastMem ? "on" : "off");
+#endif
     nds->ARM9.RecompEnable = opt.recomp;
 
     // Lockstep: a second console on the plain interpreter runs each frame first and
@@ -2726,7 +2736,9 @@ int main(int argc, char** argv)
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
 #if SSR_MENU_EMULATION
             // Read when the game starts (SwitchPlatform::Start); a change waits for the next start.
-            { "EMULATION", std::string(cfg.jit ? "JIT" : "INTERPRETER") + (cfg.jit != UseJit ? " (NEXT START)" : "") },
+            // FAST JIT: the JIT with fast memory.
+            { "EMULATION", std::string(!cfg.jit ? "INTERPRETER" : cfg.fastMem ? "FAST JIT" : "JIT")
+                + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : "") },
 #endif
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
             { "SAVE STATE", "" },
@@ -3204,7 +3216,10 @@ int main(int argc, char** argv)
                 break;
 #if SSR_MENU_EMULATION
             case M_EMULATION:
-                cfg.jit = !cfg.jit;
+                // FAST JIT, JIT, INTERPRETER, and round again.
+                if (cfg.jit && cfg.fastMem) cfg.fastMem = false;
+                else if (cfg.jit) cfg.jit = false;
+                else cfg.jit = cfg.fastMem = true;
                 cfg.Save(opt.config);
                 say("APPLIES THE NEXT TIME THE GAME STARTS");
                 break;

@@ -68,8 +68,9 @@ std::string FindRom(const std::string& dir, std::string& problem)
 }
 }
 
-// Set while a start with the JIT has not yet run for a few seconds (see JitStarted).
-static std::string g_jitMarker;
+// Set while a start with the JIT (and with its fast memory) has not yet run for a few
+// seconds (see JitStarted).
+static std::string g_jitMarker, g_fastMemMarker;
 
 bool Start(int& argc, char**& argv)
 {
@@ -144,12 +145,19 @@ bool Start(int& argc, char**& argv)
         // settings say otherwise (EMULATION in the pause menu, "jit=0" in ssrecomp.cfg), L is
         // held while the game starts, or the last start with the JIT never got going (a file
         // made before the start and removed a few seconds into the game says so).
-        bool jit = true;
-        if (FILE* f = fopen((dir + "/ssrecomp.cfg").c_str(), "r"))
+        // Fast memory (the DS's memory mapped where the JIT's code reads it directly, see
+        // melonDS/src/ARMJIT_Memory.cpp) likewise, from "fastmem=0"; and if a start with it did
+        // not get going, it is turned off in the settings (it can go back on in the menu).
+        bool jit = true, fastMem = true;
+        const std::string cfgPath = dir + "/ssrecomp.cfg";
+        if (FILE* f = fopen(cfgPath.c_str(), "r"))
         {
             char line[128];
             while (fgets(line, sizeof(line), f))
-                if (!strncmp(line, "jit=0", 5)) jit = false;
+            {
+                if (!strncmp(line, "jit=", 4)) jit = line[4] != '0';
+                if (!strncmp(line, "fastmem=", 8)) fastMem = line[8] != '0';
+            }
             fclose(f);
         }
         PadState pad;
@@ -161,7 +169,24 @@ bool Start(int& argc, char**& argv)
             jit = false;
             fprintf(stderr, "[switch] L held: the interpreter this time\n");
         }
-        const std::string marker = dir + "/jit-starting";
+        const std::string marker = dir + "/jit-starting", fastMemMarker = dir + "/fastmem-starting";
+        if (stat(fastMemMarker.c_str(), &st) == 0)
+        {
+            // (Fast memory is the likelier cause, so the JIT stays on this time.)
+            remove(fastMemMarker.c_str());
+            remove(marker.c_str());
+            if (jit && fastMem)
+            {
+                fastMem = false;
+                if (FILE* f = fopen(cfgPath.c_str(), "a"))
+                {
+                    fputs("fastmem=0\n", f);
+                    fclose(f);
+                }
+                fprintf(stderr, "[switch] the last start with fast memory did not get going: turned off "
+                    "(EMULATION in the pause menu turns it back on)\n");
+            }
+        }
         if (jit && stat(marker.c_str(), &st) == 0)
         {
             jit = false;
@@ -172,7 +197,14 @@ bool Start(int& argc, char**& argv)
         {
             if (FILE* f = fopen(marker.c_str(), "wb")) fclose(f);
             g_jitMarker = marker;
+            if (fastMem)
+            {
+                if (FILE* f = fopen(fastMemMarker.c_str(), "wb")) fclose(f);
+                g_fastMemMarker = fastMemMarker;
+            }
         }
+        // (Read by the core, melonDS/src/ARMJIT_Memory.cpp, and by MakeConsole.)
+        if (!fastMem) setenv("SSR_JIT_NOFASTMEM", "1", 1);
         g_args.push_back(jit ? "--jit" : "--interp");
 #else
         g_args.push_back("--interp");
@@ -322,6 +354,11 @@ void KeepBoost(uint32_t frame)
 
 void JitStarted()
 {
+    if (!g_fastMemMarker.empty())
+    {
+        remove(g_fastMemMarker.c_str());
+        g_fastMemMarker.clear();
+    }
     if (g_jitMarker.empty()) return;
     remove(g_jitMarker.c_str());
     g_jitMarker.clear();

@@ -17,11 +17,17 @@
 */
 
 #if defined(__SWITCH__)
-// ssrecomp: melonDS 1.1's Switch code for fast memory (the DS's address spaces mapped into
-// the process with svcMapProcessMemory, memory accesses that miss rewritten from the
-// exception handler) had not been kept up to date with the rest of the JIT. The JIT runs
-// on the Switch without it: every memory access goes through the JIT's slower checked path,
-// and the DS's memory is a plain buffer.
+// ssrecomp: melonDS 1.1's Switch code for fast memory had not been kept up to date with the
+// rest of the JIT (it would not build). It is redone here after RSDuck's Switch port of
+// melonDS, where it worked: the DS's memory is a heap buffer turned into code memory
+// (svcMapProcessCodeMemory), which can be mapped as many times as needed into two 4 GB
+// address spaces (svcMapProcessMemory), one for each DS processor; an access that misses
+// comes to the process's exception handler (end of this file), which maps the memory there
+// or rewrites the access to the slower checked path, and goes back to the code.
+// If any of it fails, or SSR_JIT_NOFASTMEM is set, the JIT runs without fast memory, with
+// the DS's memory a plain buffer.
+#include <switch.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #elif defined(_WIN32)
@@ -108,6 +114,12 @@
     #endif
 #endif
 
+#if defined(__SWITCH__)
+// The start of the program in memory (libnx). The JIT's code goes just below it
+// (ARMJIT_Compiler.cpp).
+extern "C" char __start__;
+#endif
+
 namespace melonDS
 {
 
@@ -122,7 +134,7 @@ using Platform::LogLevel;
 #endif
 
 #if defined(__SWITCH__)
-// (no fault handler: see the top of this file)
+// (The Switch's exception handler is at the end of this file.)
 #elif defined(_WIN32)
 
 static LPVOID ExceptionHandlerHandle = nullptr;
@@ -254,8 +266,15 @@ bool ARMJIT_Memory::MapIntoRange(u32 addr, u32 num, u32 offset, u32 size) noexce
 
     u8* dst = (u8*)(num == 0 ? FastMem9Start : FastMem7Start) + addr;
 #ifdef __SWITCH__
-    (void)dst;
-    return false;
+    Result r = svcMapProcessMemory(dst, envGetOwnProcessHandle(), (u64)(MemoryBaseCodeMem + offset), size);
+    if (R_FAILED(r))
+    {
+        // (A mapping that fails is not fatal: the accesses there take the slower path.)
+        static int failures = 0;
+        if (failures++ < 8)
+            fprintf(stderr, "[jit] fast memory: mapping %x (+%x) of %d failed: 0x%x\n", addr, size, num, (unsigned)r);
+    }
+    return R_SUCCEEDED(r);
 #elif defined(_WIN32)
     uintptr_t uintptrDst = reinterpret_cast<uintptr_t>(dst);
     for (auto it = VirtmemPlaceholders.begin(); it != VirtmemPlaceholders.end(); it++)
@@ -311,8 +330,14 @@ bool ARMJIT_Memory::UnmapFromRange(u32 addr, u32 num, u32 offset, u32 size) noex
 
     u8* dst = (u8*)(num == 0 ? FastMem9Start : FastMem7Start) + addr;
 #ifdef __SWITCH__
-    (void)dst;
-    return false;
+    Result r = svcUnmapProcessMemory(dst, envGetOwnProcessHandle(), (u64)(MemoryBaseCodeMem + offset), size);
+    if (R_FAILED(r))
+    {
+        static int failures = 0;
+        if (failures++ < 8)
+            fprintf(stderr, "[jit] fast memory: unmapping %x (+%x) of %d failed: 0x%x\n", addr, size, num, (unsigned)r);
+    }
+    return R_SUCCEEDED(r);
 #elif defined(_WIN32)
     if (!UnmapViewOfFileEx(dst, MEM_PRESERVE_PLACEHOLDER))
     {
@@ -709,7 +734,7 @@ bool ARMJIT_Memory::IsFastMemSupported()
 #if defined(__SWITCH__)
     PageSize = 0x1000;
     PageShift = 12;
-    return false;
+    return SwitchFastMem;
 #elif defined(__APPLE__) || defined(__OpenBSD__)
     return false;
 #else
@@ -814,8 +839,16 @@ ARMJIT_Memory::ARMJIT_Memory(melonDS::NDS& nds) : NDS(nds)
 {
     ARMJIT_Global::Init();
 #if defined(__SWITCH__)
-    MemoryBase = (u8*)aligned_alloc(0x1000, MemoryTotalSize);
-    memset(MemoryBase, 0, MemoryTotalSize);
+    MemoryHeap = (u8*)aligned_alloc(0x1000, MemoryTotalSize);
+    memset(MemoryHeap, 0, MemoryTotalSize);
+    MemoryBase = MemoryHeap;
+    FastMem9Start = nullptr;
+    FastMem7Start = nullptr;
+    SwitchFastMem = false;
+    if (getenv("SSR_JIT_NOFASTMEM"))
+        fprintf(stderr, "[jit] fast memory: off\n");
+    else
+        SwitchFastMem = SetUpSwitchFastMem();
 #elif defined(_WIN32)
     if (virtualAlloc2Ptr)
     {
@@ -873,8 +906,7 @@ ARMJIT_Memory::ARMJIT_Memory(melonDS::NDS& nds) : NDS(nds)
     mmap(MemoryBase, MemoryTotalSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, MemoryFile, 0);
 #endif
 #if defined(__SWITCH__)
-    FastMem9Start = nullptr;
-    FastMem7Start = nullptr;
+    // (FastMem9Start and FastMem7Start are set by SetUpSwitchFastMem.)
 #else
     FastMem9Start = MemoryBase+MemoryTotalSize;
     FastMem7Start = static_cast<u8*>(FastMem9Start)+AddrSpaceSize;
@@ -886,7 +918,11 @@ ARMJIT_Memory::ARMJIT_Memory(melonDS::NDS& nds) : NDS(nds)
 ARMJIT_Memory::~ARMJIT_Memory() noexcept
 {
 #if defined(__SWITCH__)
-    free(MemoryBase);
+    if (MemoryBaseCodeMem)
+        TearDownSwitchFastMem();
+    else
+        free(MemoryHeap);
+    MemoryHeap = nullptr;
     MemoryBase = nullptr;
 #elif defined(_WIN32)
     if (virtualAlloc2Ptr)
@@ -944,6 +980,200 @@ ARMJIT_Memory::~ARMJIT_Memory() noexcept
 
     ARMJIT_Global::DeInit();
 }
+
+#if defined(__SWITCH__)
+bool ARMJIT_Memory::SwitchFastMem = false;
+
+// A test of the exception handler when fast memory is set up: a read in the address space,
+// where nothing is mapped yet, that the handler skips. It comes back with the read's
+// register, the flags and a NEON register as they were, or the program ends there (and the
+// next start goes without fast memory: see SwitchPlatform::Start).
+static volatile int SwitchProbeState = 0; // 1 while testing, 2 once the handler has been
+static volatile u64 SwitchProbeAddr = 0;
+
+static bool ProbeSwitchExceptions(u8* addr)
+{
+    SwitchProbeAddr = (u64)addr;
+    SwitchProbeState = 1;
+    u64 value = 0x5353, zero = 0, neon = 0;
+    asm volatile(
+        "fmov d16, %3\n"
+        "cmp xzr, #0\n"
+        "ldr %0, [%4]\n"
+        "cset %1, eq\n"
+        "fmov %2, d16\n"
+        : "+r"(value), "=&r"(zero), "=&r"(neon)
+        : "r"(0x0123456789ABCDEFull), "r"(addr)
+        : "v16", "cc", "memory");
+    const bool ok = SwitchProbeState == 2 && value == 0x5353 && zero == 1 && neon == 0x0123456789ABCDEFull;
+    if (!ok)
+        fprintf(stderr, "[jit] fast memory: the exception test went wrong (%d, %llx, %llu, %llx)\n",
+            SwitchProbeState, (unsigned long long)value, (unsigned long long)zero, (unsigned long long)neon);
+    SwitchProbeState = 0;
+    return ok;
+}
+
+bool ARMJIT_Memory::SetUpSwitchFastMem() noexcept
+{
+    const Handle self = envGetOwnProcessHandle();
+    virtmemLock();
+    // While the address spaces are placed, the 512 MB below the program are kept out of
+    // reach: the JIT's code goes there, within branch range of the program.
+    ::VirtmemReservation* keepOut = virtmemAddReservation(&__start__ - 0x20000000, 0x20000000);
+    u8* codeMem = (u8*)virtmemFindCodeMemory(MemoryTotalSize, 0x1000);
+    Result rc = codeMem
+        ? svcMapProcessCodeMemory(self, (u64)codeMem, (u64)MemoryHeap, MemoryTotalSize)
+        : MAKERESULT(Module_Libnx, LibnxError_OutOfMemory);
+    fprintf(stderr, "[jit] fast memory: the DS's memory as code memory at %p: 0x%x\n", codeMem, (unsigned)rc);
+    const bool isCodeMem = R_SUCCEEDED(rc);
+    if (isCodeMem)
+    {
+        rc = svcSetProcessMemoryPermission(self, (u64)codeMem, MemoryTotalSize, Perm_Rw);
+        fprintf(stderr, "[jit] fast memory: made writable: 0x%x\n", (unsigned)rc);
+    }
+    void* area9 = nullptr;
+    void* area7 = nullptr;
+    if (R_SUCCEEDED(rc))
+    {
+        // (Each one reserved before the next is looked for, so that the two cannot overlap.)
+        area9 = virtmemFindAslr(AddrSpaceSize, 0x1000);
+        if (area9) FastMem9Reservation = virtmemAddReservation(area9, AddrSpaceSize);
+        area7 = virtmemFindAslr(AddrSpaceSize, 0x1000);
+        if (area7) FastMem7Reservation = virtmemAddReservation(area7, AddrSpaceSize);
+        fprintf(stderr, "[jit] fast memory: address spaces at %p and %p\n", area9, area7);
+    }
+    if (keepOut) virtmemRemoveReservation(keepOut);
+    virtmemUnlock();
+
+    bool ok = R_SUCCEEDED(rc) && FastMem9Reservation && FastMem7Reservation;
+    if (ok)
+    {
+        MemoryBaseCodeMem = codeMem;
+        MemoryBase = codeMem; // (the heap buffer cannot be reached while it is code memory)
+        FastMem9Start = area9;
+        FastMem7Start = area7;
+        ok = ProbeSwitchExceptions((u8*)area9 + 0x1000);
+    }
+    if (!ok)
+    {
+        virtmemLock();
+        if (FastMem9Reservation) virtmemRemoveReservation(FastMem9Reservation);
+        if (FastMem7Reservation) virtmemRemoveReservation(FastMem7Reservation);
+        virtmemUnlock();
+        FastMem9Reservation = FastMem7Reservation = nullptr;
+        FastMem9Start = FastMem7Start = nullptr;
+        MemoryBaseCodeMem = nullptr;
+        MemoryBase = MemoryHeap;
+        if (isCodeMem)
+        {
+            rc = svcUnmapProcessCodeMemory(self, (u64)codeMem, (u64)MemoryHeap, MemoryTotalSize);
+            if (R_FAILED(rc))
+            {
+                // The buffer cannot be had back: a new one, and the old one left as it is.
+                fprintf(stderr, "[jit] fast memory: could not undo the code memory: 0x%x\n", (unsigned)rc);
+                MemoryHeap = (u8*)aligned_alloc(0x1000, MemoryTotalSize);
+                memset(MemoryHeap, 0, MemoryTotalSize);
+                MemoryBase = MemoryHeap;
+            }
+        }
+    }
+    fprintf(stderr, "[jit] fast memory: %s\n", ok ? "on" : "off");
+    fflush(stderr);
+    return ok;
+}
+
+void ARMJIT_Memory::TearDownSwitchFastMem() noexcept
+{
+    SwitchFastMem = false;
+    const Handle self = envGetOwnProcessHandle();
+    // What is still mapped in the address spaces goes first: code memory cannot be undone
+    // while it is mapped somewhere. Each mapping's mapped pages go in runs, or a page at a
+    // time where a run will not go (a run can take in pages of another region: the DTCM's
+    // in main RAM's mirrors).
+    for (int region = 0; region < memregions_Count; region++)
+    {
+        for (int i = 0; i < Mappings[region].Length; i++)
+        {
+            const Mapping& m = Mappings[region][i];
+            u8* statuses = m.Num == 0 ? MappingStatus9 : MappingStatus7;
+            u8* area = (u8*)(m.Num == 0 ? FastMem9Start : FastMem7Start);
+            auto unmap = [&](u32 from, u32 size) {
+                return R_SUCCEEDED(svcUnmapProcessMemory(area + m.Addr + from, self,
+                    (u64)(MemoryBaseCodeMem + OffsetsPerRegion[region] + m.LocalOffset + from), size));
+            };
+            u32 off = 0;
+            while (off < m.Size)
+            {
+                if (statuses[(m.Addr + off) >> 12] != memstate_MappedRW)
+                {
+                    off += 0x1000;
+                    continue;
+                }
+                u32 end = off;
+                while (end < m.Size && statuses[(m.Addr + end) >> 12] == memstate_MappedRW) end += 0x1000;
+                const bool all = unmap(off, end - off);
+                for (u32 p = off; p < end; p += 0x1000)
+                    if (all || unmap(p, 0x1000)) statuses[(m.Addr + p) >> 12] = memstate_Unmapped;
+                off = end;
+            }
+        }
+        Mappings[region].Clear();
+    }
+
+    virtmemLock();
+    if (FastMem9Reservation) virtmemRemoveReservation(FastMem9Reservation);
+    if (FastMem7Reservation) virtmemRemoveReservation(FastMem7Reservation);
+    virtmemUnlock();
+    FastMem9Reservation = FastMem7Reservation = nullptr;
+
+    const Result rc = svcUnmapProcessCodeMemory(self, (u64)MemoryBaseCodeMem, (u64)MemoryHeap, MemoryTotalSize);
+    if (R_SUCCEEDED(rc))
+        free(MemoryHeap);
+    else
+        fprintf(stderr, "[jit] fast memory: could not undo the code memory: 0x%x\n", (unsigned)rc);
+    MemoryBaseCodeMem = nullptr;
+    FastMem9Start = FastMem7Start = nullptr;
+}
+
+bool ARMJIT_Memory::SwitchFault(u64 faultAddr, u64& pc) noexcept
+{
+    melonDS::NDS* nds = melonDS::NDS::Current;
+    if (!SwitchFastMem || !nds) return false;
+    ARMJIT_Memory& mem = nds->JIT.Memory;
+    const u64 area = (u64)(nds->CurCPU == 0 ? mem.FastMem9Start : mem.FastMem7Start);
+    if (!area || faultAddr < area || faultAddr - area >= AddrSpaceSize) return false;
+    FaultDescription desc {};
+    desc.EmulatedFaultAddr = (u32)(faultAddr - area);
+    desc.FaultPC = (u8*)pc;
+    if (!FaultHandler(desc, *nds)) return false;
+    pc = (u64)desc.FaultPC;
+    return true;
+}
+
+// For an exception that is not fast memory's: where it happened, in game.log, before the
+// program ends.
+static volatile bool SwitchCrashing = false;
+
+static void SwitchCrashReport(const ThreadExceptionDump* ctx)
+{
+    if (SwitchCrashing) return; // (an exception while reporting one)
+    SwitchCrashing = true;
+    const u64 base = (u64)&__start__;
+    fprintf(stderr, "[crash] exception 0x%x at %p (lr %p, address %p); the program is at %p\n",
+        ctx->error_desc, (void*)ctx->pc.x, (void*)ctx->lr.x, (void*)ctx->far.x, (void*)base);
+    // The calls that led there, by the frame pointers (as far as they look like frames).
+    u64 fp = ctx->fp.x;
+    const u64 sp = ctx->sp.x;
+    for (int i = 0; i < 24 && fp && !(fp & 7) && fp >= sp && fp - sp < 0x400000; i++)
+    {
+        const u64 next = ((const u64*)fp)[0], lr = ((const u64*)fp)[1];
+        fprintf(stderr, "[crash]   called from %p (program + 0x%llx)\n", (void*)lr, (unsigned long long)(lr - base));
+        if (next <= fp) break;
+        fp = next;
+    }
+    fflush(stderr);
+}
+#endif
 
 void ARMJIT_Memory::Reset() noexcept
 {
@@ -1553,3 +1783,42 @@ void* ARMJIT_Memory::GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size) co
     return NULL;
 }
 }
+
+#if defined(__SWITCH__)
+// The process's exception handler (libnx calls it on the exception stack below, after the
+// kernel has let go of the exception). A memory access of the JIT in an address space
+// goes back to the code; anything else ends the program as before, now with a note.
+extern "C"
+{
+
+// Back to the code that faulted with every register as it was, but for the program counter
+// and x17 (ARMJIT_A64/ARMJIT_Linkage.S).
+void ARM_RestoreExceptionDump(ThreadExceptionDump* ctx, u64 pc) __attribute__((noreturn));
+
+// libnx's own exception stack is 1 KB: too little for mapping memory and rewriting code.
+alignas(16) u8 __nx_exception_stack[0x10000];
+u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
+
+void __libnx_exception_handler(ThreadExceptionDump* ctx)
+{
+    if (melonDS::SwitchProbeState == 1 && ctx->far.x == melonDS::SwitchProbeAddr)
+    {
+        melonDS::SwitchProbeState = 2;
+        ARM_RestoreExceptionDump(ctx, ctx->pc.x + 4);
+    }
+    u64 pc = ctx->pc.x;
+    if (melonDS::ARMJIT_Memory::SwitchFault(ctx->far.x, pc))
+        ARM_RestoreExceptionDump(ctx, pc);
+    melonDS::SwitchCrashReport(ctx);
+    // On return libnx ends the program (svcBreak), as an exception without a handler would.
+}
+
+}
+
+static_assert(offsetof(ThreadExceptionDump, cpu_gprs) == 16, "ARM_RestoreExceptionDump");
+static_assert(offsetof(ThreadExceptionDump, fp) == 248, "ARM_RestoreExceptionDump");
+static_assert(offsetof(ThreadExceptionDump, sp) == 264, "ARM_RestoreExceptionDump");
+static_assert(offsetof(ThreadExceptionDump, pc) == 272, "ARM_RestoreExceptionDump");
+static_assert(offsetof(ThreadExceptionDump, fpu_gprs) == 288, "ARM_RestoreExceptionDump");
+static_assert(offsetof(ThreadExceptionDump, pstate) == 800, "ARM_RestoreExceptionDump");
+#endif
