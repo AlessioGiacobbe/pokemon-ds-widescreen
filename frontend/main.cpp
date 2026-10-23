@@ -994,6 +994,7 @@ struct Settings
     bool showFps = false; // frames shown per second, in a corner
     bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
     bool jit = true;      // Switch, games that are not recompiled: melonDS's JIT (read at start-up)
+    bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
 
     void Load(const std::string& path)
     {
@@ -1017,6 +1018,7 @@ struct Settings
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "cpu_boost") cpuBoost = v == "1";
             else if (k == "jit") jit = v == "1";
+            else if (k == "cgear_start") cgearOff = v != "ask";
         }
 #ifdef __SWITCH__
         // The Switch's buttons are labelled where the DS's are, so labels and positions are
@@ -1041,6 +1043,7 @@ struct Settings
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
         f << "jit=" << (jit ? 1 : 0) << "\n";
+        f << "cgear_start=" << (cgearOff ? "off" : "ask") << "\n";
 #endif
     }
 };
@@ -1524,7 +1527,11 @@ int main(int argc, char** argv)
         int field = -1, fieldMenu = -1, bag = -1, battle = -1;
         int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
         int options = -1, summary = -1, dexList = -1, dexEntry = -1, box = -1;
+        int startContinue = -1, confirmDialog = -1;
     } bw2;
+    // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
+    int cgearStep = 0, cgearKey = 0;
+    uint32_t cgearSince = 0, cgearHoldUntil = 0;
     if (funcWatchOn)
     {
         std::vector<std::string> bw2Names;
@@ -1546,6 +1553,8 @@ int main(int argc, char** argv)
         bw2.dexList = bw2Find("ZknListSeq_Main");       // the Pokedex list
         bw2.dexEntry = bw2Find("ZukanDetail_Main");     // a Pokedex entry
         bw2.box = bw2Find("Box2Proc_Main");             // the PC's boxes
+        bw2.startContinue = bw2Find("StartMenu_Continue"); // CONTINUE chosen on the start menu
+        bw2.confirmDialog = bw2Find("ConfirmDialog_Update"); // a YES / NO question
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
@@ -3418,6 +3427,39 @@ int main(int argc, char** argv)
         int got = 0;
         if (!paused)
         {
+            // Black 2 asks on every start whether to launch the C-Gear's wireless
+            // communications, which nothing here can take part in. With cgear_start=off in the
+            // settings (the default) it is answered for the player: NO, then YES to "some
+            // functions of the C-Gear will be restricted. Is that OK?", each once its question
+            // has been up for a moment. Back at the start menu later (a reset), it is answered
+            // again.
+            if (funcWatchOn && cfg.cgearOff)
+            {
+                if (!funcWatch.Ran(bw2.startContinue, 600))
+                {
+                    cgearStep = 0;
+                    cgearSince = 0;
+                }
+                const bool asking = funcWatch.Ran(bw2.startContinue, 1) && funcWatch.Ran(bw2.confirmDialog, 1);
+                // The player answering a question themselves leaves the rest to them.
+                if (asking && frame >= cgearHoldUntil && (keys & ((1u << KEY_A) | (1u << KEY_B)))) cgearStep = 2;
+                if (frame < cgearHoldUntil)
+                    keys |= 1u << cgearKey; // a press lasts a few frames, while the question closes
+                else if (cgearStep < 2)
+                {
+                    if (!asking) cgearSince = 0;
+                    else if (!cgearSince) cgearSince = frame;
+                    else if (frame - cgearSince >= 45)
+                    {
+                        cgearKey = cgearStep == 0 ? KEY_B : KEY_A;
+                        cgearHoldUntil = frame + 4;
+                        keys |= 1u << cgearKey;
+                        fprintf(stderr, "[bw2] C-Gear question answered: %s\n", cgearStep == 0 ? "no" : "yes, restricted is OK");
+                        cgearStep++;
+                        cgearSince = 0;
+                    }
+                }
+            }
             nds->SetKeyMask(~keys & 0xFFF);
             if (touching) nds->TouchScreen((u16)touchX, (u16)touchY);
             else nds->ReleaseScreen();
