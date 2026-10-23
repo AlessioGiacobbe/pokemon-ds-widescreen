@@ -164,7 +164,10 @@ private:
         if (!tex) return;
         SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
         SDL_SetTextureScaleMode(tex, smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
-        SDL_UpdateTexture(tex, nullptr, wide.pixels, wide.w * 4);
+        const uint32_t* px = wide.placed ? wide.pixels
+            : MergedFillWideHoles(wide, (int)std::floor(v.originX * wide.w / outW),
+                  (int)std::ceil((v.originX + 256 * v.unit) * wide.w / outW), WideFilled);
+        SDL_UpdateTexture(tex, nullptr, px, wide.w * 4);
         if (wide.placed)
         {
             // The widened top screen, at its place in the view.
@@ -324,7 +327,7 @@ private:
     Tex WideTex, EdgeTex[2], FillTex[2], NarrowTex[2];
     uint32_t Fill[16 * 192];
     std::vector<SDL_Rect> Spans;
-    std::vector<uint32_t> Buf;
+    std::vector<uint32_t> Buf, WideFilled;
     uint32_t Edge[16 * 192];
     SDL_BlendMode EdgeMode = SDL_BLENDMODE_INVALID;
     bool EdgeCustomFailed = false;

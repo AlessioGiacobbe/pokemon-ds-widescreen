@@ -432,6 +432,45 @@ inline bool MergedKeyed(const Element& el, uint32_t rgb)
 // With `smooth` off every piece is drawn with nearest-pixel sampling (hard edges, and fast);
 // with it on, pieces that are not marked crisp are filtered. The rows of the picture are
 // shared out between a few threads.
+// The widescreen 3D picture with its holes beside the screen filled: where the game drew
+// nothing further out (a white flash drawn as one polygon the size of the DS's view, the
+// ground ending where the game stopped drawing it), each row goes on in the last colour drawn
+// on the way out from the screen's edge. Rows that have nothing drawn at the edge itself (the
+// sky of a 2D background behind the world) are left as they are: what continues there is the
+// screen's own edge (MergedEdgeContinuation). In px: a copy; screenX0, screenX1: the columns
+// of the picture where the DS's screen begins and ends.
+inline const uint32_t* MergedFillWideHoles(const WideImage& wide, int screenX0, int screenX1, std::vector<uint32_t>& px)
+{
+    const int w = wide.w, h = wide.h;
+    screenX0 = std::clamp(screenX0, 0, w);
+    screenX1 = std::clamp(screenX1, 0, w);
+    bool holes = false;
+    for (int y = 0; y < h && !holes; y++)
+    {
+        const uint32_t* row = wide.pixels + (size_t)y * w;
+        holes = (screenX0 > 0 && !(row[0] >> 24)) || (screenX1 < w && !(row[w - 1] >> 24));
+    }
+    if (!holes) return wide.pixels;
+    px.assign(wide.pixels, wide.pixels + (size_t)w * h);
+    for (int y = 0; y < h; y++)
+    {
+        uint32_t* row = &px[(size_t)y * w];
+        uint32_t last = 0;
+        for (int x = screenX0 - 1; x >= 0; x--)
+        {
+            if (row[x] >> 24) last = row[x];
+            else if (last) row[x] = last | 0xFF000000;
+        }
+        last = 0;
+        for (int x = screenX1; x < w; x++)
+        {
+            if (row[x] >> 24) last = row[x];
+            else if (last) row[x] = last | 0xFF000000;
+        }
+    }
+    return px.data();
+}
+
 // A picture shown 4:3 on a wide view (Scene::narrow, in the middle of the world: a battle's
 // opening with a snapshot of the screen, a flash, a cut-in): the bars beside it go on in soft
 // colours from the picture's edges, each row the average of the 8 pixels at that edge over
@@ -480,6 +519,11 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     const MergedView v = MergedMakeView(outW, outH);
 
     const bool placed = useWide && wide->placed;
+    std::vector<uint32_t> wideFilled;
+    const uint32_t* widePx = useWide && !placed
+        ? MergedFillWideHoles(*wide, (int)std::floor(v.originX * wide->w / outW),
+              (int)std::ceil((v.originX + 256 * v.unit) * wide->w / outW), wideFilled)
+        : nullptr;
     std::vector<int> wcol;
     if (useWide)
     {
@@ -599,7 +643,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
             const int f = wide->fade, mode = wide->fadeMode;
             for (int y = ya; y < yb; y++)
             {
-                const uint32_t* row = wide->pixels + (size_t)((int64_t)y * wide->h / outH) * wide->w;
+                const uint32_t* row = widePx + (size_t)((int64_t)y * wide->h / outH) * wide->w;
                 uint32_t* dst = &out[(size_t)y * outW];
                 if (!mode || !f)
                     for (int x = 0; x < outW; x++)
