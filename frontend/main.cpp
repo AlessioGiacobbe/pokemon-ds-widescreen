@@ -1484,6 +1484,7 @@ int main(int argc, char** argv)
     {
         int field = -1, fieldMenu = -1, bag = -1, battle = -1;
         int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
+        int options = -1;
     } bw2;
     if (funcWatchOn)
     {
@@ -1496,6 +1497,7 @@ int main(int argc, char** argv)
         bw2.party = funcWatch.Find("PokeListProc_Main");       // the party
         bw2.trainerCard = funcWatch.Find("TrainerCard_Main");
         bw2.townMap = funcWatch.Find("TownMap_ProcMain");      // the town map and Fly
+        bw2.options = funcWatch.Find("ConfigPanel_Main");      // Options
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
     }
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
@@ -1506,13 +1508,14 @@ int main(int argc, char** argv)
         };
         const bool wideView = viewWidth >= 300;
         // A panel of touch-screen controls in the lower right corner of the view, below the
-        // player's HP box, keeping the game's own arrangement so that the D-pad moves the
+        // player's HP box (whose numbers end at y 132), over the empty right part of the
+        // message box, keeping the game's own arrangement so that the D-pad moves the
         // highlight where it looks like it should.
         auto cornerPanel = [&](Element crop, float scale) {
-            const float pad = 3;
+            const float pad = 2;
             const float w = crop.sw * scale, h = crop.sh * scale;
             const float x = (wideView ? 128 + viewWidth / 2 : 256.0f) - w - pad - 2;
-            const float y = 192 - h - pad - 2;
+            const float y = 192 - h - pad - 1;
             sc.items.push_back(FillRect(x - pad, y - pad, (int)(w + 2 * pad), (int)(h + 2 * pad), 0x14141C));
             sc.items.back().border = true;
             crop.dx = x;
@@ -1520,16 +1523,22 @@ int main(int argc, char** argv)
             crop.scale = scale;
             sc.items.push_back(crop);
         };
-        if (funcWatch.Ran(bw2.battle, 2))
+        // The edges of the view the bottom screen fills when it stands against the right edge.
+        const float viewLeft = 128 - viewWidth / 2, viewRight = 128 + viewWidth / 2;
+        if (focus.manualFlip)
+            // The player asked for the other screen (right stick click, F1): an escape hatch
+            // for whatever a layout leaves out.
+            only("manual", focus.wantBottom ? 0 : 1);
+        else if (funcWatch.Ran(bw2.battle, 2))
         {
             // The battle is drawn in 3D on the top screen, so the widescreen renderer shows
             // more of the arena; the HP boxes and messages are 2D and stay where they are.
             only("battle", 0);
             sc.wide = wideView;
             if (funcWatch.Ran(bw2.battleMove, 1))
-                cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two
+                cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two (49 high)
             else if (funcWatch.Ran(bw2.battleCommand, 1))
-                cornerPanel(Crop(1, 0, 78, 256, 114), 0.5f);  // FIGHT above BAG, RUN and POKEMON
+                cornerPanel(Crop(1, 0, 78, 256, 114), 0.44f); // FIGHT above BAG, RUN and POKEMON (50 high)
         }
         else if (funcWatch.Ran(bw2.fieldMenu, 2))
         {
@@ -1580,7 +1589,32 @@ int main(int argc, char** argv)
             sc.wide = wideView;
         }
         else if (funcWatch.Ran(bw2.bag, 2))
-            only("bag", 1);
+        {
+            // The bag at full size against the right edge, and the item's card from the other
+            // screen (name, icon, count and description) over the left part, where the bottom
+            // screen only has a picture of the bag (its pockets also change with L and R).
+            sc.name = "bag";
+            Element list = FullScreen(1);
+            list.dx = viewRight - 256;
+            const float left = viewRight - 256 + 116 - viewLeft; // up to where the list starts
+            Element card = Crop(0, 8, 28, 240, 124);
+            card.scale = std::min(0.85f, (left - 6) / card.sw);
+            card.dx = viewLeft + 3;
+            card.dy = 4;
+            card.border = true;
+            sc.items = { list, card };
+            sc.bgScreen = 1;
+            sc.bgX = 2;
+            sc.bgY = 2;
+        }
+        else if (funcWatch.Ran(bw2.options, 2))
+            // The explanation of the chosen option (a box near the bottom of the other screen)
+            // above the list of options.
+            sc = Stack("options", { Crop(0, 0, 146, 256, 44), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
+        else if (funcWatch.Ran(bw2.townMap, 2))
+            // The map (the place's name is on its own banner); the other screen's card of
+            // flavour text is one press away (the escape hatch above).
+            only("town-map", 1);
         else if (funcWatch.Ran(bw2.party, 2))
             only("party", 1);         // the top screen only has a backdrop
         else if (funcWatch.Ran(bw2.trainerCard, 2))
