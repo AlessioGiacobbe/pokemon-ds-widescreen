@@ -79,6 +79,7 @@ private:
                 if (Quit) return;
                 job = Job;
             }
+            SsrNoteCore(false);
             (*job)(index);
             {
                 std::lock_guard<std::mutex> lock(Mutex);
@@ -173,7 +174,11 @@ struct WideAccess
     // Blocks until the picture being drawn in the background is finished.
     static void Wait()
     {
-        if (Drawing) Pool->Wait();
+        if (Drawing)
+        {
+            SsrWaitTimer t(SsrStats().WaitWideNs);
+            Pool->Wait();
+        }
         Drawing = false;
     }
 

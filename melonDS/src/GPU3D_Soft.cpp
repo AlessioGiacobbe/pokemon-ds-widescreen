@@ -17,6 +17,7 @@
 */
 
 #include "GPU3D_Soft.h"
+#include "SsrThreads.h"
 
 #include <algorithm>
 #include <stdio.h>
@@ -1737,7 +1738,10 @@ void SoftRenderer::RenderPolygons(const GPU& gpu, bool threaded, Polygon** polyg
 void SoftRenderer::VCount144(GPU& gpu)
 {
     if (RenderThreadRunning.load(std::memory_order_relaxed) && !gpu.GPU3D.AbortFrame)
+    {
+        SsrWaitTimer t(SsrStats().Wait3DNs);
         Platform::Semaphore_Wait(Sema_RenderDone);
+    }
 }
 
 // ssrecomp: the list the render thread draws. It is a copy, because the 60 fps mod swaps
@@ -1790,6 +1794,7 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
         // the ensuing race conditions may cause a crash
         // (since some of the GPU state includes pointers).
         RenderThreadRendering = true;
+        SsrNoteCore(true);
         if (FrameIdentical)
         { // If no rendering is needed, just say we're done.
             Platform::Semaphore_Post(Sema_ScanlineCount, 192);
@@ -1813,10 +1818,13 @@ u32* SoftRenderer::GetLine(int line)
     if (RenderThreadRunning.load(std::memory_order_relaxed))
     {
         if (line < 192)
+        {
             // We need a scanline, so let's wait for the render thread to finish it.
             // (both threads process scanlines from top-to-bottom,
             // so we don't need to wait for a specific row)
+            SsrWaitTimer t(SsrStats().Wait3DNs);
             Platform::Semaphore_Wait(Sema_ScanlineCount);
+        }
     }
 
     return &ColorBuffer[(line * ScanlineWidth) + FirstPixelOffset];

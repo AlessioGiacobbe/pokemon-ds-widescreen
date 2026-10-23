@@ -54,6 +54,7 @@
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
+#include "SsrThreads.h"
 #include "switch_platform.h"
 #include "funcwatch.h"
 
@@ -2688,9 +2689,24 @@ int main(int argc, char** argv)
             perfFrameStart = perfT = t;
             if (++perfN == 300)
             {
-                fprintf(stderr, "[perf] input %.2f  emulate %.2f  scene %.2f  compose %.2f  present %.2f  wait %.2f ms; worst frame %.1f ms\n",
+                // Of the emulation's time, how much went on waiting for the DS-resolution 3D
+                // thread and for the widescreen drawing; on the Switch also where those
+                // threads ran (frames started on cores 1 and 2), the clocks and temperatures.
+                SsrThreadStats& ts = SsrStats();
+                const double w3d = ts.Wait3DNs.exchange(0) / 1e6 / perfN, wwide = ts.WaitWideNs.exchange(0) / 1e6 / perfN;
+                char extra[200];
+                snprintf(extra, sizeof(extra), "; waited for 3D %.2f wide %.2f ms", w3d, wwide);
+                std::string tail = extra;
+#ifdef __SWITCH__
+                snprintf(extra, sizeof(extra), "; 3D thread on cores 1/2 %u/%u, wide %u/%u", ts.RenderCore[1].exchange(0),
+                    ts.RenderCore[2].exchange(0), ts.WideCore[1].exchange(0), ts.WideCore[2].exchange(0));
+                tail += extra;
+                const std::string status = SwitchPlatform::Status();
+                if (!status.empty()) tail += "; " + status;
+#endif
+                fprintf(stderr, "[perf] input %.2f  emulate %.2f  scene %.2f  compose %.2f  present %.2f  wait %.2f ms; worst frame %.1f ms%s\n",
                     perfAcc[0] / perfN, perfAcc[1] / perfN, perfAcc[2] / perfN, perfAcc[3] / perfN, perfAcc[4] / perfN,
-                    perfAcc[5] / perfN, perfWorst);
+                    perfAcc[5] / perfN, perfWorst, tail.c_str());
                 for (double& a : perfAcc) a = 0;
                 perfN = 0;
                 perfWorst = 0;

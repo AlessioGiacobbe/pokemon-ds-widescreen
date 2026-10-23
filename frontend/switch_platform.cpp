@@ -178,6 +178,53 @@ bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& sec
     return true;
 }
 
+std::string Status()
+{
+    // Opened on first use; a service the game may not use just leaves its part out.
+    static bool tried = false, clk = false, ts = false, tsSessions = false;
+    static ClkrstSession cpu, gpu, emc;
+    static TsSession soc, pcb;
+    if (!tried)
+    {
+        tried = true;
+        if (hosversionAtLeast(8, 0, 0) && R_SUCCEEDED(clkrstInitialize()))
+            clk = R_SUCCEEDED(clkrstOpenSession(&cpu, PcvModuleId_CpuBus, 3)) &&
+                  R_SUCCEEDED(clkrstOpenSession(&gpu, PcvModuleId_GPU, 3)) &&
+                  R_SUCCEEDED(clkrstOpenSession(&emc, PcvModuleId_EMC, 3));
+        if (R_SUCCEEDED(tsInitialize()))
+        {
+            ts = true;
+            if (hosversionAtLeast(10, 0, 0))
+                tsSessions = R_SUCCEEDED(tsOpenSession(&soc, TsDeviceCode_LocationExternal)) &&
+                             R_SUCCEEDED(tsOpenSession(&pcb, TsDeviceCode_LocationInternal));
+        }
+        if (!clk) fprintf(stderr, "[switch] clock rates cannot be read\n");
+        if (!ts) fprintf(stderr, "[switch] temperatures cannot be read\n");
+    }
+    char buf[128];
+    int n = 0;
+    buf[0] = 0;
+    u32 c = 0, g = 0, m = 0;
+    if (clk && R_SUCCEEDED(clkrstGetClockRate(&cpu, &c)) && R_SUCCEEDED(clkrstGetClockRate(&gpu, &g)) &&
+        R_SUCCEEDED(clkrstGetClockRate(&emc, &m)))
+        n += snprintf(buf + n, sizeof(buf) - n, "cpu %u gpu %u mem %u MHz", c / 1000000, g / 1000000, m / 1000000);
+    float socC = 0, pcbC = 0;
+    bool haveTemp = false;
+    if (tsSessions)
+        haveTemp = R_SUCCEEDED(tsSessionGetTemperature(&soc, &socC)) && R_SUCCEEDED(tsSessionGetTemperature(&pcb, &pcbC));
+    else if (ts)
+    {
+        s32 a = 0, b = 0;
+        haveTemp = R_SUCCEEDED(tsGetTemperatureMilliC(TsLocation_External, &a)) &&
+                   R_SUCCEEDED(tsGetTemperatureMilliC(TsLocation_Internal, &b));
+        socC = a / 1000.0f;
+        pcbC = b / 1000.0f;
+    }
+    if (haveTemp)
+        n += snprintf(buf + n, sizeof(buf) - n, "%schip %.0fC board %.0fC", n ? ", " : "", socC, pcbC);
+    return buf;
+}
+
 void Finish()
 {
     if (g_boosted) SetCpuBoost(false);

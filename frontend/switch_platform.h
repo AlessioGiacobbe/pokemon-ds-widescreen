@@ -18,6 +18,10 @@ bool SetCpuBoost(bool on);
 // The console's own date and time, in the time zone set on it. False if it cannot be read.
 bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& second);
 
+// For the timing lines in the log (SSR_PERF, always on here): the processor, graphics and
+// memory clocks and the chip's and the board's temperature right now, as text.
+std::string Status();
+
 // Called last: puts the processor back to its normal speed.
 void Finish();
 }
