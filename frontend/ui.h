@@ -2,6 +2,7 @@
 // Drawn into an ARGB buffer the size of the output, so the window and the
 // headless screenshots show the same thing.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -172,9 +173,12 @@ struct Menu
         int scale = c.h / 240;
         if (scale < 1) scale = 1;
         int lineH = 11 * scale;
+        // (Rows closer together if they would not all fit on the screen, down to 9 * scale.)
+        const int rows = (int)items.size() + 3;
+        if (lineH * rows + 6 * scale > c.h - 4) lineH = std::max(9 * scale, (c.h - 4 - 6 * scale) / rows);
         int boxW = 190 * scale;
         if (boxW > c.w - 8) boxW = c.w - 8;
-        int boxH = lineH * ((int)items.size() + 3) + 6 * scale;
+        int boxH = lineH * rows + 6 * scale;
         int bx = (c.w - boxW) / 2, by = (c.h - boxH) / 2;
 
         c.Fill(0, 0, c.w, c.h, 0xA0000000);

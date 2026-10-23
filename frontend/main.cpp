@@ -992,6 +992,7 @@ struct Settings
     bool smooth = false;
     bool wide = true;   // widescreen 3D overworld
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
+    bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
     bool fps60 = true;
     // Right stick as a touch cursor, right trigger as the press, and the stick clicks that
@@ -1020,6 +1021,7 @@ struct Settings
             else if (k == "smooth") smooth = v == "1";
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
+            else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
@@ -1046,6 +1048,7 @@ struct Settings
         f << "smooth=" << (smooth ? 1 : 0) << "\n";
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
+        f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
@@ -2757,7 +2760,7 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_AUTODETAIL, M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
@@ -2788,6 +2791,9 @@ int main(int argc, char** argv)
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
+            // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
+            // (a move's animation full of effects), so that the game does not slow down.
+            { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
 #ifdef __SWITCH__
             { "BUTTONS", "AS LABELLED" },
@@ -3470,6 +3476,9 @@ int main(int argc, char** argv)
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
+            case M_AUTODETAIL:
+                cfg.autoDetail = !cfg.autoDetail;
+                break;
             case M_SHOWFPS:
                 cfg.showFps = !cfg.showFps;
                 break;
@@ -3591,11 +3600,13 @@ int main(int argc, char** argv)
             // emulation waited for it more than 1.5 ms in each of the last 3 frames: a move's
             // animation full of see-through effects), fewer lines for a while, down to 192, a
             // fifth fewer each time; back up a tenth at a time after 2 seconds without waiting.
+            // LOWER DETAIL WHEN BUSY in the menu (auto_detail) turns this off.
             // (Not in the tests without a window, whose pictures must not depend on timing.)
             static int adaptLines = 0, slowFrames = 0, calmFrames = 0;
             static uint64_t lastWideNs = 0;
             if (!adaptLines || adaptLines > cfg.wideLines) adaptLines = cfg.wideLines;
-            if (!opt.headless)
+            if (!cfg.autoDetail) adaptLines = cfg.wideLines; // (LOWER DETAIL WHEN BUSY off)
+            else if (!opt.headless)
             {
                 const uint64_t ns = SsrStats().WaitWideNs.load();
                 const uint64_t waited = ns >= lastWideNs ? ns - lastWideNs : ns; // (the timing lines reset it)
