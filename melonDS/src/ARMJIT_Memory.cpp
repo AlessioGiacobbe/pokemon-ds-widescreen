@@ -998,7 +998,7 @@ static bool ProbeSwitchExceptions(u8* addr)
     u64 value = 0x5353, zero = 0, neon = 0;
     asm volatile(
         "fmov d16, %3\n"
-        "cmp xzr, #0\n"
+        "cmp xzr, xzr\n"
         "ldr %0, [%4]\n"
         "cset %1, eq\n"
         "fmov %2, d16\n"
