@@ -145,8 +145,11 @@ bool Start(int& argc, char**& argv)
     return true;
 }
 
+static void UnforceClock();
+
 bool SetCpuBoost(bool on)
 {
+    if (!on) UnforceClock();
     // Boost mode needs system version 7.0.0 or later; on older ones the call fails and the
     // processor stays at its normal speed.
     const Result rc = appletSetCpuBoostMode(on ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
@@ -178,19 +181,76 @@ bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& sec
     return true;
 }
 
-std::string Status()
+// The clock services, opened on first use (false if the game may not use them).
+static ClkrstSession g_cpuClock, g_gpuClock, g_memClock;
+static bool OpenClocks()
 {
-    // Opened on first use; a service the game may not use just leaves its part out.
-    static bool tried = false, clk = false, ts = false, tsSessions = false;
-    static ClkrstSession cpu, gpu, emc;
-    static TsSession soc, pcb;
+    static bool tried = false, ok = false;
     if (!tried)
     {
         tried = true;
         if (hosversionAtLeast(8, 0, 0) && R_SUCCEEDED(clkrstInitialize()))
-            clk = R_SUCCEEDED(clkrstOpenSession(&cpu, PcvModuleId_CpuBus, 3)) &&
-                  R_SUCCEEDED(clkrstOpenSession(&gpu, PcvModuleId_GPU, 3)) &&
-                  R_SUCCEEDED(clkrstOpenSession(&emc, PcvModuleId_EMC, 3));
+            ok = R_SUCCEEDED(clkrstOpenSession(&g_cpuClock, PcvModuleId_CpuBus, 3)) &&
+                 R_SUCCEEDED(clkrstOpenSession(&g_gpuClock, PcvModuleId_GPU, 3)) &&
+                 R_SUCCEEDED(clkrstOpenSession(&g_memClock, PcvModuleId_EMC, 3));
+        if (!ok) fprintf(stderr, "[switch] clock rates cannot be read\n");
+    }
+    return ok;
+}
+
+// Boost mode is the system's to grant, and it takes it away for 10-20 seconds every minute
+// or so (measured: the processor at 1020 MHz in each slow spell, with the chip at 35C).
+// So the speed is checked twice a second: when it has dropped, boost mode is asked for
+// again, and if that does not bring it back, the processor is set to the boost speed
+// directly, as sys-clk does.
+static bool g_clockForced = false;
+void KeepBoost(uint32_t frame)
+{
+    static int lowChecks = 0, events = 0;
+    if (!g_boosted || frame % 30 != 0 || !OpenClocks()) return;
+    u32 hz = 0;
+    if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &hz))) return;
+    if (hz >= 1700000000u)
+    {
+        lowChecks = 0;
+        return;
+    }
+    events++;
+    const bool say = events <= 10 || events % 50 == 0;
+    if (lowChecks++ == 0)
+    {
+        appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+        appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
+        if (say) fprintf(stderr, "[switch] processor dropped to %u MHz (time %d): boost mode asked for again\n", hz / 1000000, events);
+    }
+    else
+    {
+        const Result rc = clkrstSetClockRate(&g_cpuClock, 1785000000u);
+        if (R_SUCCEEDED(rc)) g_clockForced = true;
+        if (say) fprintf(stderr, "[switch] processor still at %u MHz: set to 1785 MHz directly (%s)\n", hz / 1000000,
+            R_SUCCEEDED(rc) ? "done" : "refused");
+    }
+}
+
+static void UnforceClock()
+{
+    // A speed set directly stays set: back to the normal one before boost mode ends.
+    if (g_clockForced) clkrstSetClockRate(&g_cpuClock, 1020000000u);
+    g_clockForced = false;
+}
+
+std::string Status()
+{
+    // Opened on first use; a service the game may not use just leaves its part out.
+    static bool tried = false, ts = false, tsSessions = false;
+    static TsSession soc, pcb;
+    const bool clk = OpenClocks();
+    ClkrstSession& cpu = g_cpuClock;
+    ClkrstSession& gpu = g_gpuClock;
+    ClkrstSession& emc = g_memClock;
+    if (!tried)
+    {
+        tried = true;
         if (R_SUCCEEDED(tsInitialize()))
         {
             ts = true;
@@ -198,7 +258,6 @@ std::string Status()
                 tsSessions = R_SUCCEEDED(tsOpenSession(&soc, TsDeviceCode_LocationExternal)) &&
                              R_SUCCEEDED(tsOpenSession(&pcb, TsDeviceCode_LocationInternal));
         }
-        if (!clk) fprintf(stderr, "[switch] clock rates cannot be read\n");
         if (!ts) fprintf(stderr, "[switch] temperatures cannot be read\n");
     }
     char buf[128];

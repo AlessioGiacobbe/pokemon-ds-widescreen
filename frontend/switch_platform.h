@@ -2,6 +2,7 @@
 // libnx's <switch.h>, with its short type names and macros, is only seen by one file.
 #pragma once
 #ifdef __SWITCH__
+#include <cstdint>
 #include <string>
 
 namespace SwitchPlatform
@@ -14,6 +15,9 @@ bool Start(int& argc, char**& argv);
 
 // The processor's boost mode: about 1.8 GHz instead of 1 GHz, as games use while loading.
 bool SetCpuBoost(bool on);
+
+// Called every frame: puts the boost speed back when the system has lowered it.
+void KeepBoost(uint32_t frame);
 
 // The console's own date and time, in the time zone set on it. False if it cannot be read.
 bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& second);

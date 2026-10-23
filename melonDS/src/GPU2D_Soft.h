@@ -46,8 +46,8 @@ public:
     // layer's own colour before any blending (XRGB8888, as the finished line has it).
     // EdgeBlend: how it mixes with the 3D world, eva | evb << 8 (in 16ths, as the DS blends:
     // own * eva + 3D * evb): 16 if it covers it (or there is no 3D below), 16 << 8 if the 3D
-    // layer is on top. EdgeFlat: whether the 8 pixels at that edge all have that colour and
-    // layer (a fill, as opposed to a picture).
+    // layer is on top. EdgeFlat: bit 0 if the 8 pixels at that edge all have that colour and
+    // layer (a fill, as opposed to a picture), bit 1 if that layer is a bitmap background.
     u32 EdgeColour[2][192 * 2] = {};
     u16 EdgeBlend[2][192 * 2] = {};
     u8 EdgeFlat[2][192 * 2] = {};

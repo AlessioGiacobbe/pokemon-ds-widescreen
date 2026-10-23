@@ -151,7 +151,13 @@ void SoftRenderer::RecordEdges(u32 line)
             const u32 v = BGOBJLine[side ? 255 - k : k];
             flat = (v & 0x3F3F3F) == (val1 & 0x3F3F3F) && (v >> 24) == flag1;
         }
-        EdgeFlat[CurUnit->Num][line * 2 + side] = flat;
+        // A bitmap background: where the game shows a captured picture of the screen
+        // (BG2 or BG3 as an extended bitmap, or BG2 in the large-bitmap mode).
+        const u32 mode = CurUnit->DispCnt & 7;
+        const bool bitmap = (flag1 & 0xC0) == 0 &&
+            (((flag1 & 0x04) && ((mode == 5 && (CurUnit->BGCnt[2] & 0x80)) || mode == 6)) ||
+             ((flag1 & 0x08) && mode >= 3 && mode <= 5 && (CurUnit->BGCnt[3] & 0x80)));
+        EdgeFlat[CurUnit->Num][line * 2 + side] = (flat ? 1 : 0) | (bitmap ? 2 : 0);
     }
 }
 

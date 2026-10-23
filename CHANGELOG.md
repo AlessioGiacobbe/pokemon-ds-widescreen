@@ -8,6 +8,8 @@
   widescreen world starts at 1.5 times the DS's sharpness (WORLD DETAIL 288) and
   60 FPS starts off. The buttons follow the Switch's own labels (A is the right
   button). Quitting saves and closes cleanly (each step is written to `game.log`).
+  The system takes boost mode away for 10-20 seconds every minute or so; the game
+  now notices within half a second and puts the speed back.
 
 - When the game runs slower than a DS (a slow device), the sound is stretched to fill the
   time, at its own pitch, instead of breaking up into crackles. At full speed it plays

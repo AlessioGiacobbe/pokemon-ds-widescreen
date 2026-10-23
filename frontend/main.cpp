@@ -3402,6 +3402,9 @@ int main(int argc, char** argv)
         }
         perfMark(1);
         frame++;
+#ifdef __SWITCH__
+        if (!opt.headless) SwitchPlatform::KeepBoost(frame);
+#endif
         if (!holdScript) scriptClock++;
 
         if (opt.traceFuncsAt.count(frame))

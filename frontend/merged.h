@@ -202,7 +202,7 @@ inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenI
     if (cls == LAYER_3D || (cls & scene.items[0].drop)) return none;
     const EdgeContinuation finished = { top.pixels[sy * 256 + sx] & 0xFFFFFF, 16, 0 };
     if (!scene.smartEdges || !top.edge || !top.edgeBlend || !top.edgeFlat) return finished;
-    if (!top.edgeFlat[sy * 2 + side]) return none;
+    if (!(top.edgeFlat[sy * 2 + side] & 1)) return none;
     const uint16_t blend = top.edgeBlend[sy * 2 + side];
     const int eva = blend & 0xFF, evb = blend >> 8;
     // Not mixed with the 3D world: as the screen shows it (with any fade or brightening).
@@ -210,9 +210,10 @@ inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenI
     return { top.edge[sy * 2 + side] & 0xFFFFFF, eva, evb };
 }
 
-// Whether a picture in 2D (not a fill, not blended with the world) reaches a third or more of
-// the top screen's left or right edge: the Surf and Fly cut-ins show a snapshot of the world
-// in 2D, which no continuation beside the screen would match.
+// Whether a picture in a bitmap background (not a fill, not blended with the world) reaches a
+// third or more of the top screen's left or right edge: the Surf and Fly cut-ins show a
+// snapshot of the world that way, which no continuation beside the screen would match.
+// (Tiled backgrounds, such as the sea beside a bridge, are scenery, not snapshots.)
 inline bool MergedEdgesArePicture(const Scene& scene, const ScreenImage screens[2])
 {
     if (scene.items.empty() || scene.items[0].screen < 0) return false;
@@ -224,7 +225,7 @@ inline bool MergedEdgesArePicture(const Scene& scene, const ScreenImage screens[
         for (int y = 0; y < 192; y++)
         {
             const uint8_t cls = LayerClass(top.flags[y * 256 + (side ? 255 : 0)]);
-            if (cls != LAYER_3D && !(cls & scene.items[0].drop) && !top.edgeFlat[y * 2 + side] && !(top.edgeBlend[y * 2 + side] >> 8))
+            if (cls != LAYER_3D && !(cls & scene.items[0].drop) && top.edgeFlat[y * 2 + side] == 2 && !(top.edgeBlend[y * 2 + side] >> 8))
                 rows++;
         }
         if (rows >= 64) return true;
