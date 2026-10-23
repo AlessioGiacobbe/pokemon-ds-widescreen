@@ -143,7 +143,27 @@ void SoftRenderer::RecordEdges(u32 line)
                     eva = CurUnit->EVA, evb = CurUnit->EVB;
             }
         }
-        EdgeColour[CurUnit->Num][line * 2 + side] = toXRGB(val1);
+        // The colour as the screen shows it: with the brightening or darkening of the colour
+        // effects where it applies (as ColorComposite), then the master brightness (as the end
+        // of DrawScanline). Fades to black or white are made with either; without them the
+        // continuation beside the screen stayed bright while the screen went dark (the message
+        // box's border lines at the end of a battle).
+        u32 shown = val1;
+        if (eva == 16 && evb == 0 && (flag1 & 0xC0) != 0x40)
+        {
+            const u32 target1 = (flag1 & 0x80) ? 0x10 : flag1;
+            if ((blendCnt & target1) && (WindowMask[i] & 0x20))
+            {
+                const u32 effect = (blendCnt >> 6) & 3;
+                if (effect == 2) shown = ColorBrightnessUp(val1, CurUnit->EVY, 0x8);
+                else if (effect == 3) shown = ColorBrightnessDown(val1, CurUnit->EVY, 0x7);
+            }
+        }
+        const u32 master = CurUnit->MasterBrightness;
+        const u32 factor = std::min<u32>(master & 0x1F, 16);
+        if ((master >> 14) == 1) shown = ColorBrightnessUp(shown, factor, 0x0);
+        else if ((master >> 14) == 2) shown = ColorBrightnessDown(shown, factor, 0xF);
+        EdgeColour[CurUnit->Num][line * 2 + side] = toXRGB(shown);
         EdgeBlend[CurUnit->Num][line * 2 + side] = (u16)(eva | evb << 8);
         bool flat = true;
         for (int k = 1; k < 8 && flat; k++)

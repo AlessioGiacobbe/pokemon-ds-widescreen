@@ -1541,7 +1541,7 @@ int main(int argc, char** argv)
         int field = -1, fieldMenu = -1, bag = -1, battle = -1;
         int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
         int options = -1, summary = -1, dexList = -1, dexEntry = -1, box = -1;
-        int startContinue = -1, confirmDialog = -1;
+        int startContinue = -1, confirmDialog = -1, startMain = -1;
         int battleList = -1, battleBag = -1, battleChoice = -1, battleYesNo = -1;
         int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
     } bw2;
@@ -1570,6 +1570,7 @@ int main(int argc, char** argv)
         bw2.dexEntry = bw2Find("ZukanDetail_Main");     // a Pokedex entry
         bw2.box = bw2Find("Box2Proc_Main");             // the PC's boxes
         bw2.startContinue = bw2Find("StartMenu_Continue"); // CONTINUE chosen on the start menu
+        bw2.startMain = bw2Find("StartMenu_Main");      // the start menu (CONTINUE, NEW GAME, ...)
         bw2.confirmDialog = bw2Find("ConfirmDialog_Update"); // a YES / NO question
         bw2.battleList = bw2Find("BPlistMain_Task");    // the party in a battle (POKEMON, or after fainting)
         bw2.battleBag = bw2Find("BBagMain_Task");       // the Bag in a battle
@@ -1631,8 +1632,9 @@ int main(int argc, char** argv)
             sc.wide = wideView;
             // A single battle on a wide view: the HP boxes go to the top corners of the view,
             // out of the way of the touch-screen panel in the lower right (the player's box
-            // was under it, and ran into the edge of the screen). Where they were, the wide
-            // arena shows. A double, triple or rotation battle keeps the game's own places.
+            // was under it, and ran into the edge of the screen): the player's on the left,
+            // above their Pokemon, the enemy's on the right, above theirs. Where they were, the
+            // wide arena shows. A double, triple or rotation battle keeps the game's own places.
             int kind = 0; // 1 single, 2 another kind, 0 not seen (a snapshot loaded mid-battle)
             uint32_t seen = 0;
             const int setups[4] = { bw2.setupSingle, bw2.setupDouble, bw2.setupTriple, bw2.setupRotation };
@@ -1668,15 +1670,17 @@ int main(int argc, char** argv)
                 const int enemy[4] = { 0, 26, 116, 56 }, mine[4] = { 138, 106, 256, 142 };
                 std::copy(enemy, enemy + 4, top.holes[0]);
                 std::copy(mine, mine + 4, top.holes[1]);
+                // (The enemy's box ends at x 110 of its piece, the player's starts at x 4 of
+                // its: each 1-2 pixels in from the edge of the view.)
                 Element e = Crop(0, enemy[0], enemy[1], enemy[2] - enemy[0], enemy[3] - enemy[1]);
-                e.dx = viewLeft - 2;
+                e.dx = viewRight - 111;
                 e.dy = -1;
                 e.drop = LAYER_3D | LAYER_BACKDROP;
                 e.crisp = true;
                 e.wideOnly = true;
                 sc.items.push_back(e);
                 Element m = Crop(0, mine[0], mine[1], mine[2] - mine[0], mine[3] - mine[1]);
-                m.dx = viewRight - (mine[2] - mine[0]);
+                m.dx = viewLeft - 2;
                 m.dy = -1;
                 m.drop = LAYER_3D | LAYER_BACKDROP;
                 m.crisp = true;
@@ -1782,6 +1786,18 @@ int main(int argc, char** argv)
             only("party", 1);         // the top screen only has a backdrop
         else if (funcWatch.Ran(bw2.trainerCard, 2))
             only("trainer-card", 1);  // likewise
+        else if (funcWatch.Ran(bw2.startMain, 2) && !funcWatch.Ran(bw2.startContinue, 2))
+        {
+            // The start menu: its list (x 33-223 of the top screen) beside the saved game's
+            // cards (x 23-233 of the bottom one), without the margins at their sides, so that
+            // both come out larger than the two whole screens would, over the screens' own
+            // dark grey. (After CONTINUE, the screens with the C-Gear's questions are shown
+            // whole, below.)
+            sc = Stack("launch-menu", { Crop(0, 28, 0, 200, 192), Crop(1, 18, 0, 220, 192) }, true, viewWidth);
+            sc.bgScreen = 1;
+            sc.bgX = 2;
+            sc.bgY = 2;
+        }
         else
         {
             // Nothing recognised. Mostly a moment between screens (a fade, a button pressed in
@@ -1792,10 +1808,41 @@ int main(int argc, char** argv)
                 return lastKnownBw2;
             // Both screens one colour (a fade to black or white between two screens, however
             // long): the last layout stays, rather than the two screens side by side popping up.
-            if (lastKnownBw2Frame && screens && AutoFocus::Blank(screens[0].pixels) && AutoFocus::Blank(screens[1].pixels))
+            const bool topBlank = screens && AutoFocus::Blank(screens[0].pixels);
+            const bool bottomBlank = screens && AutoFocus::Blank(screens[1].pixels);
+            if (lastKnownBw2Frame && topBlank && bottomBlank)
                 return lastKnownBw2;
+            if (topBlank && bottomBlank)
+            {
+                // (Both one colour before any known screen, as the game starts: that colour
+                // over the whole view.)
+                only("one-screen", 0);
+                sc.bgScreen = 0;
+                return sc;
+            }
+            // One screen with nothing on it (one colour), as in the logos and the opening
+            // before the title screen: the other one alone at full size, the bars beside it
+            // in the colour of its corner. A change between that and both screens waits until
+            // it has lasted 6 frames, so that a screen fading out first does not flash a layout.
+            static int shownAlone = -1, wantAlone = -1;
+            static uint32_t wantSince = 0;
+            const int alone = topBlank == bottomBlank ? -1 : topBlank ? 1 : 0;
+            const uint32_t now = funcWatch.CurrentFrame();
+            if (alone != wantAlone)
+            {
+                wantAlone = alone;
+                wantSince = now;
+            }
+            if (wantAlone != shownAlone && now - wantSince >= 6) shownAlone = wantAlone;
+            if (shownAlone >= 0)
+            {
+                only("one-screen", shownAlone);
+                sc.bgScreen = shownAlone;
+                sc.bgX = 0;
+                sc.bgY = 0;
+                return sc;
+            }
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
-            (void)screens;
             return sc;
         }
         lastKnownBw2 = sc;
