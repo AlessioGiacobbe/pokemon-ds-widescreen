@@ -30,6 +30,13 @@ bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& sec
 // memory clocks and the chip's and the board's temperature right now, as text.
 std::string Status();
 
+// The thread for the emulation when frames are shown alongside it (main.cpp, emuthread.h):
+// core 0, the main thread's priority and a stack as big as the main thread's. Then the main
+// thread moves to core 2 (MoveMainThread). JoinThread waits for the thread's end.
+bool StartThread(void (*entry)(void*), void* arg);
+void JoinThread();
+void MoveMainThread();
+
 // Called last: puts the processor back to its normal speed.
 void Finish();
 }

@@ -352,6 +352,31 @@ void KeepBoost(uint32_t frame)
     }
 }
 
+static Thread g_emuThread;
+
+bool StartThread(void (*entry)(void*), void* arg)
+{
+    if (R_FAILED(threadCreate(&g_emuThread, entry, arg, nullptr, 0x400000, 0x2C, 0))) return false;
+    if (R_FAILED(threadStart(&g_emuThread)))
+    {
+        threadClose(&g_emuThread);
+        return false;
+    }
+    return true;
+}
+
+void JoinThread()
+{
+    threadWaitForExit(&g_emuThread);
+    threadClose(&g_emuThread);
+}
+
+void MoveMainThread()
+{
+    const Result rc = svcSetThreadCoreMask(CUR_THREAD_HANDLE, 2, 1 << 2);
+    fprintf(stderr, "[switch] main thread to core 2: 0x%x\n", (unsigned)rc);
+}
+
 void JitStarted()
 {
     if (!g_fastMemMarker.empty())

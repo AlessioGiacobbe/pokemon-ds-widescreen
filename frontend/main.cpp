@@ -50,6 +50,7 @@
 #include "merged.h"
 #include "audiostretch.h"
 #include "gpucompose.h"
+#include "emuthread.h"
 #include "battlewide.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -1000,6 +1001,7 @@ struct Settings
     bool jit = true;      // Switch, games that are not recompiled: melonDS's JIT (read at start-up)
     bool fastMem = true;  // ... and its fast memory (also read at start-up)
     bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
+    bool pipeline = true; // Switch: show each frame while the next one is emulated (emuthread.h)
 
     void Load(const std::string& path)
     {
@@ -1025,6 +1027,7 @@ struct Settings
             else if (k == "jit") jit = v == "1";
             else if (k == "fastmem") fastMem = v == "1";
             else if (k == "cgear_start") cgearOff = v != "ask";
+            else if (k == "pipeline") pipeline = v != "0";
         }
 #ifdef __SWITCH__
         // The Switch's buttons are labelled where the DS's are, so labels and positions are
@@ -1051,6 +1054,7 @@ struct Settings
         f << "jit=" << (jit ? 1 : 0) << "\n";
         f << "fastmem=" << (fastMem ? 1 : 0) << "\n";
         f << "cgear_start=" << (cgearOff ? "off" : "ask") << "\n";
+        f << "pipeline=" << (pipeline ? 1 : 0) << "\n";
 #endif
     }
 };
@@ -2803,6 +2807,204 @@ int main(int argc, char** argv)
         perfT = t;
     };
 
+    // Showing a frame: put together (by the graphics card unless SSR_CPU_COMPOSE), the
+    // overlay on top, presented, then the wait that keeps frames 1/60 s apart.
+    struct DrawJob
+    {
+        bool valid = false;
+        bool merged = false, overlayUsed = false, wantShot = false;
+        uint32_t frameNo = 0; // (for the name of a screenshot)
+        int outW = 0, outH = 0;
+        SDL_Rect rects[2] {};
+        const u32* top = nullptr;
+        const u32* bot = nullptr;
+        ScreenImage screens[2] {};
+        Scene scene;
+        WideImage wide;
+        std::vector<uint8_t> flags[2], edgeFlat[2];
+        std::vector<uint32_t> edge[2], widePixels;
+        std::vector<uint16_t> edgeBlend[2];
+
+        // For drawing while the next frame is emulated: copies of what that changes. The
+        // screens themselves stay: the emulation draws into the other framebuffer and swaps
+        // them at its very end. The layer flags and edges are redrawn line by line, and the
+        // widescreen picture is swapped when the 3D is drawn.
+        void Keep()
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                ScreenImage& sc = screens[i];
+                if (sc.flags) { flags[i].assign(sc.flags, sc.flags + 256 * 192); sc.flags = flags[i].data(); }
+                if (sc.edge) { edge[i].assign(sc.edge, sc.edge + 2 * 192); sc.edge = edge[i].data(); }
+                if (sc.edgeBlend) { edgeBlend[i].assign(sc.edgeBlend, sc.edgeBlend + 2 * 192); sc.edgeBlend = edgeBlend[i].data(); }
+                if (sc.edgeFlat) { edgeFlat[i].assign(sc.edgeFlat, sc.edgeFlat + 2 * 192); sc.edgeFlat = edgeFlat[i].data(); }
+            }
+            if (wide.pixels && wide.w > 0 && wide.h > 0 && wide.pixels == melonDS::Wide.Front.data())
+            {
+                widePixels.assign(wide.pixels, wide.pixels + (size_t)wide.w * wide.h);
+                wide.pixels = widePixels.data();
+            }
+        }
+    };
+    DrawJob nowJob, pendingJob;
+
+    // The pipeline: each frame is shown while the next one is emulated on a thread of its
+    // own (emuthread.h), so that the time for showing it no longer adds to the emulation's.
+    // On the Switch by default ("pipeline" in the settings), elsewhere with SSR_PIPELINE=1.
+    // A frame then reaches the screen one frame later. Not with the headless tests or
+    // lockstep, nor with screenshots unless SSR_PIPELINE is set.
+#ifdef __SWITCH__
+    bool pipelined = cfg.pipeline;
+#else
+    bool pipelined = getenv("SSR_PIPELINE") != nullptr;
+#endif
+    if (opt.headless || ref || (!opt.shotDir.empty() && !getenv("SSR_PIPELINE"))) pipelined = false;
+    EmuThread emuThread;
+    int emuSpeed = 1, emuGot = 0;
+    double emuMs = 0, perfEmu = 0;
+
+    // The emulation of one frame (several when fast-forwarding; only the first one's sound
+    // is played).
+    auto runFrames = [&]() {
+        const double t0 = perfNow();
+        emuGot = 0;
+        for (int i = 0; i < emuSpeed; i++)
+        {
+            rc_frame++;
+            if (funcWatchOn) funcWatch.NextFrame();
+            nds->RunFrame();
+            int avail = nds->SPU.GetOutputSize();
+            if (avail > (int)audioBuf.size() / 2) avail = (int)audioBuf.size() / 2;
+            int n = nds->SPU.ReadOutput(audioBuf.data(), avail);
+            if (i == 0) emuGot = n;
+        }
+        emuMs = perfNow() - t0;
+    };
+    if (pipelined)
+    {
+        if (!emuThread.Start(runFrames)) pipelined = false;
+#ifdef __SWITCH__
+        // The emulation has core 0 (emuthread.h); the main thread goes to core 2, beside a
+        // widescreen thread (the DS-resolution 3D thread is on core 1).
+        if (pipelined) SwitchPlatform::MoveMainThread();
+#endif
+        fprintf(stderr, "[pipeline] %s\n", pipelined ? "on: each frame is shown while the next one is emulated" : "could not start");
+    }
+
+    auto drawFrame = [&](DrawJob& j) {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        if (j.merged)
+        {
+            // The graphics card puts the pieces together (gpucompose.h). SSR_CPU_COMPOSE=1
+            // uses the compositor of the headless tests instead, for comparing the two.
+            if (!cpuCompose)
+            {
+                if (!gpuCompose) gpuCompose = new GpuCompositor(renderer);
+                gpuCompose->Draw(j.scene, j.screens, j.outW, j.outH, cfg.smooth, &j.wide);
+                perfMark(3);
+            }
+            else
+            {
+                int cw = j.outW, ch = j.outH;
+                if (cfg.smooth && j.outH > 768)
+                {
+                    cw = j.outW * 768 / j.outH;
+                    ch = 768;
+                }
+                MergedCompose(j.scene, j.screens, cw, ch, mergedImage, cfg.smooth, &j.wide);
+                perfMark(3);
+                if (!mergedTex || mergedTexW != cw || mergedTexH != ch)
+                {
+                    if (mergedTex) SDL_DestroyTexture(mergedTex);
+                    mergedTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, cw, ch);
+                    mergedTexW = cw;
+                    mergedTexH = ch;
+                }
+                SDL_SetTextureScaleMode(mergedTex, cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+                SDL_UpdateTexture(mergedTex, nullptr, mergedImage.data(), cw * 4);
+                SDL_RenderCopy(renderer, mergedTex, nullptr, nullptr);
+            }
+        }
+        else
+        {
+            SDL_UpdateTexture(tex[0], nullptr, j.top, 256 * 4);
+            SDL_UpdateTexture(tex[1], nullptr, j.bot, 256 * 4);
+            int first = LayoutDrawFirst(layout);
+            for (int n = 0; n < 2; n++)
+            {
+                int i = n == 0 ? first : 1 - first;
+                if (j.rects[i].w > 0) SDL_RenderCopy(renderer, tex[i], nullptr, &j.rects[i]);
+            }
+        }
+        if (j.overlayUsed)
+        {
+            if (!overlayTex || overlayTexW != j.outW || overlayTexH != j.outH)
+            {
+                if (overlayTex) SDL_DestroyTexture(overlayTex);
+                overlayTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, j.outW, j.outH);
+                SDL_SetTextureBlendMode(overlayTex, SDL_BLENDMODE_BLEND);
+                overlayTexW = j.outW;
+                overlayTexH = j.outH;
+            }
+            if (canvas.Dirty())
+            {
+                const SDL_Rect dr = { canvas.x0d, canvas.y0d, canvas.x1d - canvas.x0d, canvas.y1d - canvas.y0d };
+                SDL_UpdateTexture(overlayTex, &dr, canvas.px.data() + (size_t)dr.y * j.outW + dr.x, j.outW * 4);
+                SDL_RenderCopy(renderer, overlayTex, &dr, &dr);
+            }
+        }
+        // In a window, screenshots are read back from the renderer: exactly what is shown.
+        if (j.wantShot)
+        {
+            std::vector<uint32_t> back((size_t)j.outW * j.outH);
+            if (SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, back.data(), j.outW * 4) == 0)
+            {
+                char name[64];
+                snprintf(name, sizeof(name), "/window_%06u.png", j.frameNo);
+                WritePNG(opt.shotDir + name, back.data(), j.outW, j.outH);
+            }
+        }
+        if (touchPadUsed && touchPad.visible)
+        {
+            // Lit by what the fingers hold (by label, as drawn).
+            bool held[PAD_COUNT] = {};
+            bool menuHeld = false;
+            touchPad.Apply(held, menuHeld);
+            touchPad.Draw(renderer, held, menuHeld);
+        }
+        SDL_RenderPresent(renderer);
+        perfMark(4);
+        // Frames shown in the last whole second, for the FPS counter.
+        presented++;
+        const uint32_t ms = SDL_GetTicks();
+        if (ms - fpsSince >= 1000)
+        {
+            shownFps = (int)(presented * 1000 / (ms - fpsSince));
+            presented = 0;
+            fpsSince = ms;
+        }
+
+        nextTick += (uint64_t)(frameTime * perfFreq);
+        uint64_t now = SDL_GetPerformanceCounter();
+        if (now < nextTick)
+        {
+            // Sleep for most of the wait and spin for the last part of a millisecond:
+            // frames then start within a few microseconds of an even 16.7 ms apart.
+            double left = (double)(nextTick - now) / perfFreq;
+            // (With the pipeline the start of the next emulation does not depend on this
+            // to the microsecond: only the sleep, leaving the core to the widescreen thread.)
+            if (pipelined) std::this_thread::sleep_for(std::chrono::duration<double>(left));
+            else
+            {
+                if (left > 0.0008) std::this_thread::sleep_for(std::chrono::duration<double>(left - 0.0006));
+                while (SDL_GetPerformanceCounter() < nextTick) {}
+            }
+        }
+        else if (now - nextTick > perfFreq / 4) nextTick = now;
+        perfMark(5);
+    };
+
     while (running && !Host::StopRequested)
     {
         if (perfOn)
@@ -2827,10 +3029,19 @@ int main(int argc, char** argv)
                 const std::string status = SwitchPlatform::Status();
                 if (!status.empty()) tail += "; " + status;
 #endif
+                // With the pipeline, emulate is the emulation thread's time, and compose,
+                // present and wait happen alongside it, the main thread then waiting for the
+                // emulation the time given at the end.
+                if (pipelined)
+                {
+                    snprintf(extra, sizeof(extra), "; pipeline: waited for the emulation %.2f ms", perfAcc[1] / perfN);
+                    tail += extra;
+                }
                 fprintf(stderr, "[perf] input %.2f  emulate %.2f  scene %.2f  compose %.2f  present %.2f  wait %.2f ms; worst frame %.1f ms%s\n",
-                    perfAcc[0] / perfN, perfAcc[1] / perfN, perfAcc[2] / perfN, perfAcc[3] / perfN, perfAcc[4] / perfN,
+                    perfAcc[0] / perfN, (pipelined ? perfEmu : perfAcc[1]) / perfN, perfAcc[2] / perfN, perfAcc[3] / perfN, perfAcc[4] / perfN,
                     perfAcc[5] / perfN, perfWorst, tail.c_str());
                 for (double& a : perfAcc) a = 0;
+                perfEmu = 0;
                 perfN = 0;
                 perfWorst = 0;
             }
@@ -3562,16 +3773,27 @@ int main(int argc, char** argv)
             if (touching) nds->TouchScreen((u16)touchX, (u16)touchY);
             else nds->ReleaseScreen();
 
-            for (int i = 0; i < speed; i++)
+            emuSpeed = speed;
+            if (pipelined && pendingJob.valid)
             {
-                rc_frame++;
-                if (funcWatchOn) funcWatch.NextFrame();
-                nds->RunFrame();
-                int avail = nds->SPU.GetOutputSize();
-                if (avail > (int)audioBuf.size() / 2) avail = (int)audioBuf.size() / 2;
-                int n = nds->SPU.ReadOutput(audioBuf.data(), avail);
-                if (i == 0) got = n; // when fast-forwarding only the first frame's audio is played
+                // The last frame is shown while this one is emulated.
+                emuThread.Kick();
+                drawFrame(pendingJob);
+                pendingJob.valid = false;
+                emuThread.Wait();
+                perfEmu += emuMs;
             }
+            else
+            {
+                runFrames();
+                if (pipelined) perfEmu += emuMs;
+            }
+            got = emuGot;
+        }
+        else if (pendingJob.valid)
+        {
+            drawFrame(pendingJob);
+            pendingJob.valid = false;
         }
         perfMark(1);
         frame++;
@@ -3972,112 +4194,32 @@ int main(int argc, char** argv)
 
         if (!opt.headless && top && bot)
         {
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            if (merged)
+            // What the picture needs; drawn now, or with the pipeline while the next frame is
+            // emulated (from copies of what that emulation overwrites).
+            if (merged) takeWideImage();
+            DrawJob& job = pipelined ? pendingJob : nowJob;
+            job.merged = merged;
+            job.overlayUsed = overlayUsed;
+            job.wantShot = wantShot;
+            job.frameNo = frame;
+            job.outW = outW;
+            job.outH = outH;
+            job.rects[0] = rects[0];
+            job.rects[1] = rects[1];
+            job.top = top;
+            job.bot = bot;
+            job.screens[0] = screenImages[0];
+            job.screens[1] = screenImages[1];
+            job.scene = scene;
+            job.wide = wideImage;
+            if (pipelined)
             {
-                // The graphics card puts the pieces together (gpucompose.h). SSR_CPU_COMPOSE=1
-                // uses the compositor of the headless tests instead, for comparing the two.
-                takeWideImage();
-                if (!cpuCompose)
-                {
-                    if (!gpuCompose) gpuCompose = new GpuCompositor(renderer);
-                    gpuCompose->Draw(scene, screenImages, outW, outH, cfg.smooth, &wideImage);
-                    perfMark(3);
-                }
-                else
-                {
-                    int cw = outW, ch = outH;
-                    if (cfg.smooth && outH > 768)
-                    {
-                        cw = outW * 768 / outH;
-                        ch = 768;
-                    }
-                    MergedCompose(scene, screenImages, cw, ch, mergedImage, cfg.smooth, &wideImage);
-                    perfMark(3);
-                    if (!mergedTex || mergedTexW != cw || mergedTexH != ch)
-                    {
-                        if (mergedTex) SDL_DestroyTexture(mergedTex);
-                        mergedTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, cw, ch);
-                        mergedTexW = cw;
-                        mergedTexH = ch;
-                    }
-                    SDL_SetTextureScaleMode(mergedTex, cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
-                    SDL_UpdateTexture(mergedTex, nullptr, mergedImage.data(), cw * 4);
-                    SDL_RenderCopy(renderer, mergedTex, nullptr, nullptr);
-                }
+                job.Keep();
+                job.valid = true;
+                perfMark(2);
             }
             else
-            {
-                SDL_UpdateTexture(tex[0], nullptr, top, 256 * 4);
-                SDL_UpdateTexture(tex[1], nullptr, bot, 256 * 4);
-                int first = LayoutDrawFirst(layout);
-                for (int n = 0; n < 2; n++)
-                {
-                    int i = n == 0 ? first : 1 - first;
-                    if (rects[i].w > 0) SDL_RenderCopy(renderer, tex[i], nullptr, &rects[i]);
-                }
-            }
-            if (overlayUsed)
-            {
-                if (!overlayTex || overlayTexW != outW || overlayTexH != outH)
-                {
-                    if (overlayTex) SDL_DestroyTexture(overlayTex);
-                    overlayTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
-                    SDL_SetTextureBlendMode(overlayTex, SDL_BLENDMODE_BLEND);
-                    overlayTexW = outW;
-                    overlayTexH = outH;
-                }
-                if (canvas.Dirty())
-                {
-                    const SDL_Rect dr = { canvas.x0d, canvas.y0d, canvas.x1d - canvas.x0d, canvas.y1d - canvas.y0d };
-                    SDL_UpdateTexture(overlayTex, &dr, canvas.px.data() + (size_t)dr.y * outW + dr.x, outW * 4);
-                    SDL_RenderCopy(renderer, overlayTex, &dr, &dr);
-                }
-            }
-            // In a window, screenshots are read back from the renderer: exactly what is shown.
-            if (wantShot)
-            {
-                std::vector<uint32_t> back((size_t)outW * outH);
-                if (SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, back.data(), outW * 4) == 0)
-                {
-                    char name[64];
-                    snprintf(name, sizeof(name), "/window_%06u.png", frame);
-                    WritePNG(opt.shotDir + name, back.data(), outW, outH);
-                }
-            }
-            if (touchPadUsed && touchPad.visible)
-            {
-                // Lit by what the fingers hold (by label, as drawn).
-                bool held[PAD_COUNT] = {};
-                bool menuHeld = false;
-                touchPad.Apply(held, menuHeld);
-                touchPad.Draw(renderer, held, menuHeld);
-            }
-            SDL_RenderPresent(renderer);
-            perfMark(4);
-            // Frames shown in the last whole second, for the FPS counter.
-            presented++;
-            const uint32_t ms = SDL_GetTicks();
-            if (ms - fpsSince >= 1000)
-            {
-                shownFps = (int)(presented * 1000 / (ms - fpsSince));
-                presented = 0;
-                fpsSince = ms;
-            }
-
-            nextTick += (uint64_t)(frameTime * perfFreq);
-            uint64_t now = SDL_GetPerformanceCounter();
-            if (now < nextTick)
-            {
-                // Sleep for most of the wait and spin for the last part of a millisecond:
-                // frames then start within a few microseconds of an even 16.7 ms apart.
-                double left = (double)(nextTick - now) / perfFreq;
-                if (left > 0.0008) std::this_thread::sleep_for(std::chrono::duration<double>(left - 0.0006));
-                while (SDL_GetPerformanceCounter() < nextTick) {}
-            }
-            else if (now - nextTick > perfFreq / 4) nextTick = now;
-            perfMark(5);
+                drawFrame(job);
         }
 
         if (!opt.stateSave.empty() && scriptClock == opt.stateSaveAt && !holdScript)
@@ -4093,6 +4235,9 @@ int main(int argc, char** argv)
             running = false;
         }
     }
+
+    // (The emulation thread is idle between frames: ended before anything else.)
+    emuThread.Stop();
 
     // Shutting down. The save and the settings are written first, before anything that could
     // go wrong; each step is logged, so that a log shows how far it got if it ever stops.
