@@ -565,6 +565,12 @@ static void SetClock(NDS& nds, bool fixed)
 }
 
 static bool UseJit = false;
+// The pause menu's EMULATION row: on the Switch, in builds with melonDS's JIT (Black 2).
+#if defined(__SWITCH__) && defined(JIT_ENABLED)
+#define SSR_MENU_EMULATION 1
+#else
+#define SSR_MENU_EMULATION 0
+#endif
 
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
@@ -583,7 +589,13 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
     }
     NDSArgs args;
     // melonDS's JIT only for a game that is not recompiled (--jit, Black 2).
-    if (UseJit) args.JIT = JITArgs();
+    // SSR_JIT_NOFASTMEM=1: as on the Switch, where fast memory is not available, for testing.
+    if (UseJit)
+    {
+        JITArgs jit;
+        if (getenv("SSR_JIT_NOFASTMEM")) jit.FastMemory = false;
+        args.JIT = jit;
+    }
     else args.JIT = std::nullopt;
     auto nds = std::make_unique<NDS>(std::move(args));
     nds->SetNDSCart(std::move(cart));
@@ -981,6 +993,7 @@ struct Settings
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
     bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
+    bool jit = true;      // Switch, games that are not recompiled: melonDS's JIT (read at start-up)
 
     void Load(const std::string& path)
     {
@@ -1003,6 +1016,7 @@ struct Settings
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "cpu_boost") cpuBoost = v == "1";
+            else if (k == "jit") jit = v == "1";
         }
 #ifdef __SWITCH__
         // The Switch's buttons are labelled where the DS's are, so labels and positions are
@@ -1026,6 +1040,7 @@ struct Settings
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
+        f << "jit=" << (jit ? 1 : 0) << "\n";
 #endif
     }
 };
@@ -1132,6 +1147,9 @@ int main(int argc, char** argv)
         UseJit = true;
         opt.recomp = false;
     }
+#ifdef __SWITCH__
+    fprintf(stderr, "[switch] emulation: %s\n", UseJit ? "JIT" : opt.recomp ? "recompiled code" : "interpreter");
+#endif
     if (opt.save.empty()) opt.save = opt.rom + ".sav";
 #ifdef __SWITCH__
     {
@@ -2583,7 +2601,11 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
+#if SSR_MENU_EMULATION
+        M_EMULATION,
+#endif
+        M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
@@ -2617,6 +2639,10 @@ int main(int argc, char** argv)
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
 #endif
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
+#if SSR_MENU_EMULATION
+            // Read when the game starts (SwitchPlatform::Start); a change waits for the next start.
+            { "EMULATION", std::string(cfg.jit ? "JIT" : "INTERPRETER") + (cfg.jit != UseJit ? " (NEXT START)" : "") },
+#endif
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
             { "SAVE STATE", "" },
             { "LOAD STATE", "" },
@@ -3091,6 +3117,13 @@ int main(int argc, char** argv)
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
+#if SSR_MENU_EMULATION
+            case M_EMULATION:
+                cfg.jit = !cfg.jit;
+                cfg.Save(opt.config);
+                say("APPLIES THE NEXT TIME THE GAME STARTS");
+                break;
+#endif
             case M_FAST:
                 fastLock = !fastLock;
                 break;
@@ -3404,6 +3437,7 @@ int main(int argc, char** argv)
         frame++;
 #ifdef __SWITCH__
         if (!opt.headless) SwitchPlatform::KeepBoost(frame);
+        if (frame == 300) SwitchPlatform::JitStarted();
 #endif
         if (!holdScript) scriptClock++;
 

@@ -68,6 +68,9 @@ std::string FindRom(const std::string& dir, std::string& problem)
 }
 }
 
+// Set while a start with the JIT has not yet run for a few seconds (see JitStarted).
+static std::string g_jitMarker;
+
 bool Start(int& argc, char**& argv)
 {
     // The folder the .nro was started from (the Homebrew Menu passes its path), or the usual one.
@@ -136,7 +139,44 @@ bool Start(int& argc, char**& argv)
     {
         g_args.push_back("--funcs");
         g_args.push_back(dir + "/funcs.txt");
+#ifdef JIT_ENABLED
+        // melonDS's JIT (code translated for the Switch's processor as it runs), unless the
+        // settings say otherwise (EMULATION in the pause menu, "jit=0" in ssrecomp.cfg), L is
+        // held while the game starts, or the last start with the JIT never got going (a file
+        // made before the start and removed a few seconds into the game says so).
+        bool jit = true;
+        if (FILE* f = fopen((dir + "/ssrecomp.cfg").c_str(), "r"))
+        {
+            char line[128];
+            while (fgets(line, sizeof(line), f))
+                if (!strncmp(line, "jit=0", 5)) jit = false;
+            fclose(f);
+        }
+        PadState pad;
+        padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+        padInitializeDefault(&pad);
+        padUpdate(&pad);
+        if (jit && (padGetButtons(&pad) & HidNpadButton_L))
+        {
+            jit = false;
+            fprintf(stderr, "[switch] L held: the interpreter this time\n");
+        }
+        const std::string marker = dir + "/jit-starting";
+        if (jit && stat(marker.c_str(), &st) == 0)
+        {
+            jit = false;
+            remove(marker.c_str());
+            fprintf(stderr, "[switch] the last start with the JIT did not get going: the interpreter this time\n");
+        }
+        if (jit)
+        {
+            if (FILE* f = fopen(marker.c_str(), "wb")) fclose(f);
+            g_jitMarker = marker;
+        }
+        g_args.push_back(jit ? "--jit" : "--interp");
+#else
         g_args.push_back("--interp");
+#endif
     }
     for (auto& a : g_args) g_argv.push_back(a.data());
     g_argv.push_back(nullptr);
@@ -280,6 +320,14 @@ void KeepBoost(uint32_t frame)
     }
 }
 
+void JitStarted()
+{
+    if (g_jitMarker.empty()) return;
+    remove(g_jitMarker.c_str());
+    g_jitMarker.clear();
+    fprintf(stderr, "[switch] the JIT is running\n");
+}
+
 std::string Status()
 {
     // Opened on first use; a service the game may not use just leaves its part out.
@@ -327,6 +375,7 @@ std::string Status()
 
 void Finish()
 {
+    JitStarted(); // (an ordinary exit: the JIT did start)
     if (g_boosted) SetCpuBoost(false);
     fflush(stderr);
 }

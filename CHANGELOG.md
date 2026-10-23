@@ -12,6 +12,9 @@
   system's boost mode (which the system took away for 10-20 seconds every minute or
   so): processor 1785 MHz, memory 1600 MHz (its docked speed), checked five times a
   second, and put back to normal when it is turned off or the game ends.
+  Games without recompiled code (the experimental Black 2 build) run on melonDS's
+  JIT on the Switch (EMULATION in the pause menu; hold L while starting for the
+  interpreter, which is also used by itself after a start where the JIT failed).
 
 - When the game runs slower than a DS (a slow device), the sound is stretched to fill the
   time, at its own pitch, instead of breaking up into crackles. At full speed it plays

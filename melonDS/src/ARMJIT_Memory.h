@@ -27,7 +27,7 @@
 #  include "TinyVector.h"
 #  include "ARM.h"
 #  if defined(__SWITCH__)
-#    include <switch.h>
+     // ssrecomp: no fast memory on the Switch (see ARMJIT_Memory.cpp)
 #  elif defined(_WIN32)
 #    include <vector>
 #    include <windows.h>
@@ -173,8 +173,6 @@ private:
     u8* MemoryBase = nullptr;
 
 #if defined(__SWITCH__)
-    VirtmemReservation* FastMem9Reservation, *FastMem7Reservation;
-    u8* MemoryBaseCodeMem;
 #elif defined(_WIN32)
     struct VirtmemPlaceholder
     {

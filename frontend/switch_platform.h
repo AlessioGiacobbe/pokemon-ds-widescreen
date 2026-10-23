@@ -19,6 +19,10 @@ bool SetCpuBoost(bool on);
 // Called every frame: puts the boost speed back when the system has lowered it.
 void KeepBoost(uint32_t frame);
 
+// Called once the game has run a few seconds: a start with the JIT worked, so the next one
+// uses it again (otherwise the next start falls back to the interpreter by itself).
+void JitStarted();
+
 // The console's own date and time, in the time zone set on it. False if it cannot be read.
 bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& second);
 

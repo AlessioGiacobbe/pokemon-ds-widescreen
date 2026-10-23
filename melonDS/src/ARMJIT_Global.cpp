@@ -1,7 +1,9 @@
 #include "ARMJIT_Global.h"
 #include "ARMJIT_Memory.h"
 
-#ifdef _WIN32
+#if defined(__SWITCH__)
+// ssrecomp: on the Switch the ARM64 compiler makes its own code memory (ARMJIT_Compiler.cpp).
+#elif defined(_WIN32)
 #include <windows.h>
 #else
 #include <sys/mman.h>
@@ -25,7 +27,7 @@ std::mutex globalMutex;
 #define APPLE_AARCH64
 #endif
 
-#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__)
+#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__SWITCH__)
 static constexpr size_t NumCodeMemSlices = 4;
 static constexpr size_t CodeMemoryAlignedSize = NumCodeMemSlices * CodeMemorySliceSize;
 
@@ -46,7 +48,7 @@ void* AllocateCodeMem()
 {
     std::lock_guard guard(globalMutex);
 
-#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__)
+#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__SWITCH__)
     if (AvailableCodeMemSlices)
     {
         int slice = __builtin_ctz(AvailableCodeMemSlices);
@@ -57,7 +59,9 @@ void* AllocateCodeMem()
 #endif
 
     // allocate
-#ifdef _WIN32
+#if defined(__SWITCH__)
+    return nullptr;
+#elif defined(_WIN32)
     return VirtualAlloc(nullptr, CodeMemorySliceSize, MEM_RESERVE|MEM_COMMIT, PAGE_EXECUTE_READWRITE);
 #elif defined(APPLE_AARCH64)
     return mmap(NULL, CodeMemorySliceSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,-1, 0);
@@ -73,7 +77,7 @@ void FreeCodeMem(void* codeMem)
 {
     std::lock_guard guard(globalMutex);
 
-#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__)
+#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__SWITCH__)
     for (int i = 0; i < NumCodeMemSlices; i++)
     {
         if (codeMem == &GetAlignedCodeMemoryStart()[CodeMemorySliceSize * i])
@@ -85,7 +89,9 @@ void FreeCodeMem(void* codeMem)
     }
 #endif
 
-#ifdef _WIN32
+#if defined(__SWITCH__)
+    (void)codeMem;
+#elif defined(_WIN32)
     VirtualFree(codeMem, CodeMemorySliceSize, MEM_RELEASE|MEM_DECOMMIT);
 #else
     munmap(codeMem, CodeMemorySliceSize);
@@ -99,7 +105,8 @@ void Init()
     RefCounter++;
     if (RefCounter == 1)
     {
-        #ifdef _WIN32
+        #if defined(__SWITCH__)
+        #elif defined(_WIN32)
             DWORD dummy;
             VirtualProtect(GetAlignedCodeMemoryStart(), CodeMemoryAlignedSize, PAGE_EXECUTE_READWRITE, &dummy);
         #elif defined(APPLE_AARCH64) || defined(__NetBSD__) || defined(__OpenBSD__)

@@ -16,6 +16,10 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 #include "ARMJIT_Compiler.h"
 
 #include "../ARMJIT_Internal.h"
@@ -25,10 +29,17 @@
 #include "../ARMJIT_Global.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 
 using namespace Arm64Gen;
 
 extern "C" void ARM_Ret();
+
+#ifdef __SWITCH__
+// The start of the program in memory (libnx); the code memory goes just below it, within
+// branch range of the emulator's own functions.
+extern "C" char __start__;
+#endif
 
 namespace melonDS
 {
@@ -209,6 +220,12 @@ void Compiler::PopRegs(bool saveHiRegs, bool saveRegsToBeChanged)
 Compiler::Compiler(melonDS::NDS& nds) : Arm64Gen::ARM64XEmitter(), NDS(nds)
 {
 #ifdef __SWITCH__
+    // ssrecomp: the code memory is a heap buffer made executable with svcMapProcessCodeMemory,
+    // and written through a second, writable view of it (svcMapProcessMemory). JitMemSize was
+    // missing from melonDS 1.1; 32 MB is the size of a code memory slice elsewhere.
+    ARMJIT_Global::Init();
+    CodeMemBase = nullptr;
+    constexpr size_t JitMemSize = ARMJIT_Global::CodeMemorySliceSize;
     JitRWBase = aligned_alloc(0x1000, JitMemSize);
 
     JitRXStart = (u8*)&__start__ - JitMemSize - 0x1000;
@@ -231,14 +248,20 @@ Compiler::Compiler(melonDS::NDS& nds) : Arm64Gen::ARM64XEmitter(), NDS(nds)
         }
     }
 
-    assert(JitRXStart != NULL);
-
-    bool succeded = R_SUCCEEDED(svcMapProcessCodeMemory(envGetOwnProcessHandle(), (u64)JitRXStart, (u64)JitRWBase, JitMemSize));
-    assert(succeded);
-    succeded = R_SUCCEEDED(svcSetProcessMemoryPermission(envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize, Perm_Rx));
-    assert(succeded);
-    succeded = R_SUCCEEDED(svcMapProcessMemory(JitRWStart, envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize));
-    assert(succeded);
+    // (Each step says in the log whether it worked: on the Switch nothing else would.)
+    Result rc = JitRXStart ? svcMapProcessCodeMemory(envGetOwnProcessHandle(), (u64)JitRXStart, (u64)JitRWBase, JitMemSize) : (Result)-1;
+    fprintf(stderr, "[jit] code memory at %p: 0x%x\n", JitRXStart, (unsigned)rc);
+    if (R_SUCCEEDED(rc))
+    {
+        rc = svcSetProcessMemoryPermission(envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize, Perm_Rx);
+        fprintf(stderr, "[jit] made executable: 0x%x\n", (unsigned)rc);
+    }
+    if (R_SUCCEEDED(rc))
+    {
+        rc = svcMapProcessMemory(JitRWStart, envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize);
+        fprintf(stderr, "[jit] writable view at %p: 0x%x\n", JitRWStart, (unsigned)rc);
+    }
+    fflush(stderr);
 
     virtmemUnlock();
 
@@ -453,6 +476,7 @@ Compiler::Compiler(melonDS::NDS& nds) : Arm64Gen::ARM64XEmitter(), NDS(nds)
 Compiler::~Compiler()
 {
 #ifdef __SWITCH__
+    constexpr size_t JitMemSize = ARMJIT_Global::CodeMemorySliceSize;
     if (JitRWStart != NULL)
     {
         bool succeded = R_SUCCEEDED(svcUnmapProcessMemory(JitRWStart, envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize));
@@ -463,7 +487,7 @@ Compiler::~Compiler()
     }
 #endif
 
-    ARMJIT_Global::FreeCodeMem(CodeMemBase);
+    if (CodeMemBase) ARMJIT_Global::FreeCodeMem(CodeMemBase);
     ARMJIT_Global::DeInit();
 }
 
