@@ -146,6 +146,7 @@ bool Start(int& argc, char**& argv)
 }
 
 static void UnforceClock();
+static void RaiseMemory();
 
 bool SetCpuBoost(bool on)
 {
@@ -160,6 +161,7 @@ bool SetCpuBoost(bool on)
     }
     g_boosted = on;
     fprintf(stderr, "[switch] CPU boost %s\n", on ? "on" : "off");
+    if (on) RaiseMemory();
     return true;
 }
 
@@ -198,6 +200,22 @@ static bool OpenClocks()
     return ok;
 }
 
+// The memory runs at 1331 MHz in handheld mode (1600 docked, its official top speed), and
+// the emulation reads and writes memory constantly: with boost on it is raised to 1600 MHz,
+// kept there like the processor's speed, and put back when boost is turned off or the game
+// ends.
+static u32 g_memNormal = 0;
+static void RaiseMemory()
+{
+    if (!OpenClocks()) return;
+    u32 hz = 0;
+    if (R_FAILED(clkrstGetClockRate(&g_memClock, &hz))) return;
+    if (!g_memNormal) g_memNormal = hz;
+    if (hz >= 1590000000u) return;
+    const Result rc = clkrstSetClockRate(&g_memClock, 1600000000u);
+    fprintf(stderr, "[switch] memory from %u to 1600 MHz: %s\n", hz / 1000000, R_SUCCEEDED(rc) ? "done" : "refused");
+}
+
 // Boost mode is the system's to grant, and it takes it away for 10-20 seconds every minute
 // or so (measured: the processor at 1020 MHz in each slow spell, with the chip at 35C).
 // So the speed is checked twice a second: when it has dropped, boost mode is asked for
@@ -208,6 +226,9 @@ void KeepBoost(uint32_t frame)
 {
     static int lowChecks = 0, events = 0;
     if (!g_boosted || frame % 30 != 0 || !OpenClocks()) return;
+    u32 mem = 0;
+    if (g_memNormal && R_SUCCEEDED(clkrstGetClockRate(&g_memClock, &mem)) && mem < 1590000000u)
+        clkrstSetClockRate(&g_memClock, 1600000000u);
     u32 hz = 0;
     if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &hz))) return;
     if (hz >= 1700000000u)
@@ -237,6 +258,8 @@ static void UnforceClock()
     // A speed set directly stays set: back to the normal one before boost mode ends.
     if (g_clockForced) clkrstSetClockRate(&g_cpuClock, 1020000000u);
     g_clockForced = false;
+    if (g_memNormal) clkrstSetClockRate(&g_memClock, g_memNormal);
+    g_memNormal = 0;
 }
 
 std::string Status()

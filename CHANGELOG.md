@@ -9,7 +9,8 @@
   60 FPS starts off. The buttons follow the Switch's own labels (A is the right
   button). Quitting saves and closes cleanly (each step is written to `game.log`).
   The system takes boost mode away for 10-20 seconds every minute or so; the game
-  now notices within half a second and puts the speed back.
+  now notices within half a second and puts the speed back. With CPU BOOST on, the
+  memory also runs at 1600 MHz (its docked speed) instead of 1331.
 
 - When the game runs slower than a DS (a slow device), the sound is stretched to fill the
   time, at its own pitch, instead of breaking up into crackles. At full speed it plays
