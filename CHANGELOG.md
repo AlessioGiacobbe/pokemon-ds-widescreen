@@ -9,6 +9,8 @@
   60 FPS starts off. The buttons follow the Switch's own labels (A is the right
   button). Quitting saves and closes cleanly (each step is written to `game.log`).
 
+- Fixed: a zoomed or rotated background could drift and smear into streaks when parts
+  of it stayed the same from one frame to the next.
 - The setup program for macOS can now check for updates and update itself from
   the setup window and with `--update`, matching Linux and Windows.
 - A single-screen build of the decompilation (the one-screen game) is recognised when it

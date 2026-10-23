@@ -171,6 +171,10 @@ struct LineCache
     u8 objWindow[256];
     u32 line3D[256];
     u32 out[256];
+    // How far drawing the line moved the affine backgrounds' internal reference points
+    // (BG2 x, BG3 x, BG2 y, BG3 y): a copied line has to move them as well, or every line
+    // below it samples the wrong row (the Black 2 Town Map turned into streaks and drifted).
+    s32 refStep[4];
 };
 LineCache Cache[2][192];
 u32 CacheEpoch[2] = { 1, 1 };
@@ -301,6 +305,11 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
             else
                 CurUnit->BGMosaicY++;
             CurUnit->UpdateMosaicCounters(line);
+            for (int k = 0; k < 2; k++)
+            {
+                CurUnit->BGXRefInternal[k] += cache->refStep[k];
+                CurUnit->BGYRefInternal[k] += cache->refStep[2 + k];
+            }
             memcpy(dst, cache->out, sizeof(cache->out));
             return;
         }
@@ -314,7 +323,16 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     }
 
     // always render regular graphics
+    const s32 refsBefore[4] = { CurUnit->BGXRefInternal[0], CurUnit->BGXRefInternal[1],
+                                CurUnit->BGYRefInternal[0], CurUnit->BGYRefInternal[1] };
     DrawScanline_BGOBJ(line);
+    if (cache)
+    {
+        cache->refStep[0] = CurUnit->BGXRefInternal[0] - refsBefore[0];
+        cache->refStep[1] = CurUnit->BGXRefInternal[1] - refsBefore[1];
+        cache->refStep[2] = CurUnit->BGYRefInternal[0] - refsBefore[2];
+        cache->refStep[3] = CurUnit->BGYRefInternal[1] - refsBefore[3];
+    }
     CurUnit->UpdateMosaicCounters(line);
 
     switch (dispmode)
