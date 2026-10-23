@@ -1484,7 +1484,7 @@ int main(int argc, char** argv)
     {
         int field = -1, fieldMenu = -1, bag = -1, battle = -1;
         int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
-        int options = -1;
+        int options = -1, summary = -1, dexList = -1, dexEntry = -1, box = -1;
     } bw2;
     if (funcWatchOn)
     {
@@ -1498,6 +1498,10 @@ int main(int argc, char** argv)
         bw2.trainerCard = funcWatch.Find("TrainerCard_Main");
         bw2.townMap = funcWatch.Find("TownMap_ProcMain");      // the town map and Fly
         bw2.options = funcWatch.Find("ConfigPanel_Main");      // Options
+        bw2.summary = funcWatch.Find("PStatus_ProcMain");      // a Pokemon's summary
+        bw2.dexList = funcWatch.Find("ZknListSeq_Main");       // the Pokedex list
+        bw2.dexEntry = funcWatch.Find("ZukanDetail_Main");     // a Pokedex entry
+        bw2.box = funcWatch.Find("Box2Proc_Main");             // the PC's boxes
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
     }
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
@@ -1611,6 +1615,17 @@ int main(int argc, char** argv)
             // The explanation of the chosen option (a box near the bottom of the other screen)
             // above the list of options.
             sc = Stack("options", { Crop(0, 0, 146, 256, 44), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
+        else if (funcWatch.Ran(bw2.summary, 2))
+            // Both pages (memo and details; stats and moves) use both screens.
+            sc = Stack("summary", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+        else if (funcWatch.Ran(bw2.box, 2))
+            // The chosen Pokemon's card (moves, ability, item) beside the box.
+            sc = Stack("pc-box", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+        else if (funcWatch.Ran(bw2.dexEntry, 2))
+            only("pokedex-entry", 1); // the other screen is an empty grid
+        else if (funcWatch.Ran(bw2.dexList, 2))
+            // The list runs on from the top screen into the bottom one: one column.
+            sc = Stack("pokedex-list", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
         else if (funcWatch.Ran(bw2.townMap, 2))
             // The map (the place's name is on its own banner); the other screen's card of
             // flavour text is one press away (the escape hatch above).
