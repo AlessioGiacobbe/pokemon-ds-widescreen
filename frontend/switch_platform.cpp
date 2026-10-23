@@ -145,23 +145,28 @@ bool Start(int& argc, char**& argv)
     return true;
 }
 
-static void UnforceClock();
-static void RaiseMemory();
+static bool DirectBoost(bool on);
 
 bool SetCpuBoost(bool on)
 {
-    if (!on) UnforceClock();
-    // Boost mode needs system version 7.0.0 or later; on older ones the call fails and the
-    // processor stays at its normal speed.
+    // Set the speeds directly, as sys-clk does, when the system allows it; otherwise ask for
+    // boost mode, which needs system version 7.0.0 or later (on older ones the call fails
+    // and the processor stays at its normal speed).
+    if (on && DirectBoost(true))
+    {
+        g_boosted = true;
+        return true;
+    }
+    if (!on) DirectBoost(false);
     const Result rc = appletSetCpuBoostMode(on ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
     if (R_FAILED(rc))
     {
         fprintf(stderr, "[switch] CPU boost %s failed: 0x%x\n", on ? "on" : "off", (unsigned)rc);
-        return false;
+        if (!on) g_boosted = false;
+        return !on;
     }
     g_boosted = on;
-    fprintf(stderr, "[switch] CPU boost %s\n", on ? "on" : "off");
-    if (on) RaiseMemory();
+    fprintf(stderr, "[switch] CPU boost %s (system boost mode)\n", on ? "on" : "off");
     return true;
 }
 
@@ -200,66 +205,79 @@ static bool OpenClocks()
     return ok;
 }
 
-// The memory runs at 1331 MHz in handheld mode (1600 docked, its official top speed), and
-// the emulation reads and writes memory constantly: with boost on it is raised to 1600 MHz,
-// kept there like the processor's speed, and put back when boost is turned off or the game
-// ends.
-static u32 g_memNormal = 0;
-static void RaiseMemory()
+// Boost mode is the system's to grant, and it takes it away for 10-20 seconds every minute
+// or so (measured: the processor at 1020 MHz in each slow spell, with the chip at 35C), in
+// SoulSilver too; asking for it again only shortened the slow spells. sys-clk, which sets the
+// speeds itself and checks them every 0.3 seconds, had none. So the same is done here: the
+// processor at 1785 MHz (boost mode's speed) and the memory at 1600 MHz (its docked speed;
+// handheld mode runs it at 1331 and the emulation uses memory constantly), checked five times
+// a second and set again if the system has lowered them. The graphics chip keeps its own
+// speed (boost mode would turn it down to 76 MHz). When boost is turned off or the game ends,
+// both go back to the speeds they had.
+static bool g_direct = false;
+static u32 g_cpuNormal = 0, g_memNormal = 0;
+static constexpr u32 BoostCpuHz = 1785000000u, BoostMemHz = 1600000000u;
+
+static bool DirectBoost(bool on)
 {
-    if (!OpenClocks()) return;
-    u32 hz = 0;
-    if (R_FAILED(clkrstGetClockRate(&g_memClock, &hz))) return;
-    if (!g_memNormal) g_memNormal = hz;
-    if (hz >= 1590000000u) return;
-    const Result rc = clkrstSetClockRate(&g_memClock, 1600000000u);
-    fprintf(stderr, "[switch] memory from %u to 1600 MHz: %s\n", hz / 1000000, R_SUCCEEDED(rc) ? "done" : "refused");
+    if (!on)
+    {
+        if (g_direct)
+        {
+            clkrstSetClockRate(&g_cpuClock, g_cpuNormal);
+            clkrstSetClockRate(&g_memClock, g_memNormal);
+            fprintf(stderr, "[switch] CPU boost off: processor %u MHz, memory %u MHz again\n", g_cpuNormal / 1000000, g_memNormal / 1000000);
+        }
+        g_direct = false;
+        return true;
+    }
+    if (!OpenClocks()) return false;
+    u32 cpu = 0, mem = 0;
+    if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &cpu)) || R_FAILED(clkrstGetClockRate(&g_memClock, &mem))) return false;
+    if (!g_direct)
+    {
+        g_cpuNormal = cpu;
+        g_memNormal = mem;
+    }
+    const Result rc1 = clkrstSetClockRate(&g_cpuClock, BoostCpuHz);
+    const Result rc2 = clkrstSetClockRate(&g_memClock, BoostMemHz);
+    u32 nowCpu = 0, nowMem = 0;
+    clkrstGetClockRate(&g_cpuClock, &nowCpu);
+    clkrstGetClockRate(&g_memClock, &nowMem);
+    if (R_FAILED(rc1) || nowCpu < BoostCpuHz - 15000000u)
+    {
+        fprintf(stderr, "[switch] the processor speed cannot be set (0x%x); using the system's boost mode\n", (unsigned)rc1);
+        if (R_SUCCEEDED(rc2)) clkrstSetClockRate(&g_memClock, g_memNormal);
+        return false;
+    }
+    g_direct = true;
+    fprintf(stderr, "[switch] CPU boost on: processor %u MHz (was %u), memory %u MHz (was %u)\n", nowCpu / 1000000,
+        g_cpuNormal / 1000000, nowMem / 1000000, g_memNormal / 1000000);
+    return true;
 }
 
-// Boost mode is the system's to grant, and it takes it away for 10-20 seconds every minute
-// or so (measured: the processor at 1020 MHz in each slow spell, with the chip at 35C).
-// So the speed is checked twice a second: when it has dropped, boost mode is asked for
-// again, and if that does not bring it back, the processor is set to the boost speed
-// directly, as sys-clk does.
-static bool g_clockForced = false;
 void KeepBoost(uint32_t frame)
 {
-    static int lowChecks = 0, events = 0;
-    if (!g_boosted || frame % 30 != 0 || !OpenClocks()) return;
-    u32 mem = 0;
-    if (g_memNormal && R_SUCCEEDED(clkrstGetClockRate(&g_memClock, &mem)) && mem < 1590000000u)
-        clkrstSetClockRate(&g_memClock, 1600000000u);
-    u32 hz = 0;
-    if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &hz))) return;
-    if (hz >= 1700000000u)
-    {
-        lowChecks = 0;
-        return;
-    }
+    static int events = 0;
+    if (!g_boosted || frame % 12 != 0 || !OpenClocks()) return;
+    u32 cpu = 0, mem = 0;
+    if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &cpu)) || R_FAILED(clkrstGetClockRate(&g_memClock, &mem))) return;
+    const bool cpuLow = cpu < BoostCpuHz - 15000000u, memLow = g_direct && mem < BoostMemHz - 15000000u;
+    if (!cpuLow && !memLow) return;
     events++;
-    const bool say = events <= 10 || events % 50 == 0;
-    if (lowChecks++ == 0)
+    if (events <= 10 || events % 50 == 0)
+        fprintf(stderr, "[switch] the system lowered the %s to %u MHz (time %d); set back\n", cpuLow ? "processor" : "memory",
+            (cpuLow ? cpu : mem) / 1000000, events);
+    if (g_direct)
     {
-        appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
-        appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
-        if (say) fprintf(stderr, "[switch] processor dropped to %u MHz (time %d): boost mode asked for again\n", hz / 1000000, events);
+        if (cpuLow) clkrstSetClockRate(&g_cpuClock, BoostCpuHz);
+        if (memLow) clkrstSetClockRate(&g_memClock, BoostMemHz);
     }
     else
     {
-        const Result rc = clkrstSetClockRate(&g_cpuClock, 1785000000u);
-        if (R_SUCCEEDED(rc)) g_clockForced = true;
-        if (say) fprintf(stderr, "[switch] processor still at %u MHz: set to 1785 MHz directly (%s)\n", hz / 1000000,
-            R_SUCCEEDED(rc) ? "done" : "refused");
+        appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+        appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
     }
-}
-
-static void UnforceClock()
-{
-    // A speed set directly stays set: back to the normal one before boost mode ends.
-    if (g_clockForced) clkrstSetClockRate(&g_cpuClock, 1020000000u);
-    g_clockForced = false;
-    if (g_memNormal) clkrstSetClockRate(&g_memClock, g_memNormal);
-    g_memNormal = 0;
 }
 
 std::string Status()
