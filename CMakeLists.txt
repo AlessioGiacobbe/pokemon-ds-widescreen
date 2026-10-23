@@ -19,7 +19,10 @@ endif()
 # melonDS core is the hardware runtime; its own frontend, JIT and GL renderer are not used.
 set(BUILD_QT_SDL OFF CACHE BOOL "" FORCE)
 set(ENABLE_OGLRENDERER OFF CACHE BOOL "" FORCE)
-set(ENABLE_JIT OFF CACHE BOOL "" FORCE)
+# The JIT is only for games that are not recompiled (Pokemon Black 2: --jit); the recompiled
+# SoulSilver runs on its own code either way.
+option(SSR_JIT "Build melonDS's JIT in (for --jit)" OFF)
+set(ENABLE_JIT ${SSR_JIT} CACHE BOOL "" FORCE)
 set(ENABLE_GDBSTUB OFF CACHE BOOL "" FORCE)
 set(ENABLE_LTO_RELEASE OFF CACHE BOOL "" FORCE)
 add_subdirectory(melonDS EXCLUDE_FROM_ALL)

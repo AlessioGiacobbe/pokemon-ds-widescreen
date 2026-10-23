@@ -22,6 +22,7 @@
 #include "NDS.h"
 #include "DSi.h"
 #include "ARM.h"
+#include "SsrWatch.h"
 #include "ARMInterpreter.h"
 #include "AREngine.h"
 #include "ARMJIT.h"
@@ -31,6 +32,7 @@
 
 namespace melonDS
 {
+SsrWatchState SsrWatch;
 using Platform::Log;
 using Platform::LogLevel;
 
@@ -661,6 +663,11 @@ void ARMv5::Execute()
                 Log(LogLevel::Error, "ARMv5 PC in non executable region %08X\n", R[15]);
                 return;
             }
+
+            // ssrecomp: a block starting at a watched address (see SsrWatch.h). Checked before
+            // the lookup, as the first run of a block happens while it is compiled.
+            if (SsrWatch.Test(instrAddr))
+                SsrWatch.Hook(SsrWatch.User, instrAddr, CPSR & 0x20);
 
             JitBlockEntry block = NDS.JIT.LookUpBlock(0, FastBlockLookup,
                 instrAddr - FastBlockLookupStart, instrAddr);

@@ -17,6 +17,7 @@
 */
 
 #include "ARMJIT.h"
+#include "SsrWatch.h"
 #include "ARMJIT_Memory.h"
 #include <string.h>
 #include <assert.h>
@@ -777,8 +778,9 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
                         JIT_DEBUGPRINT("found %s idle loop %d in block %08x\n", thumb ? "thumb" : "arm", cpu->Num, blockAddr);
                     }
                 }
-                else if (hasBranched && !isBackJump && i + 1 < MaxBlockSize)
+                else if (hasBranched && !isBackJump && i + 1 < MaxBlockSize && !(cpu->Num == 0 && SsrWatch.Test(target)))
                 {
+                    // (ssrecomp: not into a watched address, which has to start a block of its own.)
                     if (link)
                     {
                         lr = linkAddr;
@@ -819,7 +821,9 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
         bool secondaryFlagReadCond = !canCompile || (instrs[i - 1].BranchFlags & (branch_FollowCondTaken | branch_FollowCondNotTaken));
         if (instrs[i - 1].Info.ReadFlags != 0 || secondaryFlagReadCond)
             FloodFillSetFlags(instrs, i - 2, !secondaryFlagReadCond ? instrs[i - 1].Info.ReadFlags : 0xF);
-    } while(!instrs[i - 1].Info.EndBlock && i < MaxBlockSize && !cpu->Halted && (!cpu->IRQ || (cpu->CPSR & 0x80)));
+    } while(!instrs[i - 1].Info.EndBlock && i < MaxBlockSize && !cpu->Halted && (!cpu->IRQ || (cpu->CPSR & 0x80))
+        // ssrecomp: a watched address starts a block of its own (SsrWatch.h).
+        && !(cpu->Num == 0 && SsrWatch.Test(nextInstrAddr[0])));
 
     if (numLiterals)
     {

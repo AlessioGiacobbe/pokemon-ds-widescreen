@@ -401,7 +401,8 @@ struct Options
     bool swapped = false;
     bool logSections = false;
     bool noWide = false;                 // turn the widescreen 3D renderer off
-    std::string funcs;                   // function table for a game that is not recompiled (tools/bw2/funcmap.py); needs --interp
+    std::string funcs;                   // function table for a game that is not recompiled (tools/bw2/funcmap.py); with --interp or --jit
+    bool jit = false;                    // melonDS's JIT (a game that is not recompiled, built with SSR_JIT)
     bool forceField = false;             // test aid: treat every frame as the overworld (for games other than SoulSilver)
     bool benchCompose = false;           // headless: compose the merged picture every frame, to time it
     bool autoFocus = true;
@@ -458,6 +459,10 @@ static void Usage()
         "                       the last two frames to funcs_<frame>.txt in the screenshot directory\n"
         "  --symbols <file>     function list for --trace-funcs (default gen/symbols.txt)\n"
         "  --interp             run the ARM9 on the interpreter instead of recompiled code\n"
+        "  --jit                run the ARM9 on melonDS's JIT (a game that is not recompiled;\n"
+        "                       built with -DSSR_JIT=ON)\n"
+        "  --funcs <file>       function table of a game that is not recompiled (Black 2:\n"
+        "                       tools/bw2/funcmap.py); its layouts follow the functions that run\n"
         "  --lockstep           run interpreter and recompiled code side by side and compare\n"
         "                       every ARM9 instruction (headless only)\n"
         "  --log <0-3>          core log level (0 = everything)\n");
@@ -495,6 +500,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--no-wide") o.noWide = true;
         else if (a == "--force-field") o.forceField = true;
         else if (a == "--funcs") o.funcs = next();
+        else if (a == "--jit") o.jit = true;
         else if (a == "--bench-compose") o.benchCompose = true;
         else if (a == "--no-auto-focus") o.autoFocus = false;
         else if (a == "--state-save") o.stateSave = next();
@@ -556,6 +562,8 @@ static void SetClock(NDS& nds, bool fixed)
     nds.RTC.SetDateTime(y, mo, d, h, mi, sec);
 }
 
+static bool UseJit = false;
+
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
     NDSCart::NDSCartArgs cartArgs;
@@ -572,7 +580,9 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
         return nullptr;
     }
     NDSArgs args;
-    args.JIT = std::nullopt;
+    // melonDS's JIT only for a game that is not recompiled (--jit, Black 2).
+    if (UseJit) args.JIT = JITArgs();
+    else args.JIT = std::nullopt;
     auto nds = std::make_unique<NDS>(std::move(args));
     nds->SetNDSCart(std::move(cart));
     nds->Reset();
@@ -1115,6 +1125,11 @@ int main(int argc, char** argv)
         Usage();
         return 2;
     }
+    if (opt.jit)
+    {
+        UseJit = true;
+        opt.recomp = false;
+    }
     if (opt.save.empty()) opt.save = opt.rom + ".sav";
 #ifdef __SWITCH__
     {
@@ -1161,7 +1176,7 @@ int main(int argc, char** argv)
     // on the interpreter instead of recompiled-code probes.
     static FuncWatch funcWatch;
     const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs);
-    if (funcWatchOn) funcWatch.Attach(*nds);
+    if (funcWatchOn && !opt.jit) funcWatch.Attach(*nds); // with --jit: after the layouts' functions are known
     if (!opt.traceFuncsAt.empty() && !funcWatchOn)
     {
         std::ifstream f(opt.symbols);
@@ -1488,20 +1503,27 @@ int main(int argc, char** argv)
     } bw2;
     if (funcWatchOn)
     {
-        bw2.field = funcWatch.Find("FieldmapProc_Update");     // the overworld, every frame
-        bw2.fieldMenu = funcWatch.Find("EventFieldMenu_Callback"); // the X menu over the overworld
-        bw2.bag = funcWatch.Find("ItemMenuProc_Main");         // the Bag
-        bw2.battle = funcWatch.Find("BtlMain_ProcMain");       // any battle
-        bw2.battleCommand = funcWatch.Find("BtlvCore_WaitCommandSelect"); // FIGHT / BAG / POKEMON / RUN
-        bw2.battleMove = funcWatch.Find("BtlvCore_WaitMoveSelect");       // the four moves
-        bw2.party = funcWatch.Find("PokeListProc_Main");       // the party
-        bw2.trainerCard = funcWatch.Find("TrainerCard_Main");
-        bw2.townMap = funcWatch.Find("TownMap_ProcMain");      // the town map and Fly
-        bw2.options = funcWatch.Find("ConfigPanel_Main");      // Options
-        bw2.summary = funcWatch.Find("PStatus_ProcMain");      // a Pokemon's summary
-        bw2.dexList = funcWatch.Find("ZknListSeq_Main");       // the Pokedex list
-        bw2.dexEntry = funcWatch.Find("ZukanDetail_Main");     // a Pokedex entry
-        bw2.box = funcWatch.Find("Box2Proc_Main");             // the PC's boxes
+        std::vector<std::string> bw2Names;
+        auto bw2Find = [&](const char* name) {
+            bw2Names.push_back(name);
+            return funcWatch.Find(name);
+        };
+        bw2.field = bw2Find("FieldmapProc_Update");     // the overworld, every frame
+        bw2.fieldMenu = bw2Find("EventFieldMenu_Callback"); // the X menu over the overworld
+        bw2.bag = bw2Find("ItemMenuProc_Main");         // the Bag
+        bw2.battle = bw2Find("BtlMain_ProcMain");       // any battle
+        bw2.battleCommand = bw2Find("BtlvCore_WaitCommandSelect"); // FIGHT / BAG / POKEMON / RUN
+        bw2.battleMove = bw2Find("BtlvCore_WaitMoveSelect");       // the four moves
+        bw2.party = bw2Find("PokeListProc_Main");       // the party
+        bw2.trainerCard = bw2Find("TrainerCard_Main");
+        bw2.townMap = bw2Find("TownMap_ProcMain");      // the town map and Fly
+        bw2.options = bw2Find("ConfigPanel_Main");      // Options
+        bw2.summary = bw2Find("PStatus_ProcMain");      // a Pokemon's summary
+        bw2.dexList = bw2Find("ZknListSeq_Main");       // the Pokedex list
+        bw2.dexEntry = bw2Find("ZukanDetail_Main");     // a Pokedex entry
+        bw2.box = bw2Find("Box2Proc_Main");             // the PC's boxes
+        // With the JIT, only these become block boundaries (all functions for --trace-funcs).
+        if (opt.jit) funcWatch.AttachJit(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
     }
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
@@ -3825,6 +3847,9 @@ int main(int argc, char** argv)
     Sampler::Stop();
     // The 3D render thread must be finished before anything it draws from is torn down.
     static_cast<melonDS::SoftRenderer&>(nds->GPU.GetRenderer3D()).SetThreaded(false, nds->GPU);
+    // The widescreen picture may still be being drawn in the background: its threads read
+    // data that is destroyed when the program ends (this crashed on exit now and then).
+    melonDS::WideWait();
     melonDS::Wide.Owner = nullptr;
     if (!opt.headless)
     {

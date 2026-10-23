@@ -28,4 +28,8 @@ struct WideState
     u64 FrontSerial = 0;      // changes whenever Front does
 };
 extern WideState Wide;
+
+// Blocks until the widescreen picture being drawn in the background is finished (the frontend
+// calls it before shutting down).
+void WideWait();
 }

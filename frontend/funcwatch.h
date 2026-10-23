@@ -17,6 +17,7 @@
 
 #include "ARM.h"
 #include "NDS.h"
+#include "SsrWatch.h"
 
 class FuncWatch
 {
@@ -75,6 +76,38 @@ public:
         nds.ARM9.TraceUser = this;
     }
 
+    // With the JIT: the functions named are noticed when a block starts at them (SsrWatch.h).
+    // Only those become block boundaries, so the JIT keeps its optimisations elsewhere; with no
+    // names, every function in the table is watched (for --trace-funcs).
+    void AttachJit(melonDS::NDS& nds, const std::vector<std::string>& names)
+    {
+        Nds = &nds;
+        const std::vector<uint8_t>* bitmap = &Bitmap;
+        if (!names.empty())
+        {
+            JitBitmap.assign(Bitmap.size(), 0);
+            size_t n = 0;
+            for (const std::string& name : names)
+            {
+                auto range = ByName.equal_range(name);
+                for (auto it = range.first; it != range.second; ++it, ++n)
+                {
+                    const uint32_t bit = (Funcs[it->second].addr - Base) >> 1;
+                    JitBitmap[bit >> 3] |= 1 << (bit & 7);
+                }
+            }
+            bitmap = &JitBitmap;
+            fprintf(stderr, "[funcwatch] JIT: watching %zu functions\n", n);
+        }
+        else
+            fprintf(stderr, "[funcwatch] JIT: watching all %zu functions\n", Funcs.size());
+        melonDS::SsrWatch.Bitmap = bitmap->data();
+        melonDS::SsrWatch.Base = Base;
+        melonDS::SsrWatch.End = End;
+        melonDS::SsrWatch.Hook = &FuncWatch::JitHook;
+        melonDS::SsrWatch.User = this;
+    }
+
     void NextFrame() { Frame++; }
     uint32_t CurrentFrame() const { return Frame; }
 
@@ -115,6 +148,8 @@ private:
         self->Hit(next, thumb);
     }
 
+    static void JitHook(void* user, uint32_t addr, bool thumb) { static_cast<FuncWatch*>(user)->Hit(addr, thumb); }
+
     void Hit(uint32_t addr, bool thumb)
     {
         auto it = ByAddr.find(addr);
@@ -136,7 +171,7 @@ private:
 
     std::vector<Func> Funcs;
     std::vector<uint32_t> Last;
-    std::vector<uint8_t> Bitmap;
+    std::vector<uint8_t> Bitmap, JitBitmap;
     std::unordered_map<uint32_t, std::vector<int>> ByAddr;
     std::unordered_multimap<std::string, int> ByName;
     melonDS::NDS* Nds = nullptr;
