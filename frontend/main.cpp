@@ -48,6 +48,7 @@
 #include "layout.h"
 #include "ui.h"
 #include "merged.h"
+#include "audiostretch.h"
 #include "gpucompose.h"
 #include "battlewide.h"
 #include "recomp_rt.h"
@@ -2639,6 +2640,11 @@ int main(int argc, char** argv)
 
     std::vector<uint32_t> shot;
     std::vector<int16_t> audioBuf(48000 * 2);
+    // Sound stretching for when the emulation runs slow (audiostretch.h).
+    AudioStretch audioStretch;
+    std::vector<int16_t> audioOut;
+    uint64_t audioTick = 0;
+    double audioSlow = 1.0;
     bool running = true;
     bool mouseDown = false;
     int mouseX = 0, mouseY = 0;
@@ -3573,9 +3579,24 @@ int main(int argc, char** argv)
 
         if (audio && got > 0)
         {
+            // How much longer than a DS frame the frames are taking (smoothed): above full
+            // speed's 1 the sound is stretched to match (see AudioStretch), steered towards
+            // 50 ms of sound waiting in the queue.
+            const int queued = (int)SDL_GetQueuedAudioSize(audio) / 4;
+            const uint64_t t = SDL_GetPerformanceCounter();
+            if (audioTick)
+            {
+                const double dt = (double)(t - audioTick) / perfFreq;
+                if (dt < 0.25) audioSlow += (std::min(dt / frameTime, 4.0) - audioSlow) * 0.1;
+            }
+            audioTick = t;
+            double slowdown = speed == 1 ? audioSlow : 1.0;
+            if (audioStretch.Stretching() && speed == 1) slowdown *= 1.0 + 0.3 * (2400 - queued) / 2400.0;
+            audioOut.clear();
+            audioStretch.Process(audioBuf.data(), got, slowdown, audioOut);
             // Drop audio rather than let latency grow if the queue backs up.
-            if (SDL_GetQueuedAudioSize(audio) < 48000 * 4 / 4)
-                SDL_QueueAudio(audio, audioBuf.data(), got * 4);
+            if (queued < 48000 / 4 && !audioOut.empty())
+                SDL_QueueAudio(audio, audioOut.data(), (Uint32)(audioOut.size() * 2));
         }
         if (opt.audioStats && got > 0)
         {

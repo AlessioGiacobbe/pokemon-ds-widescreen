@@ -9,6 +9,9 @@
   60 FPS starts off. The buttons follow the Switch's own labels (A is the right
   button). Quitting saves and closes cleanly (each step is written to `game.log`).
 
+- When the game runs slower than a DS (a slow device), the sound is stretched to fill the
+  time, at its own pitch, instead of breaking up into crackles. At full speed it plays
+  exactly as before.
 - Fixed: a zoomed or rotated background could drift and smear into streaks when parts
   of it stayed the same from one frame to the next.
 - The setup program for macOS can now check for updates and update itself from
