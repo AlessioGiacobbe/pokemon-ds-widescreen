@@ -32,6 +32,8 @@ public:
 
         if (useWide) DrawWide(scene, screens, outW, outH, v, smooth, *wide);
         else if (scene.edgeFill && !scene.items.empty() && scene.items[0].screen >= 0) DrawEdgeFill(screens[scene.items[0].screen], outW, v);
+        else if (scene.wide && scene.narrow && !scene.items.empty() && scene.items[0].screen >= 0 && v.originX > 0)
+            DrawNarrowBars(screens[scene.items[0].screen], outW, outH, v);
 
         int slot = 0;
         bool first = true;
@@ -194,18 +196,29 @@ private:
                 SDL_BLENDFACTOR_ZERO, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
         for (int side = 0; side < 2; side++)
         {
+            // A 16-pixel-wide texture per side, repeated outwards from the screen's edge: a
+            // row that goes on as a pattern has its 16 edge pixels in it, any other row its
+            // one colour 16 times.
             bool any = false;
             for (int y = 0; y < 192; y++)
             {
                 const EdgeContinuation c = MergedEdgeContinuation(scene, top, y, side);
                 any |= !c.none();
+                uint32_t* row = &Edge[y * 16];
+                if (c.pattern)
+                {
+                    for (int k = 0; k < 16; k++)
+                        row[k] = (EdgeCustomFailed ? 0xFF000000u : 0u) | (top.pixels[y * 256 + (side ? 240 : 0) + k] & 0xFFFFFF);
+                    continue;
+                }
                 uint32_t r = (c.rgb >> 16) & 0xFF, g = (c.rgb >> 8) & 0xFF, b = c.rgb & 0xFF;
+                uint32_t px;
                 if (!EdgeCustomFailed)
                 {
                     r = std::min(255u, r * c.eva / 16);
                     g = std::min(255u, g * c.eva / 16);
                     b = std::min(255u, b * c.eva / 16);
-                    Edge[y] = (uint32_t)std::min(255, c.evb * 255 / 16) << 24 | r << 16 | g << 8 | b;
+                    px = (uint32_t)std::min(255, c.evb * 255 / 16) << 24 | r << 16 | g << 8 | b;
                 }
                 else
                 {
@@ -217,13 +230,14 @@ private:
                         g = std::min(255u, g * c.eva / a);
                         b = std::min(255u, b * c.eva / a);
                     }
-                    Edge[y] = (uint32_t)(a * 255 / 16) << 24 | r << 16 | g << 8 | b;
+                    px = (uint32_t)(a * 255 / 16) << 24 | r << 16 | g << 8 | b;
                 }
+                std::fill(row, row + 16, px);
             }
             if (!any) continue;
-            SDL_Rect dst = side == 0 ? SDL_Rect { 0, y0, left, h } : SDL_Rect { right, y0, outW - right, h };
-            if (dst.w <= 0) continue;
-            SDL_Texture* e = Make(EdgeTex[side], 1, 192);
+            const float barW = side == 0 ? (float)left : (float)(outW - right);
+            if (barW <= 0) continue;
+            SDL_Texture* e = Make(EdgeTex[side], 16, 192);
             if (!e) continue;
             if (EdgeCustomFailed || SDL_SetTextureBlendMode(e, EdgeMode) != 0)
             {
@@ -236,8 +250,40 @@ private:
                 SDL_SetTextureBlendMode(e, SDL_BLENDMODE_BLEND);
             }
             SDL_SetTextureScaleMode(e, SDL_ScaleModeNearest);
-            SDL_UpdateTexture(e, nullptr, Edge, 4);
-            SDL_RenderCopy(R, e, nullptr, &dst);
+            SDL_UpdateTexture(e, nullptr, Edge, 16 * 4);
+            // Copies 16 base pixels wide, outwards from the screen's edge (the last one cut at
+            // the edge of the view).
+            const float tw = 16 * v.unit;
+            for (int k = 0; k * tw < barW; k++)
+            {
+                const float x = side == 0 ? v.originX - (k + 1) * tw : v.originX + 256 * v.unit + k * tw;
+                const float x0 = std::max(x, 0.0f), x1 = std::min(x + tw, (float)outW);
+                if (x1 <= x0) continue;
+                const SDL_Rect src = { (int)std::lround((x0 - x) / v.unit), 0,
+                    std::max(1, (int)std::lround((x1 - x0) / v.unit)), 192 };
+                const SDL_FRect dst = { x0, (float)y0, x1 - x0, (float)h };
+                SDL_RenderCopyF(R, e, &src, &dst);
+            }
+        }
+        (void)outH;
+    }
+
+    // The bars beside a 4:3 picture on a wide view (MergedNarrowBars): a colour per row.
+    void DrawNarrowBars(const ScreenImage& top, int outW, int outH, const MergedView& v)
+    {
+        uint32_t bars[2][192];
+        MergedNarrowBars(top, bars[0], bars[1]);
+        const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
+        const float y0 = v.originY, h = 192 * v.unit;
+        for (int side = 0; side < 2; side++)
+        {
+            SDL_Texture* t = Make(NarrowTex[side], 1, 192);
+            if (!t) continue;
+            SDL_SetTextureBlendMode(t, SDL_BLENDMODE_NONE);
+            SDL_SetTextureScaleMode(t, SDL_ScaleModeNearest);
+            SDL_UpdateTexture(t, nullptr, bars[side], 4);
+            const SDL_FRect dst = side == 0 ? SDL_FRect { 0, y0, (float)left, h } : SDL_FRect { (float)right, y0, (float)(outW - right), h };
+            if (dst.w > 0) SDL_RenderCopyF(R, t, nullptr, &dst);
         }
         (void)outH;
     }
@@ -275,11 +321,11 @@ private:
     SDL_Renderer* R;
     SDL_BlendMode Premultiplied;
     std::vector<Tex> Slots;
-    Tex WideTex, EdgeTex[2], FillTex[2];
+    Tex WideTex, EdgeTex[2], FillTex[2], NarrowTex[2];
     uint32_t Fill[16 * 192];
     std::vector<SDL_Rect> Spans;
     std::vector<uint32_t> Buf;
-    uint32_t Edge[192];
+    uint32_t Edge[16 * 192];
     SDL_BlendMode EdgeMode = SDL_BLENDMODE_INVALID;
     bool EdgeCustomFailed = false;
 };

@@ -566,6 +566,7 @@ static void SetClock(NDS& nds, bool fixed)
 }
 
 static bool UseJit = false;
+static int WideLinesNow = 0; // the widescreen 3D's height this frame (see where it is set)
 static bool UseFastMem = false; // the JIT's fast memory came on (MakeConsole)
 // The pause menu's EMULATION row: on the Switch, in builds with melonDS's JIT (Black 2).
 #if defined(__SWITCH__) && defined(JIT_ENABLED)
@@ -1546,8 +1547,9 @@ int main(int argc, char** argv)
         int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
-    int cgearStep = 0, cgearKey = 0;
-    uint32_t cgearSince = 0, cgearHoldUntil = 0;
+    int cgearStep = 0;
+    bool cgearAsked = false;  // its YES / NO was up in the last frame
+    bool cgearHidden = false; // the question is being answered unseen this frame
     if (funcWatchOn)
     {
         std::vector<std::string> bw2Names;
@@ -1612,6 +1614,14 @@ int main(int argc, char** argv)
         };
         // The edges of the view the bottom screen fills when it stands against the right edge.
         const float viewLeft = 128 - viewWidth / 2, viewRight = 128 + viewWidth / 2;
+        if (cgearHidden)
+        {
+            // CONTINUE, while the C-Gear's question is answered unseen (see where keys are
+            // sent to the game): black, as the fade out of the start menu ends.
+            sc.name = "continue";
+            sc.items = { FillRect(viewLeft - 1, 0, (int)viewWidth + 3, 192, 0x000000) };
+            return sc;
+        }
         if (focus.manualFlip)
             // The player asked for the other screen (right stick click, F1): an escape hatch
             // for whatever a layout leaves out.
@@ -3067,7 +3077,7 @@ int main(int argc, char** argv)
                 SsrThreadStats& ts = SsrStats();
                 const double w3d = ts.Wait3DNs.exchange(0) / 1e6 / perfN, wwide = ts.WaitWideNs.exchange(0) / 1e6 / perfN;
                 char extra[200];
-                snprintf(extra, sizeof(extra), "; waited for 3D %.2f wide %.2f ms", w3d, wwide);
+                snprintf(extra, sizeof(extra), "; waited for 3D %.2f wide %.2f ms (wide lines %d)", w3d, wwide, WideLinesNow);
                 std::string tail = extra;
 #ifdef __SWITCH__
                 snprintf(extra, sizeof(extra), "; 3D thread on cores 1/2 %u/%u, wide %u/%u", ts.RenderCore[1].exchange(0),
@@ -3577,11 +3587,43 @@ int main(int argc, char** argv)
         {
             int ww = opt.headless && opt.composeW ? opt.composeW : outW, wh = opt.headless && opt.composeH ? opt.composeH : outH;
             // Drawing it costs time in proportion to its size; cfg.wideLines caps its height
-            // and the result is enlarged to the picture.
-            if (wh > cfg.wideLines)
+            // and the result is enlarged to the picture. Where it cannot keep up (the
+            // emulation waited for it more than 1.5 ms in each of the last 3 frames: a move's
+            // animation full of see-through effects), fewer lines for a while, down to 192, a
+            // fifth fewer each time; back up a tenth at a time after 2 seconds without waiting.
+            // (Not in the tests without a window, whose pictures must not depend on timing.)
+            static int adaptLines = 0, slowFrames = 0, calmFrames = 0;
+            static uint64_t lastWideNs = 0;
+            if (!adaptLines || adaptLines > cfg.wideLines) adaptLines = cfg.wideLines;
+            if (!opt.headless)
             {
-                ww = ww * cfg.wideLines / wh;
-                wh = cfg.wideLines;
+                const uint64_t ns = SsrStats().WaitWideNs.load();
+                const uint64_t waited = ns >= lastWideNs ? ns - lastWideNs : ns; // (the timing lines reset it)
+                lastWideNs = ns;
+                if (waited > 1500000)
+                {
+                    calmFrames = 0;
+                    if (++slowFrames >= 3 && adaptLines > 192)
+                    {
+                        adaptLines = std::max(192, adaptLines * 4 / 5);
+                        slowFrames = 0;
+                    }
+                }
+                else
+                {
+                    slowFrames = 0;
+                    if (waited < 300000 && ++calmFrames >= 120 && adaptLines < cfg.wideLines)
+                    {
+                        adaptLines = std::min(cfg.wideLines, adaptLines + std::max(8, cfg.wideLines / 10));
+                        calmFrames = 0;
+                    }
+                }
+            }
+            WideLinesNow = std::min(adaptLines, cfg.wideLines);
+            if (wh > WideLinesNow)
+            {
+                ww = ww * WideLinesNow / wh;
+                wh = WideLinesNow;
             }
             // Black 2: the renderer keeps going for 5 seconds after a wide layout and through a
             // whole battle (its party and Bag pages are not wide), so that coming back to the
@@ -3783,37 +3825,42 @@ int main(int argc, char** argv)
         int got = 0;
         if (!paused)
         {
-            // Black 2 asks on every start whether to launch the C-Gear's wireless
-            // communications, which nothing here can take part in. With cgear_start=off in the
-            // settings (the default) it is answered for the player: NO, then YES to "some
-            // functions of the C-Gear will be restricted. Is that OK?", each once its question
-            // has been up for a moment. Back at the start menu later (a reset), it is answered
-            // again.
+            // Black 2 asks after CONTINUE whether to launch the C-Gear's wireless
+            // communications (if the C-Gear was on when the game was saved), which nothing here
+            // can take part in. With cgear_start=off in the settings (the default) the question
+            // is never seen: while the start menu's CONTINUE runs, the view is black and the
+            // sound silent, the player's buttons are kept from it, and it is answered as fast
+            // as the game takes it: NO, then YES to "some functions of the C-Gear will be
+            // restricted. Is that OK?". The answer's button is tapped every other two frames: held,
+            // it hurries the message along; each tap goes on past a pause or answers the
+            // question once it is up. Back at the start menu later (a reset), the same again.
+            cgearHidden = false;
             if (funcWatchOn && cfg.cgearOff)
             {
                 if (!funcWatch.Ran(bw2.startContinue, 600))
                 {
                     cgearStep = 0;
-                    cgearSince = 0;
+                    cgearAsked = false;
                 }
-                const bool asking = funcWatch.Ran(bw2.startContinue, 1) && funcWatch.Ran(bw2.confirmDialog, 1);
-                // The player answering a question themselves leaves the rest to them.
-                if (asking && frame >= cgearHoldUntil && (keys & ((1u << KEY_A) | (1u << KEY_B)))) cgearStep = 2;
-                if (frame < cgearHoldUntil)
-                    keys |= 1u << cgearKey; // a press lasts a few frames, while the question closes
-                else if (cgearStep < 2)
+                // (Black also for a moment after: CONTINUE does not run in every frame of it,
+                // and the start menu fades out behind it.)
+                if (funcWatch.Ran(bw2.startContinue, 30))
                 {
-                    if (!asking) cgearSince = 0;
-                    else if (!cgearSince) cgearSince = frame;
-                    else if (frame - cgearSince >= 45)
+                    cgearHidden = true;
+                    keys &= ~((1u << KEY_A) | (1u << KEY_B) | (1u << KEY_UP) | (1u << KEY_DOWN) | (1u << KEY_LEFT) |
+                        (1u << KEY_RIGHT) | (1u << KEY_START) | (1u << KEY_SELECT));
+                }
+                if (funcWatch.Ran(bw2.startContinue, 1))
+                {
+                    const bool asking = funcWatch.Ran(bw2.confirmDialog, 1);
+                    if (cgearAsked && !asking && cgearStep < 2)
                     {
-                        cgearKey = cgearStep == 0 ? KEY_B : KEY_A;
-                        cgearHoldUntil = frame + 4;
-                        keys |= 1u << cgearKey;
-                        fprintf(stderr, "[bw2] C-Gear question answered: %s\n", cgearStep == 0 ? "no" : "yes, restricted is OK");
+                        // (The question has gone: answered.)
+                        fprintf(stderr, "[bw2] frame %u: C-Gear question answered: %s\n", frame, cgearStep == 0 ? "no" : "yes, restricted is OK");
                         cgearStep++;
-                        cgearSince = 0;
                     }
+                    cgearAsked = asking;
+                    if (cgearStep < 2 && (frame & 3) < 2) keys |= 1u << (cgearStep == 0 ? KEY_B : KEY_A);
                 }
             }
             nds->SetKeyMask(~keys & 0xFFF);
@@ -3836,6 +3883,8 @@ int main(int argc, char** argv)
                 if (pipelined) perfEmu += emuMs;
             }
             got = emuGot;
+            // (Silent while the C-Gear's question is answered unseen.)
+            if (cgearHidden && got > 0) std::fill(audioBuf.begin(), audioBuf.begin() + (size_t)got * 2, (int16_t)0);
         }
         else if (pendingJob.valid)
         {

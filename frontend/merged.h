@@ -202,12 +202,22 @@ inline MergedView MergedMakeView(int outW, int outH)
 
 // What continues the top screen's row sy beside it in a wide view (side 0 left, 1 right):
 // rgb * eva / 16 + the wide world * evb / 16 (eva 0, evb 16: nothing, the world shows).
+// pattern: instead, the row's 16 pixels at that edge repeated outwards, as they are.
 struct EdgeContinuation
 {
     uint32_t rgb;
     int eva, evb;
-    bool none() const { return eva == 0 && evb == 16; }
+    bool pattern = false;
+    bool none() const { return eva == 0 && evb == 16 && !pattern; }
 };
+
+// The screen pixel that continues row sy at base x (left of 0 or right of 255) when the row
+// continues as a pattern: the 16 pixels at that edge, repeated.
+inline uint32_t MergedEdgePatternPixel(const ScreenImage& top, int sy, int x)
+{
+    const int m = x < 0 ? ((x % 16) + 16) % 16 : 240 + (x - 256) % 16;
+    return top.pixels[sy * 256 + m] & 0xFFFFFF;
+}
 
 inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenImage& top, int sy, int side)
 {
@@ -220,9 +230,25 @@ inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenI
     if (cls == LAYER_3D || (cls & scene.items[0].drop)) return none;
     const EdgeContinuation finished = { top.pixels[sy * 256 + sx] & 0xFFFFFF, 16, 0 };
     if (!scene.smartEdges || !top.edge || !top.edgeBlend || !top.edgeFlat) return finished;
-    if (!(top.edgeFlat[sy * 2 + side] & 1)) return none;
     const uint16_t blend = top.edgeBlend[sy * 2 + side];
     const int eva = blend & 0xFF, evb = blend >> 8;
+    if (!(top.edgeFlat[sy * 2 + side] & 1))
+    {
+        // Not one colour at the edge. A band of one background, not mixed with the world,
+        // across the 16 pixels at the edge (the dotted banners with a place's name and the
+        // season) goes on as its pattern; anything else (a sprite, a picture) leaves the
+        // world showing.
+        const uint8_t flag = top.flags[sy * 256 + sx];
+        if (evb != 0 || (top.edgeFlat[sy * 2 + side] & 2) || !(cls & 0x0F)) return none;
+        for (int k = 0; k < 16; k++)
+        {
+            const int x = side ? 255 - k : k;
+            if (top.flags[sy * 256 + x] != flag || scene.items[0].Skips(x, sy)) return none;
+        }
+        EdgeContinuation p = finished;
+        p.pattern = true;
+        return p;
+    }
     // Not mixed with the 3D world: as the screen shows it (with any fade or brightening).
     if (evb == 0) return finished;
     return { top.edge[sy * 2 + side] & 0xFFFFFF, eva, evb };
@@ -406,6 +432,44 @@ inline bool MergedKeyed(const Element& el, uint32_t rgb)
 // With `smooth` off every piece is drawn with nearest-pixel sampling (hard edges, and fast);
 // with it on, pieces that are not marked crisp are filtered. The rows of the picture are
 // shared out between a few threads.
+// A picture shown 4:3 on a wide view (Scene::narrow, in the middle of the world: a battle's
+// opening with a snapshot of the screen, a flash, a cut-in): the bars beside it go on in soft
+// colours from the picture's edges, each row the average of the 8 pixels at that edge over
+// the 17 rows around it, rather than black, so that the view does not seem to shrink.
+inline void MergedNarrowBars(const ScreenImage& s, uint32_t left[192], uint32_t right[192])
+{
+    for (int side = 0; side < 2; side++)
+    {
+        uint32_t rowSum[192][3];
+        for (int y = 0; y < 192; y++)
+        {
+            uint32_t r = 0, g = 0, b = 0;
+            for (int k = 0; k < 8; k++)
+            {
+                const uint32_t c = s.pixels[y * 256 + (side ? 255 - k : k)];
+                r += (c >> 16) & 0xFF;
+                g += (c >> 8) & 0xFF;
+                b += c & 0xFF;
+            }
+            rowSum[y][0] = r;
+            rowSum[y][1] = g;
+            rowSum[y][2] = b;
+        }
+        uint32_t* out = side ? right : left;
+        for (int y = 0; y < 192; y++)
+        {
+            uint32_t r = 0, g = 0, b = 0, n = 0;
+            for (int k = std::max(0, y - 8); k <= std::min(191, y + 8); k++, n += 8)
+            {
+                r += rowSum[k][0];
+                g += rowSum[k][1];
+                b += rowSum[k][2];
+            }
+            out[y] = 0xFF000000 | (r / n) << 16 | (g / n) << 8 | (b / n);
+        }
+    }
+}
+
 inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int outW, int outH, std::vector<uint32_t>& out,
     bool smooth = false, const WideImage* wide = nullptr)
 {
@@ -472,11 +536,23 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
         pieces.push_back(std::move(p));
     }
 
+    uint32_t narrowBar[2][192];
+    const bool narrowBars = scene.wide && scene.narrow && !scene.items.empty() && scene.items[0].screen >= 0 && v.originX > 0;
+    if (narrowBars) MergedNarrowBars(screens[scene.items[0].screen], narrowBar[0], narrowBar[1]);
+
     auto rows = [&](int ya, int yb) {
         // Background: one colour, or the widescreen 3D picture with the game's fade applied.
         if (!useWide)
         {
             std::fill(out.begin() + (size_t)ya * outW, out.begin() + (size_t)yb * outW, bg);
+            if (narrowBars)
+                for (int y = ya; y < yb; y++)
+                {
+                    const int sy = std::clamp((int)((y - v.originY) / v.unit), 0, 191);
+                    uint32_t* dst = &out[(size_t)y * outW];
+                    std::fill(dst, dst + std::min((int)v.originX, outW), narrowBar[0][sy]);
+                    std::fill(dst + std::max((int)(v.originX + 256 * v.unit), 0), dst + outW, narrowBar[1][sy]);
+                }
             const ScreenImage& top = screens[scene.items.empty() || scene.items[0].screen < 0 ? 0 : scene.items[0].screen];
             const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
             if (scene.edgeFill && left > 0)
@@ -566,6 +642,15 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                             const EdgeContinuation c = MergedEdgeContinuation(scene, top, sy, side);
                             if (c.none()) continue;
                             const int xa = side ? std::max(right, 0) : 0, xb = side ? outW : std::min(left, outW);
+                            if (c.pattern)
+                            {
+                                for (int x = xa; x < xb; x++)
+                                {
+                                    const int bx = (int)std::floor((x - v.originX) / v.unit);
+                                    dst[x] = 0xFF000000 | MergedEdgePatternPixel(top, sy, side ? std::max(bx, 256) : std::min(bx, -1));
+                                }
+                                continue;
+                            }
                             if (c.evb == 0 && c.eva == 16)
                             {
                                 if (xa < xb) std::fill(dst + xa, dst + xb, 0xFF000000 | c.rgb);
