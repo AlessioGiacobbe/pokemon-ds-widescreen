@@ -1176,7 +1176,7 @@ int main(int argc, char** argv)
     // on the interpreter instead of recompiled-code probes.
     static FuncWatch funcWatch;
     const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs);
-    if (funcWatchOn && !opt.jit) funcWatch.Attach(*nds); // with --jit: after the layouts' functions are known
+    // (Attached once the layouts' functions are known, below.)
     if (!opt.traceFuncsAt.empty() && !funcWatchOn)
     {
         std::ifstream f(opt.symbols);
@@ -1522,10 +1522,12 @@ int main(int argc, char** argv)
         bw2.dexList = bw2Find("ZknListSeq_Main");       // the Pokedex list
         bw2.dexEntry = bw2Find("ZukanDetail_Main");     // a Pokedex entry
         bw2.box = bw2Find("Box2Proc_Main");             // the PC's boxes
-        // With the JIT, only these become block boundaries (all functions for --trace-funcs).
-        if (opt.jit) funcWatch.AttachJit(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
+        // Only these are watched (all functions for --trace-funcs).
+        funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
     }
+    Scene lastKnownBw2;
+    uint32_t lastKnownBw2Frame = 0;
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
         Scene sc;
         auto only = [&](const char* name, int screen) {
@@ -1566,7 +1568,7 @@ int main(int argc, char** argv)
             else if (funcWatch.Ran(bw2.battleCommand, 1))
                 cornerPanel(Crop(1, 0, 78, 256, 114), 0.44f); // FIGHT above BAG, RUN and POKEMON (50 high)
         }
-        else if (funcWatch.Ran(bw2.fieldMenu, 2))
+        else if (funcWatch.Ran(bw2.fieldMenu, 8)) // (it skips a few frames while the menu opens)
         {
             // The menu's buttons in one column at the right edge, mostly beside the overworld.
             only("start-menu", 0);
@@ -1657,8 +1659,19 @@ int main(int argc, char** argv)
         else if (funcWatch.Ran(bw2.trainerCard, 2))
             only("trainer-card", 1);  // likewise
         else
+        {
+            // Nothing recognised. Mostly a moment between screens (a fade, a button pressed in
+            // battle) in which none of the watched functions runs: the last layout stays for
+            // up to 45 frames. After that this is a screen without a layout of its own, and
+            // both screens are shown side by side, so nothing is hidden.
+            if (lastKnownBw2Frame && funcWatch.CurrentFrame() - lastKnownBw2Frame <= 45)
+                return lastKnownBw2;
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
-        (void)screens;
+            (void)screens;
+            return sc;
+        }
+        lastKnownBw2 = sc;
+        lastKnownBw2Frame = funcWatch.CurrentFrame();
         return sc;
     };
 

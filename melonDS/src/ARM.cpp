@@ -358,6 +358,11 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
         return;
     }
 
+    // ssrecomp: a jump into a watched function (SsrWatch.h). Every change of the PC in the
+    // interpreter comes through here, calls included, so this is all it takes there.
+    if (SsrWatch.Test(addr))
+        SsrWatch.Hook(SsrWatch.User, addr, CPSR & 0x20);
+
     NDS.MonitorARM9Jump(addr);
 }
 

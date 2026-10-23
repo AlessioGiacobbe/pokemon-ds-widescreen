@@ -1,7 +1,8 @@
 // Which of a game's functions ran recently, for games that are not recompiled (Pokemon Black 2,
 // from the pokebw2 decompilation's function map; see tools/bw2/funcmap.py). It plays the part
-// ssrecomp's recompiler probes play for SoulSilver, but on melonDS's interpreter: a hook after
-// every ARM9 instruction looks at the address of the next one in a bitmap of function starts.
+// ssrecomp's recompiler probes play for SoulSilver, on melonDS's interpreter or its JIT: the
+// core reports jumps into (interpreter) and blocks starting at (JIT) addresses marked in a
+// bitmap of function starts (melonDS/src/SsrWatch.h).
 //
 // Many overlays are loaded at the same addresses, so a function in an overlay counts as entered
 // only when the first bytes in memory are its own.
@@ -68,18 +69,10 @@ public:
         return !Funcs.empty();
     }
 
-    // Interpreter only: the hook runs after every interpreted ARM9 instruction.
-    void Attach(melonDS::NDS& nds)
-    {
-        Nds = &nds;
-        nds.ARM9.TraceHook = &FuncWatch::Hook;
-        nds.ARM9.TraceUser = this;
-    }
-
-    // With the JIT: the functions named are noticed when a block starts at them (SsrWatch.h).
-    // Only those become block boundaries, so the JIT keeps its optimisations elsewhere; with no
-    // names, every function in the table is watched (for --trace-funcs).
-    void AttachJit(melonDS::NDS& nds, const std::vector<std::string>& names)
+    // Watches the functions named; with no names, every function in the table (for
+    // --trace-funcs, which costs more). With the JIT only these become block boundaries, so it
+    // keeps its optimisations elsewhere.
+    void Attach(melonDS::NDS& nds, const std::vector<std::string>& names)
     {
         Nds = &nds;
         const std::vector<uint8_t>* bitmap = &Bitmap;
@@ -97,10 +90,10 @@ public:
                 }
             }
             bitmap = &JitBitmap;
-            fprintf(stderr, "[funcwatch] JIT: watching %zu functions\n", n);
+            fprintf(stderr, "[funcwatch] watching %zu functions\n", n);
         }
         else
-            fprintf(stderr, "[funcwatch] JIT: watching all %zu functions\n", Funcs.size());
+            fprintf(stderr, "[funcwatch] watching all %zu functions\n", Funcs.size());
         melonDS::SsrWatch.Bitmap = bitmap->data();
         melonDS::SsrWatch.Base = Base;
         melonDS::SsrWatch.End = End;
@@ -134,19 +127,6 @@ public:
 private:
     // Main RAM and the ITCM below it, where the game's code runs.
     static constexpr uint32_t Base = 0x01FF8000, End = 0x02400000;
-
-    static void Hook(melonDS::ARMv5* cpu, void* user)
-    {
-        FuncWatch* self = static_cast<FuncWatch*>(user);
-        const bool thumb = cpu->CPSR & 0x20;
-        // The interpreter has already moved R15 past the instruction that ran; the next one to
-        // run is here (the same rule melonDS's JIT uses).
-        const uint32_t next = cpu->R[15] - (thumb ? 2 : 4);
-        if (next - Base >= End - Base) return;
-        const uint32_t bit = (next - Base) >> 1;
-        if (!(self->Bitmap[bit >> 3] & (1 << (bit & 7)))) return;
-        self->Hit(next, thumb);
-    }
 
     static void JitHook(void* user, uint32_t addr, bool thumb) { static_cast<FuncWatch*>(user)->Hit(addr, thumb); }
 
