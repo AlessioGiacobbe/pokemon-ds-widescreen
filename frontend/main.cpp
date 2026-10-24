@@ -3078,7 +3078,16 @@ int main(int argc, char** argv)
                 while (SDL_GetPerformanceCounter() < nextTick) {}
             }
         }
-        else if (now - nextTick > perfFreq / 4) nextTick = now;
+        else
+        {
+            // Never faster than the DS (59.8 frames a second). A frame that ran late may take
+            // up to a quarter of a frame back from the next one, so that frames a little late
+            // and a little early in turn still average out to full speed, but a longer stall
+            // is not won back: up to 250 ms used to be, as frames run back to back, and the
+            // game and its music sped up for a moment after every stall.
+            const uint64_t carry = (uint64_t)(frameTime * perfFreq / 4);
+            if (now - nextTick > carry) nextTick = now - carry;
+        }
         perfMark(5);
     };
 
