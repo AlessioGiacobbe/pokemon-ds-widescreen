@@ -2898,7 +2898,7 @@ int main(int argc, char** argv)
     enum
     {
         M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_AUTODETAIL,
-#ifdef SSR_GPU3D
+#if defined(SSR_GPU3D) && !defined(__SWITCH__)
         M_GPU3D,
 #endif
         M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
@@ -2935,14 +2935,12 @@ int main(int argc, char** argv)
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
             { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
-#ifdef SSR_GPU3D
-            // ON: the 3D scene drawn by the graphics chip instead of the processor. (A test on
-            // the Switch: it hung the console once.)
-#ifdef __SWITCH__
-            { "3D ON GPU (TEST)", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF" },
-#else
+#if defined(SSR_GPU3D) && !defined(__SWITCH__)
+            // ON: the 3D scene drawn by the graphics chip instead of the processor. (Not on the
+            // Switch: its OpenGL driver hung the console from a second thread and, from the main
+            // thread, cost 10-12 ms a frame for the DS's picture and up to 22 ms to read a 720-line
+            // widescreen picture back, far more than drawing it in software.)
             { "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF" },
-#endif
 #endif
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
 #ifdef __SWITCH__
@@ -3639,7 +3637,7 @@ int main(int argc, char** argv)
             case M_AUTODETAIL:
                 cfg.autoDetail = !cfg.autoDetail;
                 break;
-#ifdef SSR_GPU3D
+#if defined(SSR_GPU3D) && !defined(__SWITCH__)
             case M_GPU3D:
                 // (between frames: the emulation thread is idle here)
                 cfg.gpu3d = !cfg.gpu3d;
