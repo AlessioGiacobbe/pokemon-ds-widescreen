@@ -1879,6 +1879,7 @@ int main(int argc, char** argv)
         int startContinue = -1, confirmDialog = -1, startMain = -1, intro = -1, nameEntry = -1;
         int battleList = -1, battleBag = -1, battleChoice = -1, battleYesNo = -1;
         int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
+        int save = -1, saveWrite = -1;
         std::vector<int> weatherObj; // the weathers with particles (see Scene::weatherObj)
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
@@ -1919,6 +1920,10 @@ int main(int argc, char** argv)
         bw2.setupDouble = bw2Find("BtlMain_SetupAloneDouble");
         bw2.setupTriple = bw2Find("BtlMain_SetupAloneTriple");
         bw2.setupRotation = bw2Find("BtlMain_SetupAloneRotation");
+        bw2.save = bw2Find("EventSave_Callback");       // SAVE from the X menu, until it is done
+        // Waits for the save memory: while the game writes its save it does nothing else, for
+        // over a second, not even the overworld (see the save layout).
+        bw2.saveWrite = bw2Find("CARD_WaitBackupAsync");
         // The weathers with particles, each running in its own overlay (75: snow, 76: rain, 77:
         // sandstorm; pokebw2's include/field/weather_*.h) while it fades in, lasts and fades out.
         for (const char* w : { "Flake", "Blizzard", "Flutter", "Speck", "Rain", "Thunder", "GustyRain", "Sandstorm" })
@@ -2048,6 +2053,50 @@ int main(int argc, char** argv)
                 cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two (49 high)
             else if (funcWatch.Ran(bw2.battleCommand, 1))
                 cornerPanel(Crop(1, 0, 78, 256, 114), 0.44f); // FIGHT above BAG, RUN and POKEMON (50 high)
+        }
+        else if (funcWatch.Ran(bw2.save, 8) || (funcWatch.Ran(bw2.saveWrite, 8) && !strcmp(lastKnownBw2.name, "save")))
+        {
+            // Saving from the X menu: the question, YES / NO, the card of the saved game and
+            // the progress of the save are all on the touch screen (the top one keeps the
+            // overworld, with a save icon over the player, and the top of a message box with an
+            // arrow pointing down). Shown as the overworld with the message box along its
+            // bottom, where the game's other messages are, and the rest of the touch screen as a
+            // panel in the upper right corner. (While the save is written the game runs nothing
+            // else for more than a second: the layout stays, rather than the two screens side
+            // by side popping up for that time, as they did.)
+            only("save", 0);
+            sc.wide = wideView;
+            sc.weatherObj = weatherParticles();
+            sc.items[0].drop = LAYER_BG1; // the strip pointing at the other screen (as in the X menu)
+            auto lum = [&](int x, int y) {
+                const uint32_t c = screens[1].pixels[y * 256 + x];
+                return (((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF)) / 3;
+            };
+            // The card and what is below it (y 46-191: YES / NO over its upper right corner,
+            // then when the game was last saved, or the progress of the save). Only once the
+            // card is drawn (its white row of Pokemon), not over the black of the screen
+            // before.
+            if (screens && lum(20, 108) > 200)
+            {
+                const float scale = 0.6f, pad = 2;
+                Element panel = Crop(1, 0, 46, 256, 146);
+                panel.scale = scale;
+                panel.dx = (wideView ? viewRight : 256.0f) - 256 * scale - pad - 2;
+                panel.dy = pad + 2;
+                panel.border = true;
+                panel.crisp = true;
+                sc.items.push_back(panel);
+            }
+            // The message box (y 2-45), at full size, while there is one (white inside, seen
+            // at its left and right ends, where no text goes); at the start and between the
+            // question and the save the game has a heading there instead.
+            if (screens && lum(5, 24) > 230 && lum(250, 24) > 230)
+            {
+                Element box = Crop(1, 0, 2, 256, 44);
+                box.dy = 192 - 44;
+                box.crisp = true;
+                sc.items.push_back(box);
+            }
         }
         else if (funcWatch.Ran(bw2.fieldMenu, 8)) // (it skips a few frames while the menu opens)
         {

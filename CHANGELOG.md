@@ -33,6 +33,11 @@
   drawn with sharp pixels and fills the height of a wide view: its list and the saved
   game's card go on below the screens, drawn from what the game has ready there, so the
   last entry is no longer cut in half.
+- Black 2: saving from the X menu has a layout of its own. The question, YES / NO and the
+  messages that follow are in a message box along the bottom of the overworld, and the
+  saved game's card (with the progress of the save) is a panel in the upper right corner.
+  Before, all of that was on the hidden touch screen, and while the save was being
+  written both screens popped up side by side for a second or two.
 - **Test runs on the Switch:** a `test.txt` in the game's folder lists runs (a snapshot to
   start from, how many frames, which frames to take pictures of, an input script, settings
   for the run only). Each start of the game does the next run, writes the pictures (BMP), a
