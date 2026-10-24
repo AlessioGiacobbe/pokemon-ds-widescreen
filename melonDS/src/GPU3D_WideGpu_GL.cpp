@@ -18,8 +18,13 @@
 
 namespace melonDS
 {
+void* (*WideGpuGLGetProc)(const char* name) = nullptr;
+
 namespace
 {
+typedef void (*ClipControlFn)(GLenum origin, GLenum depth);
+constexpr GLenum LowerLeft = 0x8CA1, ZeroToOne = 0x935F; // GL_LOWER_LEFT, GL_ZERO_TO_ONE
+
 // The shaders are written for deko3D's compiler (GLSL 4.60); OpenGL 4.3 takes them as 4.30.
 std::string Source(const unsigned char* text, size_t size)
 {
@@ -57,6 +62,7 @@ public:
         glBufferData(GL_UNIFORM_BUFFER, sizeof(WideGpuFrameConstants), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_UNIFORM_BUFFER, DrawUBO);
         glBufferData(GL_UNIFORM_BUFFER, 16, nullptr, GL_DYNAMIC_DRAW);
+        if (WideGpuGLGetProc) ClipControl = (ClipControlFn)WideGpuGLGetProc("glClipControl");
         return glGetError() == GL_NO_ERROR;
     }
 
@@ -83,6 +89,10 @@ public:
         if (f.W != W || f.H != H) MakeTargets(f.W, f.H);
         // Rows from the bottom of the view are the first in memory (see wide_vsh.glsl).
         f.Constants.Scale[2] = -1.0f;
+        // Depth from 0 to 1 where glClipControl is there (OpenGL 4.5), otherwise -1 to 1 (which
+        // loses W-buffering's 1/W: its values are tiny).
+        f.Constants.Scale[3] = ClipControl ? 0.0f : 1.0f;
+        if (ClipControl) ClipControl(LowerLeft, ZeroToOne);
 
         glBindBuffer(GL_UNIFORM_BUFFER, FrameUBO);
         glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(f.Constants), &f.Constants);
@@ -116,7 +126,7 @@ public:
         glClearBufferfv(GL_COLOR, 0, f.ClearColor);
         const GLuint attr[4] = { f.ClearDepth, f.ClearFog, 0, 0 };
         glClearBufferuiv(GL_COLOR, 1, attr);
-        glClearBufferfi(GL_DEPTH_STENCIL, 0, (float)f.ClearDepth / 16777216.0f, f.ClearStencil);
+        glClearBufferfi(GL_DEPTH_STENCIL, 0, f.ClearDepthValue, f.ClearStencil);
 
         glUseProgram(MainProgram);
         glBindVertexArray(EmptyVAO);
@@ -126,10 +136,10 @@ public:
         glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
         for (const WideGpuDraw& d : f.Draws)
         {
-            const u32 params[4] = { d.First, d.Pixels, (u32)d.DepthBias, 0 };
+            const u32 params[4] = { d.First, d.Pixels, (u32)d.DepthBias, f.WDepth ? 1u : 0u };
             glBindBuffer(GL_UNIFORM_BUFFER, DrawUBO);
             glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(params), params);
-            glDepthFunc(d.DepthLequal ? GL_LEQUAL : GL_LESS);
+            glDepthFunc(f.WDepth ? (d.DepthLequal ? GL_GEQUAL : GL_GREATER) : (d.DepthLequal ? GL_LEQUAL : GL_LESS));
             glDepthMask(d.DepthWrite ? GL_TRUE : GL_FALSE);
             const GLenum func = d.StencilTest == WideGpuStencil::Always ? GL_ALWAYS :
                 d.StencilTest == WideGpuStencil::Equal ? GL_EQUAL : GL_NOTEQUAL;
@@ -146,6 +156,7 @@ public:
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_STENCIL_TEST);
         glDisablei(GL_BLEND, 0);
+        if (ClipControl) ClipControl(LowerLeft, 0x935E); // GL_NEGATIVE_ONE_TO_ONE again
         glBindFramebuffer(GL_FRAMEBUFFER, FinalFBO);
         glDrawBuffers(1, bufs);
         glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -234,6 +245,7 @@ private:
     GLuint FrameUBO = 0, DrawUBO = 0, SSBO[4] {}, ReadPBO = 0, EmptyVAO = 0;
     GLuint MainFBO = 0, FinalFBO = 0, ColorTex = 0, AttrTex = 0, FinalTex = 0, DepthRB = 0;
     int W = 0, H = 0;
+    ClipControlFn ClipControl = nullptr;
     std::vector<u32> Slots[3];
     u64 TexVersion = 0;
 };

@@ -16,3 +16,5 @@ void SsrEnterGLContext();
 void SsrLeaveGLContext();
 // SDL's window and OpenGL context (its renderer's), which SsrLeaveGLContext makes current again.
 void SsrSetSdlContext(void* window, void* context);
+// An OpenGL function the bundled loader does not have (eglGetProcAddress).
+void* SsrGLGetProc(const char* name);

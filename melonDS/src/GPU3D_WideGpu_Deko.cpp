@@ -241,6 +241,7 @@ public:
         }
         // deko3D's rows run from the top, as in memory (see wide_vsh.glsl).
         f.Constants.Scale[2] = 1.0f;
+        f.Constants.Scale[3] = 0.0f; // depth from 0 to 1
 
         memcpy(Data + OffFrame, &f.Constants, sizeof(f.Constants));
         memcpy(Data + OffPolygons, f.Polygons.data(), f.Polygons.size() * sizeof(WideGpuPolygon));
@@ -277,7 +278,7 @@ public:
         dkCmdBufClearColor(Cmd, 0, DkColorMask_RGBA, f.ClearColor);
         const u32 clearAttr[4] = { f.ClearDepth, f.ClearFog, 0, 0 };
         dkCmdBufClearColor(Cmd, 1, DkColorMask_RGBA, clearAttr);
-        dkCmdBufClearDepthStencil(Cmd, true, (float)f.ClearDepth / 16777216.0f, 0xFF, f.ClearStencil);
+        dkCmdBufClearDepthStencil(Cmd, true, f.ClearDepthValue, 0xFF, f.ClearStencil);
 
         const DkShader* main[2] = { &Sh->MainVsh, &Sh->MainFsh };
         dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, main, 2);
@@ -307,13 +308,14 @@ public:
 
         for (const WideGpuDraw& d : f.Draws)
         {
-            const u32 params[4] = { d.First, d.Pixels, (u32)d.DepthBias, 0 };
+            const u32 params[4] = { d.First, d.Pixels, (u32)d.DepthBias, f.WDepth ? 1u : 0u };
             dkCmdBufPushConstants(Cmd, draw.addr, draw.size, 0, sizeof(params), params);
             DkDepthStencilState ds;
             dkDepthStencilStateDefaults(&ds);
             ds.depthTestEnable = true;
             ds.depthWriteEnable = d.DepthWrite;
-            ds.depthCompareOp = d.DepthLequal ? DkCompareOp_Lequal : DkCompareOp_Less;
+            ds.depthCompareOp = f.WDepth ? (d.DepthLequal ? DkCompareOp_Gequal : DkCompareOp_Greater)
+                                         : (d.DepthLequal ? DkCompareOp_Lequal : DkCompareOp_Less);
             ds.stencilTestEnable = true;
             const DkCompareOp op = d.StencilTest == WideGpuStencil::Always ? DkCompareOp_Always :
                 d.StencilTest == WideGpuStencil::Equal ? DkCompareOp_Equal : DkCompareOp_NotEqual;

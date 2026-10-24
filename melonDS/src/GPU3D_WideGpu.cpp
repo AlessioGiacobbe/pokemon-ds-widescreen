@@ -2,6 +2,8 @@
 #include "GPU3D_WideGpu.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include "GPU.h"
 #include "GPU3D.h"
@@ -141,6 +143,15 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
     else
         f.ClearColor[0] = f.ClearColor[1] = f.ClearColor[2] = f.ClearColor[3] = 0.0f;
     f.ClearDepth = ((g.RenderClearAttr2 & 0x7FFF) * 0x200) + 0x1FF;
+    // (W-buffering is chosen for the whole frame, when it is flushed.)
+    f.WDepth = false;
+    for (u32 i = 0; i < count; i++)
+        if (list[i])
+        {
+            f.WDepth = list[i]->WBuffer;
+            break;
+        }
+    f.ClearDepthValue = f.WDepth ? 1.0f / (float)std::max<u32>(f.ClearDepth, 1) : (float)f.ClearDepth / 16777216.0f;
     f.ClearFog = (a1 >> 15) & 1;
     f.ClearStencil = clearAlpha ? 0x80 : 0;
     f.TexMem = gpu.VRAMFlat_Texture;
@@ -298,5 +309,18 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         if (mixed) close();
     }
     close();
+    // Development aid: how many polygons use W-buffering (SSR_WIDE_GPU_STATS=1).
+    static const bool stats = getenv("SSR_WIDE_GPU_STATS") != nullptr;
+    if (stats && W > 256)
+    {
+        static u64 frames = 0, polys = 0, wpolys = 0;
+        frames++;
+        for (const WideGpuPolygon& p : f.Polygons)
+        {
+            polys++;
+            if (p.Flags & 1) wpolys++;
+        }
+        if (frames % 120 == 0) fprintf(stderr, "[widegpu] polygons %llu, W-buffered %llu\n", (unsigned long long)polys, (unsigned long long)wpolys);
+    }
 }
 }

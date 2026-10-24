@@ -1223,7 +1223,11 @@ struct Settings
     // read from ssrecomp.cfg ("gpu3d_test=1"), never offered in the menu or on by default. (The
     // key replaced "gpu3d", which the build that hung saved as 1.)
     bool gpu3d = false;
-    bool wideGpu = false;        // the widescreen world drawn by the graphics chip (GPU3D_WideGpu.h)
+#ifdef SSR_DEKO3D
+    bool wideGpu = true;         // the widescreen world drawn by the graphics chip (GPU3D_WideGpu.h)
+#else
+    bool wideGpu = false;
+#endif
     bool ds3dGpu = true;         // with it, the DS-resolution 3D picture too
 
     void Load(const std::string& path)
@@ -1563,6 +1567,7 @@ int main(int argc, char** argv)
 #ifdef SSR_GPU3D
         if (want && UseGpu3D) want = false; // (the 3D on the graphics chip draws the wide view itself)
         melonDS::GLThreadRenderer::CreateContext = SsrCreateGLContext;
+        melonDS::WideGpuGLGetProc = SsrGLGetProc;
 #endif
         // If it was on last time and the game never got 600 frames into it (a file made when it
         // starts and removed after that says so), it is turned off.
@@ -2147,6 +2152,8 @@ int main(int argc, char** argv)
             // dark grey. (After CONTINUE, the screens with the C-Gear's questions are shown
             // whole, below.)
             sc = Stack("launch-menu", { Crop(0, 28, 0, 200, 192), Crop(1, 18, 0, 220, 192) }, true, viewWidth);
+            // (Text and outlines: nearest pixels, not smoothed into a blur at three times the size.)
+            for (Element& el : sc.items) el.crisp = true;
             sc.bgScreen = 1;
             sc.bgX = 2;
             sc.bgY = 2;
@@ -4135,15 +4142,21 @@ int main(int argc, char** argv)
             }
             else
                 battleWide.Reset();
-            if (wideFrames > 3 && melonDS::Wide.Front)
+            // (Not while the screen shows no 3D at all: its display off, or the 3D layer not
+            // shown. Black 2 has that for a frame between CONTINUE and the season's screen, with
+            // the world already drawn: it flashed up for that frame.)
+            // (The 3D is always engine A's.)
+            const u32 dispA = nds->GPU.GPU2D_A.DispCnt;
+            const bool show3D = ((dispA >> 16) & 3) == 1 && (dispA & (1 << 8)) && (dispA & (1 << 3));
+            const auto& wideUnit = topUnitOf() == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+            if (wideFrames > 3 && melonDS::Wide.Front && show3D)
             {
                 wideImage.pixels = melonDS::Wide.Front;
                 wideImage.w = melonDS::Wide.FrontW;
                 wideImage.h = melonDS::Wide.FrontH;
                 // Fades: the game darkens or whitens its screen with the master brightness
                 // register, or with a brightness effect on the 3D layer.
-                int topUnit = topUnitOf();
-                const auto& unit = topUnit == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+                const auto& unit = wideUnit;
                 int mode = (unit.MasterBrightness >> 14) & 3, f = std::min(16, unit.MasterBrightness & 0x1F);
                 if ((mode != 1 && mode != 2) || !f)
                 {

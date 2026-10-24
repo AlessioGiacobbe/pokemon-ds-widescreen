@@ -251,7 +251,7 @@ void main()
 
     oColor = vec4(vec3(c) / 255.0, float(alpha + 1u) / 32.0);
 
+    // (The depth tested is the graphics chip's, wide_vsh.glsl; this one is the fog's.)
     int z = (poly.flags & 1u) != 0u ? int(vZPersp) : int(vZLinear);
-    gl_FragDepth = float(max(z - int(uDraw.z), 0)) / 16777216.0;
     oAttr = uvec2(uint(max(z, 0)), (attr >> 15) & 1u);
 }

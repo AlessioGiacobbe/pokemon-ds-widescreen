@@ -19,7 +19,7 @@
 - **WORLD ON GPU (Switch, pause menu):** the widescreen world drawn by the Switch's
   graphics chip through deko3D, its own graphics API, instead of the processor, into the
   same picture. On the Skyarrow Bridge at WORLD DETAIL 720 a frame went from about 34 ms
-  (30 fps) to about 19 ms. Off by default for now; if the game does not get 600 frames
+  (30 fps) to about 16 ms (60 fps). On by default; if the game does not get 600 frames
   into it, it is off at the next start. With it, the DS's own 3D picture is drawn by the graphics chip
   too (`ds3d_gpu=0` keeps that on the processor), and the texture memory is only sent to
   the graphics chip when it has changed. On a PC the same
@@ -28,6 +28,9 @@
 
 - Switch: quitting no longer hangs when closing the sound never returns (seen at
   "[exit] audio"): after three seconds the program ends without it.
+- Black 2: the world no longer flashes up for a frame between CONTINUE and the season's
+  screen (the widescreen world is left out while the game shows no 3D), and the start menu
+  is drawn with sharp pixels.
 - **Test runs on the Switch:** a `test.txt` in the game's folder lists runs (a snapshot to
   start from, how many frames, which frames to take pictures of, an input script, settings
   for the run only). Each start of the game does the next run, writes the pictures (BMP), a

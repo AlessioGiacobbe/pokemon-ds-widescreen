@@ -26,6 +26,11 @@ static EGLenum PrevApi = EGL_OPENGL_ES_API;
 static SDL_Window* SdlWindow = nullptr;
 static SDL_GLContext SdlContext = nullptr;
 
+void* SsrGLGetProc(const char* name)
+{
+    return (void*)eglGetProcAddress(name);
+}
+
 void SsrSetSdlContext(void* window, void* context)
 {
     SdlWindow = static_cast<SDL_Window*>(window);

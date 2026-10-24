@@ -55,7 +55,7 @@ struct WideGpuPolygon
 struct WideGpuFrameConstants
 {
     u32 Size[4];          // width, height, DISP3DCNT, alpha test reference
-    float Scale[4];       // 2 / width, 2 / height, direction of y (backend's), unused
+    float Scale[4];       // 2 / width, 2 / height, direction of y, depth range (both the backend's)
     u32 Fog[4];           // fog colour, offset, shift, flags (bit 0 fog on, bit 1 fog colours)
     u32 Toon[32];
     u32 FogDensity[36];
@@ -85,7 +85,11 @@ struct WideGpuFrame
     std::vector<WideGpuPolygon> Polygons;
     std::vector<WideGpuDraw> Draws;
     float ClearColor[4] {}; // red, green, blue (0-1), alpha (0 or 1)
-    u32 ClearDepth = 0;     // as the DS stores it
+    u32 ClearDepth = 0;     // as the DS stores it (for the fog)
+    // Depth as the graphics chip tests it (see wide_vsh.glsl): Z / 2^24, tested "less"; with
+    // W-buffering (the DS stores W) 1 / W, tested "greater". The rear plane's:
+    bool WDepth = false;
+    float ClearDepthValue = 1.0f;
     u32 ClearFog = 0;
     u8 ClearStencil = 0;
     const u8* TexMem = nullptr; // 512 KB, read during Submit
@@ -155,5 +159,8 @@ std::unique_ptr<WideGpuBackend> WideGpuMakeDeko(std::string& info);
 #endif
 #ifdef OGLRENDERER_ENABLED
 std::unique_ptr<WideGpuBackend> WideGpuMakeGL(std::string& info);
+// Set by the frontend: an OpenGL function by name (for glClipControl, which the bundled
+// loader lacks: depth from 0 to 1 keeps the precision that 1/W needs).
+extern void* (*WideGpuGLGetProc)(const char* name);
 #endif
 }
