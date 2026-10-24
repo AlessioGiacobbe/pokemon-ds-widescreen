@@ -150,13 +150,18 @@ bool AcquireShared(std::string& info)
     const char* zcull = getenv("SSR_WIDEGPU_ZCULL");
     Sh->TexBuf = shader && !strcmp(shader, "texbuf");
     Sh->Zcull = zcull && !strcmp(zcull, "1");
-    fprintf(stderr, "[widegpu] deko3D: %s fragment shader, Zcull %s\n", Sh->TexBuf ? "buffer-texture" : "storage-buffer",
-        Sh->Zcull ? "on" : "off");
     Sh->CodeMem = MakeBlock(256 * 1024, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Code);
     u32 used = 0;
+    // (The buffer-texture variant is left empty by the build if it did not compile.)
+    if (Sh->CodeMem && Sh->TexBuf && !LoadShader(Sh->MainFsh, wide_fsh_texbuf_dksh, sizeof(wide_fsh_texbuf_dksh), used))
+    {
+        fprintf(stderr, "[widegpu] deko3D: the buffer-texture fragment shader is not in this build\n");
+        Sh->TexBuf = false;
+    }
+    fprintf(stderr, "[widegpu] deko3D: %s fragment shader, Zcull %s\n", Sh->TexBuf ? "buffer-texture" : "storage-buffer",
+        Sh->Zcull ? "on" : "off");
     if (!Sh->CodeMem || !LoadShader(Sh->MainVsh, wide_vsh_dksh, sizeof(wide_vsh_dksh), used) ||
-        !(Sh->TexBuf ? LoadShader(Sh->MainFsh, wide_fsh_texbuf_dksh, sizeof(wide_fsh_texbuf_dksh), used)
-                     : LoadShader(Sh->MainFsh, wide_fsh_dksh, sizeof(wide_fsh_dksh), used)) ||
+        !(Sh->TexBuf || LoadShader(Sh->MainFsh, wide_fsh_dksh, sizeof(wide_fsh_dksh), used)) ||
         !LoadShader(Sh->FinalVsh, final_vsh_dksh, sizeof(final_vsh_dksh), used) ||
         !LoadShader(Sh->FinalFsh, final_fsh_dksh, sizeof(final_fsh_dksh), used))
     {

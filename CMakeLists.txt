@@ -167,15 +167,20 @@ elseif(SSR_SWITCH)
             set(src "${CMAKE_CURRENT_SOURCE_DIR}/${folder}/${name}.glsl")
             set(compiled "${src}")
             set(make_variant)
+            set(compile COMMAND "${SSR_UAM}" -o "${SSR_DEKO_OUT}/${header}.dksh" -s ${stage} "${src}")
             if(nparts GREATER 4)
                 list(GET parts 4 define)
                 set(compiled "${SSR_DEKO_OUT}/${header}.glsl")
                 set(make_variant COMMAND "${CMAKE_COMMAND}" "-DIN=${src}" "-DOUT=${compiled}" "-DDEFINE=${define}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/glsl_define.cmake")
+                # (A variant that does not compile leaves an empty shader, which the program
+                # finds it cannot load, and does without, rather than stopping the build.)
+                set(compile COMMAND sh -c "\"$0\" -o \"$1\" -s $2 \"$3\" || : > \"$1\""
+                    "${SSR_UAM}" "${SSR_DEKO_OUT}/${header}.dksh" ${stage} "${compiled}")
             endif()
             add_custom_command(OUTPUT "${SSR_DEKO_OUT}/${header}.h"
                 ${make_variant}
-                COMMAND "${SSR_UAM}" -o "${SSR_DEKO_OUT}/${header}.dksh" -s ${stage} "${compiled}"
+                ${compile}
                 COMMAND "${CMAKE_COMMAND}" "-DIN=${SSR_DEKO_OUT}/${header}.dksh" "-DOUT=${SSR_DEKO_OUT}/${header}.h" "-DNAME=${header}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/embed.cmake"
                 DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/embed.cmake"
