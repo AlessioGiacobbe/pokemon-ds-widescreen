@@ -2,11 +2,12 @@
 // arguments (the Switch): test.txt in the game's folder lists runs, each one a start of the
 // game from a snapshot with scripted input, screenshots at chosen frames and a line of
 // timings per frame, written to test-results/<run>/ with that run's game.log. The game
-// then quits, and starts again for the next run (on the Switch by itself, see
-// switch_platform.cpp; or by starting it again). When every run has been done, test.txt
-// is renamed test-done.txt, so that the next start is an ordinary one.
+// then quits; the next start does the next run (or, with "restart yes", the Switch build
+// starts itself again at once, see switch_platform.cpp). When every run has been done,
+// test.txt is renamed test-done.txt, so that the next start is an ordinary one.
 //
 //   # comment
+//   restart yes               start again by itself after each run (default: one run a start)
 //   run bridge-720            a new run, named for its folder in test-results
 //   state bridge.st           snapshot to start from (in the game's folder; the pause menu's
 //                             SAVE STATE writes <save>.state)
@@ -18,7 +19,8 @@
 //
 // test-results/progress.txt records each run as it starts and ends: a run that started and
 // never ended (it crashed or hung, and the console was restarted) is marked as failed and
-// skipped, with the log it left.
+// skipped. Each run's log is written in its folder from the start (the Switch cannot copy
+// a file that is still open for writing), so a run that crashed keeps what it wrote.
 #pragma once
 #include <cstdio>
 #include <cstdlib>
@@ -37,7 +39,7 @@ struct Run
     std::vector<std::string> args;
 };
 
-inline std::vector<Run> Parse(const std::string& path, std::string& problems)
+inline std::vector<Run> Parse(const std::string& path, std::string& problems, bool* restart = nullptr)
 {
     std::vector<Run> runs;
     std::ifstream f(path);
@@ -53,6 +55,11 @@ inline std::vector<Run> Parse(const std::string& path, std::string& problems)
         const size_t sp = line.find_first_of(" \t");
         const std::string key = line.substr(0, sp);
         std::string value = sp == std::string::npos ? "" : line.substr(line.find_first_not_of(" \t", sp));
+        if (key == "restart")
+        {
+            if (restart) *restart = value == "yes" || value == "1";
+            continue;
+        }
         if (key == "run")
         {
             Run r;
@@ -131,19 +138,21 @@ struct State
 {
     bool active = false;
     std::string dir, name, results;
-    bool more = false; // runs left after this one
+    bool more = false;    // runs left after this one
+    bool restart = false; // start again at once for the next
 };
 
-// When dir/test.txt lists a run not yet done, its options are
-// added to args (which already start the game: ROM, save, ...) and true is returned.
-// Messages for the log go to notes.
+// Before the log is opened: when dir/test.txt lists a run not yet done, its options are
+// added to args and true is returned; the log is then st.results + "/game.log". Messages for
+// the log go to notes.
 inline bool Setup(const std::string& dir, std::vector<std::string>& args, State& st, std::string& notes)
 {
     const std::string list = dir + "/test.txt";
     struct stat sb;
     if (stat(list.c_str(), &sb) != 0) return false;
     std::string problems;
-    std::vector<Run> runs = Parse(list, problems);
+    bool restart = false;
+    std::vector<Run> runs = Parse(list, problems, &restart);
     notes += problems;
     const std::string results = dir + "/test-results";
     mkdir(results.c_str(), 0777);
@@ -160,9 +169,6 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
             // Started and never finished: what it left in the log is kept with it.
             Note(progress, "failed", r.name);
             finished.insert(r.name);
-            mkdir((results + "/" + r.name).c_str(), 0777);
-            // (The caller has moved the log of the last start to game-last.log.)
-            CopyFile(dir + "/game-last.log", results + "/" + r.name + "/game.log");
             notes += "[test] run " + r.name + " did not finish last time (its log is in test-results/" + r.name + ")\n";
             continue;
         }
@@ -195,6 +201,7 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
     st.name = chosen->name;
     st.results = results + "/" + chosen->name;
     st.more = left > 0;
+    st.restart = restart;
     mkdir(st.results.c_str(), 0777);
     Note(progress, "started", st.name);
     // The game's own save and settings are left as they were.
@@ -205,6 +212,11 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
     args.push_back(st.results);
     args.push_back("--timing");
     args.push_back(st.results + "/timing.csv");
+    // Pictures put together by the processor (merged.h, the same picture as the GPU's): reading
+    // the screen back took 12 seconds a picture on the Switch.
+    args.push_back("--compose");
+    args.push_back("1280x720");
+    args.push_back("--no-window-shots");
     for (size_t i = 0; i < chosen->args.size(); i++)
     {
         std::string a = chosen->args[i];
@@ -220,18 +232,17 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
     return true;
 }
 
-// At the end of a run: its log is copied beside its results. True if another run follows.
+// At the end of a run. True if the program should start again at once for the next one.
 inline bool Finish(const State& st)
 {
     if (!st.active) return false;
     fflush(stderr);
-    CopyFile(st.dir + "/game.log", st.results + "/game.log");
     Note(st.dir + "/test-results/progress.txt", "done", st.name);
     if (!st.more)
     {
         Replace(st.dir + "/test.txt", st.dir + "/test-done.txt");
         return false;
     }
-    return true;
+    return st.restart;
 }
 }

@@ -90,18 +90,20 @@ bool Start(int& argc, char**& argv)
     mkdir(dir.c_str(), 0777);
     chdir(dir.c_str());
     if (argc > 0 && argv[0]) g_self = argv[0];
-    // With test runs to do, the last start's log is kept a little longer (a run that never
-    // finished keeps it).
-    struct stat testSt;
-    const bool testList = stat((dir + "/test.txt").c_str(), &testSt) == 0;
-    if (testList) TestRun::Replace(dir + "/game.log", dir + "/game-last.log");
+    // A test run (testrun.h) from test.txt, if there is one to do: its log goes to its folder.
+    std::vector<std::string> testArgs;
+    std::string testNotes;
+    // (Not when started with arguments, which are then used as they are.)
+    const bool testRun = argc < 2 && TestRun::Setup(dir, testArgs, g_test, testNotes);
+    const std::string logPath = testRun ? g_test.results + "/game.log" : dir + "/game.log";
 
     // Messages go to game.log beside the game, as run.sh does on a PC, with the frame timing,
     // so that a log can be sent with a bug report.
-    if (!freopen((dir + "/game.log").c_str(), "w", stderr)) freopen("game.log", "w", stderr);
+    if (!freopen(logPath.c_str(), "w", stderr)) freopen("game.log", "w", stderr);
     setvbuf(stderr, nullptr, _IOLBF, 0);
     setenv("SSR_PERF", "1", 0);
     fprintf(stderr, "[switch] started from %s\n", argc > 0 && argv[0] ? argv[0] : "?");
+    fputs(testNotes.c_str(), stderr);
 
     // Started from the album (applet mode) a homebrew program only gets a few hundred MB of
     // memory; the game's code alone is larger. Started in place of a game (holding R) it gets
@@ -223,14 +225,12 @@ bool Start(int& argc, char**& argv)
         g_args.push_back("--interp");
 #endif
     }
-    if (testList)
+    if (testRun)
     {
-        std::string notes;
-        const bool run = TestRun::Setup(dir, g_args, g_test, notes);
-        fputs(notes.c_str(), stderr);
-        // The pictures are taken while each frame is shown alongside the next one's
-        // emulation, as in play (see "pipelined" in main.cpp).
-        if (run) setenv("SSR_PIPELINE", "1", 1);
+        g_args.insert(g_args.end(), testArgs.begin(), testArgs.end());
+        // Each frame is shown alongside the next one's emulation, as in play (see
+        // "pipelined" in main.cpp), pictures or not.
+        setenv("SSR_PIPELINE", "1", 1);
     }
     for (auto& a : g_args) g_argv.push_back(a.data());
     g_argv.push_back(nullptr);

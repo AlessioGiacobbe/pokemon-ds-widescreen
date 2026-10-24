@@ -326,21 +326,23 @@ static bool WritePNG(const std::string& path, const uint32_t* pixels, int w, int
     hdr[26] = 1;
     hdr[28] = 24;
     put32(34, dataSize);
-    fwrite(hdr, 1, 54, f);
-    std::vector<uint8_t> row((size_t)stride, 0);
+    // (In one write: the SD card is slow with many small ones.)
+    std::vector<uint8_t> file(54 + (size_t)dataSize, 0);
+    memcpy(file.data(), hdr, 54);
     for (int y = h - 1; y >= 0; y--) // bottom row first, blue green red
     {
         const uint8_t* src = &rgb[(size_t)y * w * 3];
+        uint8_t* row = &file[54 + (size_t)(h - 1 - y) * stride];
         for (int x = 0; x < w; x++)
         {
             row[x * 3 + 0] = src[x * 3 + 2];
             row[x * 3 + 1] = src[x * 3 + 1];
             row[x * 3 + 2] = src[x * 3 + 0];
         }
-        fwrite(row.data(), 1, row.size(), f);
     }
+    const bool ok = fwrite(file.data(), 1, file.size(), f) == file.size();
     fclose(f);
-    return true;
+    return ok;
 #else
     png_image img;
     memset(&img, 0, sizeof(img));
@@ -468,6 +470,7 @@ struct Options
     std::vector<std::string> sets; // settings for this run only ("wide_lines=720"); the settings file is then not written
     bool keepSettings = false;   // never write the settings file
     bool dekoProbe = false;      // Switch: a test of deko3D when the window is up (frontend/dekoprobe.h)
+    bool windowShots = true;     // in a window, screenshots also read back what was shown
 };
 
 static void Usage()
@@ -494,6 +497,7 @@ static void Usage()
         "  --set key=value      a setting for this run only (as in ssrecomp.cfg); settings are not saved\n"
         "  --keep-settings      never write the settings file\n"
         "  --deko-probe         Switch: test deko3D (the Switch's graphics API) at start, in the log\n"
+        "  --no-window-shots    in a window, no window_*.png read back from the screen (only frame_*)\n"
         "  --shot-dir <dir>     where screenshots go\n"
         "  --shot-at <a,b,c>    screenshot these frames\n"
         "  --shot-every <n>     screenshot every n frames\n"
@@ -566,6 +570,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--set") o.sets.push_back(next());
         else if (a == "--keep-settings") o.keepSettings = true;
         else if (a == "--deko-probe") o.dekoProbe = true;
+        else if (a == "--no-window-shots") o.windowShots = false;
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;
         else if (a == "--lockstep") { o.lockstep = true; o.headless = true; o.noSave = true; }
@@ -3336,7 +3341,7 @@ int main(int argc, char** argv)
             SsrThreadStats& ts = SsrStats();
             const uint64_t w3 = ts.Wait3DNs.load(), ww = ts.WaitWideNs.load();
             if (timingStarted)
-                fprintf(timingFile, "%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d\n", frame - 1, t - perfFrameStart,
+                fprintf(timingFile, "%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d\n", frame, t - perfFrameStart,
                     perfFrame[0], pipelined ? emuMs : perfFrame[1], perfFrame[2], perfFrame[3], perfFrame[4], perfFrame[5],
                     (w3 - timingWait3D) / 1e6, (ww - timingWaitWide) / 1e6, WideLinesNow, timingShot ? 1 : 0);
             timingWait3D = w3;
@@ -4618,7 +4623,7 @@ int main(int argc, char** argv)
             DrawJob& job = pipelined ? pendingJob : nowJob;
             job.merged = merged;
             job.overlayUsed = overlayUsed;
-            job.wantShot = wantShot;
+            job.wantShot = wantShot && opt.windowShots;
             job.frameNo = frame;
             job.outW = outW;
             job.outH = outH;
