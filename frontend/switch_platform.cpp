@@ -13,6 +13,8 @@
 
 #include <switch.h>
 
+#include "testrun.h"
+
 namespace SwitchPlatform
 {
 namespace
@@ -20,6 +22,9 @@ namespace
 std::vector<std::string> g_args;
 std::vector<char*> g_argv;
 bool g_boosted = false;
+// A test run from test.txt (testrun.h), and the .nro to start again for the next one.
+TestRun::State g_test;
+std::string g_self;
 
 // Shows a message on the console's screen until + is pressed. Used only before SDL starts.
 void ShowMessage(const std::string& text)
@@ -84,6 +89,12 @@ bool Start(int& argc, char**& argv)
     }
     mkdir(dir.c_str(), 0777);
     chdir(dir.c_str());
+    if (argc > 0 && argv[0]) g_self = argv[0];
+    // With test runs to do, the last start's log is kept a little longer (a run that never
+    // finished keeps it).
+    struct stat testSt;
+    const bool testList = stat((dir + "/test.txt").c_str(), &testSt) == 0;
+    if (testList) rename((dir + "/game.log").c_str(), (dir + "/game-last.log").c_str());
 
     // Messages go to game.log beside the game, as run.sh does on a PC, with the frame timing,
     // so that a log can be sent with a bug report.
@@ -211,6 +222,15 @@ bool Start(int& argc, char**& argv)
 #else
         g_args.push_back("--interp");
 #endif
+    }
+    if (testList)
+    {
+        std::string notes;
+        const bool run = TestRun::Setup(dir, g_args, g_test, notes);
+        fputs(notes.c_str(), stderr);
+        // The pictures are taken while each frame is shown alongside the next one's
+        // emulation, as in play (see "pipelined" in main.cpp).
+        if (run) setenv("SSR_PIPELINE", "1", 1);
     }
     for (auto& a : g_args) g_argv.push_back(a.data());
     g_argv.push_back(nullptr);
@@ -442,6 +462,19 @@ void Finish()
     JitStarted(); // (an ordinary exit: the JIT did start)
     if (g_boosted) SetCpuBoost(false);
     fflush(stderr);
+    if (TestRun::Finish(g_test))
+    {
+        // The next run: the Homebrew Menu's loader starts the .nro again once this one ends
+        // (if it cannot, starting it again by hand does the same).
+        if (!g_self.empty() && envHasNextLoad())
+        {
+            const std::string cmd = g_self.find(' ') == std::string::npos ? g_self : "\"" + g_self + "\"";
+            const Result rc = envSetNextLoad(g_self.c_str(), cmd.c_str());
+            fprintf(stderr, "[test] starting again for the next run: 0x%x\n", (unsigned)rc);
+        }
+        else fprintf(stderr, "[test] start the game again for the next run\n");
+        fflush(stderr);
+    }
 }
 }
 #endif

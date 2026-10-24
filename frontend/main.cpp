@@ -306,8 +306,38 @@ static bool WritePNG(const std::string& path, const uint32_t* pixels, int w, int
         rgb[i * 3 + 2] = pixels[i] & 0xFF;
     }
 #ifdef SSR_NO_PNG
-    (void)path;
-    return false;
+    // No libpng in this build (the Switch): a 24-bit BMP of the same name instead.
+    std::string bmp = path;
+    if (bmp.size() > 4 && bmp.compare(bmp.size() - 4, 4, ".png") == 0) bmp.replace(bmp.size() - 4, 4, ".bmp");
+    FILE* f = fopen(bmp.c_str(), "wb");
+    if (!f) return false;
+    const int stride = (w * 3 + 3) & ~3;
+    const uint32_t dataSize = (uint32_t)stride * h, fileSize = 54 + dataSize;
+    uint8_t hdr[54] = { 'B', 'M' };
+    auto put32 = [&](int at, uint32_t v) { for (int i = 0; i < 4; i++) hdr[at + i] = (uint8_t)(v >> (8 * i)); };
+    put32(2, fileSize);
+    put32(10, 54);
+    put32(14, 40);
+    put32(18, (uint32_t)w);
+    put32(22, (uint32_t)h);
+    hdr[26] = 1;
+    hdr[28] = 24;
+    put32(34, dataSize);
+    fwrite(hdr, 1, 54, f);
+    std::vector<uint8_t> row((size_t)stride, 0);
+    for (int y = h - 1; y >= 0; y--) // bottom row first, blue green red
+    {
+        const uint8_t* src = &rgb[(size_t)y * w * 3];
+        for (int x = 0; x < w; x++)
+        {
+            row[x * 3 + 0] = src[x * 3 + 2];
+            row[x * 3 + 1] = src[x * 3 + 1];
+            row[x * 3 + 2] = src[x * 3 + 0];
+        }
+        fwrite(row.data(), 1, row.size(), f);
+    }
+    fclose(f);
+    return true;
 #else
     png_image img;
     memset(&img, 0, sizeof(img));
@@ -429,6 +459,11 @@ struct Options
     int composeW = 0, composeH = 0; // screenshots use the single-display layout at this size
     int scale = 3;
     std::string layout = "merged";
+    // Test runs (on the Switch from test.txt, see switch_platform.cpp):
+    bool relative = false;       // --frames, --shot-at, --stop-at and the input script count from the snapshot's frame
+    std::string timing;          // a line per frame with where its time went (CSV)
+    std::vector<std::string> sets; // settings for this run only ("wide_lines=720"); the settings file is then not written
+    bool keepSettings = false;   // never write the settings file
 };
 
 static void Usage()
@@ -450,6 +485,10 @@ static void Usage()
         "                       the two raw screens stacked\n"
         "  --state-save <file> --state-at <frame>   write a snapshot at that frame\n"
         "  --state-load <file>  resume from a snapshot (frame numbering continues)\n"
+        "  --relative           --frames, --shot-at, --stop-at and --input count from the snapshot's frame\n"
+        "  --timing <file.csv>  a line per frame: where its time went (ms)\n"
+        "  --set key=value      a setting for this run only (as in ssrecomp.cfg); settings are not saved\n"
+        "  --keep-settings      never write the settings file\n"
         "  --shot-dir <dir>     where screenshots go\n"
         "  --shot-at <a,b,c>    screenshot these frames\n"
         "  --shot-every <n>     screenshot every n frames\n"
@@ -517,6 +556,10 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--state-save") o.stateSave = next();
         else if (a == "--state-at") o.stateSaveAt = strtoul(next().c_str(), nullptr, 10);
         else if (a == "--state-load") o.stateLoad = next();
+        else if (a == "--relative") o.relative = true;
+        else if (a == "--timing") o.timing = next();
+        else if (a == "--set") o.sets.push_back(next());
+        else if (a == "--keep-settings") o.keepSettings = true;
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;
         else if (a == "--lockstep") { o.lockstep = true; o.headless = true; o.noSave = true; }
@@ -1096,8 +1139,21 @@ struct Settings
         std::string line;
         while (std::getline(f, line))
         {
+            Apply(line);
+        }
+#ifdef __SWITCH__
+        // The Switch's buttons are labelled where the DS's are, so labels and positions are
+        // the same thing there (see M_BUTTONS).
+        byLabel = true;
+#endif
+    }
+
+    // One "key=value" line of the settings file.
+    void Apply(const std::string& line)
+    {
+        {
             size_t eq = line.find('=');
-            if (eq == std::string::npos) continue;
+            if (eq == std::string::npos) return;
             std::string k = line.substr(0, eq), v = line.substr(eq + 1);
             // "view" replaced the older "layout" key when the merged view became the default.
             if (k == "view") layout = v;
@@ -1118,15 +1174,13 @@ struct Settings
             else if (k == "pipeline") pipeline = v != "0";
             else if (k == "gpu3d_test") gpu3d = v == "1";
         }
-#ifdef __SWITCH__
-        // The Switch's buttons are labelled where the DS's are, so labels and positions are
-        // the same thing there (see M_BUTTONS).
-        byLabel = true;
-#endif
     }
+
+    bool readOnly = false; // a test run's own settings (--set): the file is left as it was
 
     void Save(const std::string& path) const
     {
+        if (readOnly) return;
         std::ofstream f(path);
         f << "view=" << layout << "\n";
         f << "large_screen=" << (focusMode == 1 ? "top" : focusMode == 2 ? "bottom" : "auto") << "\n";
@@ -1335,6 +1389,21 @@ int main(int argc, char** argv)
             }
         }
     }
+    if (opt.relative && frame)
+    {
+        // (Test runs written without knowing which frame the snapshot was made at.)
+        std::set<uint32_t> at;
+        for (uint32_t f : opt.shotAt) at.insert(f + frame);
+        opt.shotAt = at;
+        if (opt.frames) opt.frames += frame;
+        if (opt.stopAt) opt.stopAt += frame;
+        for (ScriptEvent& ev : script)
+        {
+            ev.start += frame;
+            ev.end += frame;
+        }
+        fprintf(stderr, "[test] the snapshot is at frame %u; the run's frames count from there\n", frame);
+    }
     // A snapshot carries the clock of when it was made; play goes on at the current time.
     if (!opt.headless || getenv("SSR_CLOCK")) SetClock(*nds, opt.headless);
 
@@ -1353,6 +1422,8 @@ int main(int argc, char** argv)
     cfg.fps60 = false;
 #endif
     if (!opt.headless) cfg.Load(opt.config);
+    for (const std::string& kv : opt.sets) cfg.Apply(kv);
+    if (!opt.sets.empty() || opt.keepSettings) cfg.readOnly = true;
 #ifdef __SWITCH__
     if (!opt.headless) SwitchPlatform::SetCpuBoost(cfg.cpuBoost);
 #endif
@@ -3011,10 +3082,22 @@ int main(int argc, char** argv)
     int perfN = 0;
     auto perfNow = []() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
     double perfT = perfNow(), perfFrameStart = perfT;
+    // --timing: the same, a line per frame.
+    double perfFrame[6] = {};
+    FILE* timingFile = nullptr;
+    if (!opt.timing.empty())
+    {
+        timingFile = fopen(opt.timing.c_str(), "w");
+        if (!timingFile) fprintf(stderr, "cannot write %s\n", opt.timing.c_str());
+        else fprintf(timingFile, "frame,total,input,emulate,scene,compose,present,wait,wait_3d,wait_wide,wide_lines,shot\n");
+    }
+    uint64_t timingWait3D = 0, timingWaitWide = 0;
+    bool timingShot = false, timingStarted = false;
     auto perfMark = [&](int phase) {
-        if (!perfOn) return;
+        if (!perfOn && !timingFile) return;
         double t = perfNow();
         perfAcc[phase] += t - perfT;
+        perfFrame[phase] += t - perfT;
         perfT = t;
     };
 
@@ -3227,6 +3310,23 @@ int main(int argc, char** argv)
 
     while (running && !Host::StopRequested)
     {
+        if (timingFile)
+        {
+            // (Written before the summary below takes the waits' counters back to 0.)
+            const double t = perfNow();
+            SsrThreadStats& ts = SsrStats();
+            const uint64_t w3 = ts.Wait3DNs.load(), ww = ts.WaitWideNs.load();
+            if (timingStarted)
+                fprintf(timingFile, "%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d\n", frame - 1, t - perfFrameStart,
+                    perfFrame[0], pipelined ? emuMs : perfFrame[1], perfFrame[2], perfFrame[3], perfFrame[4], perfFrame[5],
+                    (w3 - timingWait3D) / 1e6, (ww - timingWaitWide) / 1e6, WideLinesNow, timingShot ? 1 : 0);
+            timingWait3D = w3;
+            timingWaitWide = ww;
+            for (double& a : perfFrame) a = 0;
+            timingShot = false;
+            timingStarted = true;
+            if (!perfOn) perfFrameStart = perfT = t;
+        }
         if (perfOn)
         {
             double t = perfNow();
@@ -3262,6 +3362,7 @@ int main(int argc, char** argv)
                     perfAcc[0] / perfN, (pipelined ? perfEmu : perfAcc[1]) / perfN, perfAcc[2] / perfN, perfAcc[3] / perfN, perfAcc[4] / perfN,
                     perfAcc[5] / perfN, perfWorst, tail.c_str());
                 for (double& a : perfAcc) a = 0;
+                timingWait3D = timingWaitWide = 0;
                 perfEmu = 0;
                 perfN = 0;
                 perfWorst = 0;
@@ -4421,6 +4522,7 @@ int main(int argc, char** argv)
 
         bool wantShot = !opt.shotDir.empty() &&
             (opt.shotAt.count(frame) || g_sceneShots.count(frame) || (opt.shotEvery && frame % opt.shotEvery == 0));
+        if (wantShot) timingShot = true;
         if (wantShot && opt.shotLayers)
         {
             // BG0 red, BG1 green, BG2 blue, BG3 yellow, backdrop black, 3D magenta, sprites white.
@@ -4535,6 +4637,7 @@ int main(int argc, char** argv)
 
     // (The emulation thread is idle between frames: ended before anything else.)
     emuThread.Stop();
+    if (timingFile) fclose(timingFile);
 
     // Shutting down. The save and the settings are written first, before anything that could
     // go wrong; each step is logged, so that a log shows how far it got if it ever stops.

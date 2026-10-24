@@ -16,6 +16,15 @@
   JIT on the Switch (EMULATION in the pause menu; hold L while starting for the
   interpreter, which is also used by itself after a start where the JIT failed).
 
+- **Test runs on the Switch:** a `test.txt` in the game's folder lists runs (a snapshot to
+  start from, how many frames, which frames to take pictures of, an input script, settings
+  for the run only). Each start of the game does the next run, writes the pictures (BMP), a
+  line of timings per frame (`timing.csv`) and its `game.log` to `test-results/<run>/`, and
+  quits; it then starts again by itself for the next one. The save and the settings are left
+  alone. When all are done, `test.txt` becomes `test-done.txt`. On the PC the same options
+  exist: `--relative`, `--timing <file.csv>`, `--set key=value`, `--keep-settings`. See
+  `frontend/testrun.h` for the format.
+
 - **3D ON GPU** (pause menu, Linux; "3D ON GPU (TEST)" on the Switch): the 3D scene, the
   widescreen world included, is drawn by the graphics chip through OpenGL instead of the
   processor, on the thread that shows the frames. Off by default. If it was on and the game did
