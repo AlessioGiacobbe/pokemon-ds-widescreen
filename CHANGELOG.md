@@ -16,10 +16,10 @@
   JIT on the Switch (EMULATION in the pause menu; hold L while starting for the
   interpreter, which is also used by itself after a start where the JIT failed).
 
-- **3D ON GPU** (pause menu, Linux): the 3D scene, the widescreen world included, is drawn by
-  the graphics chip through OpenGL instead of the processor, on a thread of its own. Not on the
-  Switch for now, where it hung the whole console; there it can only be tried from
-  ssrecomp.cfg (gpu3d_test=1).
+- **3D ON GPU** (pause menu, Linux; "3D ON GPU (TEST)" on the Switch): the 3D scene, the
+  widescreen world included, is drawn by the graphics chip through OpenGL instead of the
+  processor, on the thread that shows the frames. Off by default. If it was on and the game did
+  not get 600 frames into it (it hung a Switch once), it is off at the next start.
 - When the game runs slower than a DS (a slow device), the sound is stretched to fill the
   time, at its own pitch, instead of breaking up into crackles. At full speed it plays
   exactly as before.

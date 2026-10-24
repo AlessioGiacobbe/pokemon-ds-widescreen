@@ -8,3 +8,11 @@
 // Returns false, with the reason in info, if there is no such context; on success info names
 // the renderer.
 bool SsrCreateGLContext(std::string& info);
+
+// Makes the context current on the calling thread again (after SsrCreateGLContext), and gives
+// the thread back to whatever drew there before: SDL's context when one was named with
+// SsrSetSdlContext, otherwise the EGL context current before SsrEnterGLContext.
+void SsrEnterGLContext();
+void SsrLeaveGLContext();
+// SDL's window and OpenGL context (its renderer's), which SsrLeaveGLContext makes current again.
+void SsrSetSdlContext(void* window, void* context);

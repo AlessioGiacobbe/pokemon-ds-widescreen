@@ -1,8 +1,8 @@
-// ssrecomp: the 3D scene drawn on the graphics chip, on a thread of its own. See GPU3D_GLThread.h.
+// ssrecomp: the 3D scene drawn on the graphics chip. See GPU3D_GLThread.h.
 #ifdef OGLRENDERER_ENABLED
 #include "GPU3D_GLThread.h"
+#include <cstdio>
 #include <cstring>
-#include <pthread.h>
 #include "GPU.h"
 #include "GPU3D_OpenGL.h"
 #include "SsrThreads.h"
@@ -19,34 +19,26 @@ GLThreadRenderer::GLThreadRenderer()
 
 std::unique_ptr<GLThreadRenderer> GLThreadRenderer::Start(std::string& info)
 {
+    if (!CreateContext || !Enter || !Leave)
+    {
+        info = "no OpenGL context in this build";
+        return nullptr;
+    }
     std::unique_ptr<GLThreadRenderer> r(new GLThreadRenderer());
-    // A large stack: the graphics driver compiles the shaders on this thread, and threads
-    // get small stacks by default on the Switch.
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 4 << 20);
-    const int err = pthread_create(&r->Thread, &attr, [](void* p) -> void* {
-        static_cast<GLThreadRenderer*>(p)->Loop();
-        return nullptr;
-    }, r.get());
-    pthread_attr_destroy(&attr);
-    if (err)
+    r->ServiceThread = std::this_thread::get_id();
+    r->Step("creating the context");
+    if (!CreateContext(info))
     {
-        info = "the drawing thread could not be started";
+        Leave();
         return nullptr;
     }
-    r->Started = true;
-    {
-        std::unique_lock<std::mutex> lock(r->Mutex);
-        r->Done.wait(lock, [&] { return r->InitDone; });
-    }
-    info = r->InitInfo;
-    if (!r->InitOk)
-    {
-        pthread_join(r->Thread, nullptr);
-        r->Started = false;
-        return nullptr;
-    }
+    r->Step("setting up the renderer (shaders)");
+    r->DS = GLRenderer::NewReadback(2048);
+    if (r->DS) r->DS->SetRenderSettings(false, 1);
+    else info += "; melonDS's OpenGL renderer could not be set up (shaders)";
+    Leave();
+    if (!r->DS) return nullptr;
+    r->Step("ready");
     Current = r.get();
     return r;
 }
@@ -54,72 +46,75 @@ std::unique_ptr<GLThreadRenderer> GLThreadRenderer::Start(std::string& info)
 GLThreadRenderer::~GLThreadRenderer()
 {
     if (Current == this) Current = nullptr;
+    // The renderers' OpenGL objects belong to the context (this is the service thread).
+    if (DS || Wide)
     {
-        std::lock_guard<std::mutex> lock(Mutex);
-        Quit = true;
+        Enter();
+        Wide.reset();
+        DS.reset();
+        Leave();
     }
-    Wake.notify_all();
-    if (Started) pthread_join(Thread, nullptr);
 }
 
-void GLThreadRenderer::Loop()
+void GLThreadRenderer::Step(const char* what)
 {
-    // On the Switch: core 1, where the software renderer's thread would be (SsrThreads.h).
-    SsrHelperThreadStart(0);
-    std::string info;
-    bool ok = CreateContext && CreateContext(info);
-    if (!CreateContext) info = "no OpenGL context in this build";
-    if (ok)
+    if (Trace && (FramesDrawn < 3 || FramesDrawn % 600 == 0))
     {
-        DS = GLRenderer::NewReadback(2048);
-        if (DS) DS->SetRenderSettings(false, 1);
-        else
-        {
-            ok = false;
-            info += "; melonDS's OpenGL renderer could not be set up (shaders)";
-        }
+        char buf[128];
+        snprintf(buf, sizeof(buf), "frame %llu: %s", (unsigned long long)FramesDrawn, what);
+        Trace(buf);
     }
+}
+
+bool GLThreadRenderer::HasWork()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    return PendingDS || PendingWide;
+}
+
+void GLThreadRenderer::Service(bool dsOnly)
+{
     {
         std::lock_guard<std::mutex> lock(Mutex);
-        InitDone = true;
-        InitOk = ok;
-        InitInfo = info;
+        if (!PendingDS && (dsOnly || !PendingWide)) return;
     }
-    Done.notify_all();
-    if (!ok) return;
-
-    std::unique_lock<std::mutex> lock(Mutex);
+    Step("switching to the 3D context");
+    Enter();
     for (;;)
     {
-        Wake.wait(lock, [this] { return Quit || PendingDS || PendingWide; });
-        if (Quit) break;
-        if (PendingDS)
+        bool ds, wide;
         {
-            lock.unlock();
+            std::lock_guard<std::mutex> lock(Mutex);
+            ds = PendingDS;
+            wide = PendingWide;
+        }
+        if (ds)
+        {
             DrawDS();
-            lock.lock();
+            std::lock_guard<std::mutex> lock(Mutex);
             PendingDS = false;
             DSReady = true;
         }
-        else
+        else if (wide && !dsOnly)
         {
-            lock.unlock();
             DrawWide();
-            lock.lock();
+            std::lock_guard<std::mutex> lock(Mutex);
             PendingWide = false;
         }
+        else break;
         Done.notify_all();
     }
-    lock.unlock();
-    // The renderers' OpenGL objects belong to this thread's context.
-    Wide.reset();
-    DS.reset();
+    Step("back to SDL's context");
+    Leave();
+    FramesDrawn++;
 }
 
 void GLThreadRenderer::DrawDS()
 {
+    Step("drawing the DS picture");
     DS->RenderFrameState(*State);
     DS->ReadbackStart();
+    Step("reading the DS picture back");
     const u32* pixels = DS->ReadbackMap();
     if (!pixels)
         std::memset(DSLines, 0, sizeof(DSLines));
@@ -139,6 +134,7 @@ void GLThreadRenderer::DrawDS()
 
 void GLThreadRenderer::DrawWide()
 {
+    Step("drawing the wide picture");
     if (!Wide)
     {
         Wide = GLRenderer::NewReadback(4096);
@@ -153,6 +149,7 @@ void GLThreadRenderer::DrawWide()
     Wide->RenderFrameState(st);
     Wide->ReadbackStart();
     const size_t n = (size_t)WideW * WideH;
+    Step("reading the wide picture back");
     const u32* pixels = Wide->ReadbackMap();
     if (!pixels)
     {
@@ -183,6 +180,11 @@ void GLThreadRenderer::DrawWide()
 
 void GLThreadRenderer::WaitIdle()
 {
+    if (OnServiceThread())
+    {
+        Service();
+        return;
+    }
     std::unique_lock<std::mutex> lock(Mutex);
     if (!PendingDS && !PendingWide) return;
     SsrWaitTimer t(SsrStats().WaitWideNs);
@@ -244,7 +246,7 @@ void GLThreadRenderer::RenderFrame(GPU& gpu)
         DSReady = false;
         DSFetched = false;
     }
-    Wake.notify_all();
+    if (OnServiceThread()) Service();
 }
 
 void GLThreadRenderer::QueueWide(Polygon* const* list, u32 count, int w, int h, u32* out)
@@ -257,13 +259,14 @@ void GLThreadRenderer::QueueWide(Polygon* const* list, u32 count, int w, int h, 
         WideOut = out;
         PendingWide = true;
     }
-    Wake.notify_all();
+    if (OnServiceThread()) Service();
 }
 
 u32* GLThreadRenderer::GetLine(int line)
 {
     if (!DSFetched)
     {
+        if (OnServiceThread()) Service();
         std::unique_lock<std::mutex> lock(Mutex);
         if (PendingDS && !DSReady)
         {

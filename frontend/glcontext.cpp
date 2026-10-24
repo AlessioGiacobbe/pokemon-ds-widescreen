@@ -5,10 +5,67 @@
 #include <EGL/eglext.h>
 #include <cstdio>
 #include <cstring>
+#ifdef __APPLE__
+#include <SDL.h>
+#else
+#include <SDL2/SDL.h>
+#endif
 
 #ifndef EGL_PLATFORM_SURFACELESS_MESA
 #define EGL_PLATFORM_SURFACELESS_MESA 0x31DD
 #endif
+
+// The context made by SsrCreateGLContext, and what was current before SsrEnterGLContext.
+static EGLDisplay OurDisplay = EGL_NO_DISPLAY;
+static EGLContext OurContext = EGL_NO_CONTEXT;
+static EGLSurface OurSurface = EGL_NO_SURFACE;
+static EGLDisplay PrevDisplay = EGL_NO_DISPLAY;
+static EGLSurface PrevDraw = EGL_NO_SURFACE, PrevRead = EGL_NO_SURFACE;
+static EGLContext PrevContext = EGL_NO_CONTEXT;
+static EGLenum PrevApi = EGL_OPENGL_ES_API;
+static SDL_Window* SdlWindow = nullptr;
+static SDL_GLContext SdlContext = nullptr;
+
+void SsrSetSdlContext(void* window, void* context)
+{
+    SdlWindow = static_cast<SDL_Window*>(window);
+    SdlContext = static_cast<SDL_GLContext>(context);
+}
+
+static void SavePrevious()
+{
+    PrevApi = eglQueryAPI();
+    PrevDisplay = eglGetCurrentDisplay();
+    PrevDraw = eglGetCurrentSurface(EGL_DRAW);
+    PrevRead = eglGetCurrentSurface(EGL_READ);
+    PrevContext = eglGetCurrentContext();
+}
+
+void SsrEnterGLContext()
+{
+    SavePrevious();
+    eglBindAPI(EGL_OPENGL_API);
+    eglMakeCurrent(OurDisplay, OurSurface, OurSurface, OurContext);
+}
+
+void SsrLeaveGLContext()
+{
+    glFlush();
+    eglMakeCurrent(OurDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (SdlWindow && SdlContext)
+    {
+        // SDL thinks its context never stopped being current and would skip making it current
+        // again, so it is let go of first.
+        SDL_GL_MakeCurrent(SdlWindow, nullptr);
+        SDL_GL_MakeCurrent(SdlWindow, SdlContext);
+    }
+    else
+    {
+        eglBindAPI(PrevApi);
+        if (PrevContext != EGL_NO_CONTEXT)
+            eglMakeCurrent(PrevDisplay, PrevDraw, PrevRead, PrevContext);
+    }
+}
 
 static std::string EglError(const char* what)
 {
@@ -41,6 +98,7 @@ bool SsrCreateGLContext(std::string& info)
         info = EglError("eglInitialize");
         return false;
     }
+    SavePrevious();
     if (!eglBindAPI(EGL_OPENGL_API))
     {
         info = EglError("eglBindAPI(OpenGL)");
@@ -88,6 +146,9 @@ bool SsrCreateGLContext(std::string& info)
     }
     // Drawing goes into the renderer's own framebuffers, so no surface is needed where EGL
     // allows that (EGL_KHR_surfaceless_context); otherwise a small off-screen one.
+    OurDisplay = display;
+    OurContext = context;
+    OurSurface = EGL_NO_SURFACE;
     if (!eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, context))
     {
         const std::string surfacelessError = EglError("eglMakeCurrent without a surface");
@@ -106,8 +167,10 @@ bool SsrCreateGLContext(std::string& info)
             info = surfacelessError + "; " + (surface == EGL_NO_SURFACE ? std::string("no off-screen surface") : EglError("eglMakeCurrent(off-screen)"))
                 + "; EGL extensions: " + (ext ? ext : "?");
             eglDestroyContext(display, context);
+            OurContext = EGL_NO_CONTEXT;
             return false;
         }
+        OurSurface = surface;
     }
     if (!gladLoadGLLoader((GLADloadproc)eglGetProcAddress))
     {

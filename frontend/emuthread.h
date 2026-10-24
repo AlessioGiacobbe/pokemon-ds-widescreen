@@ -4,6 +4,7 @@
 // graphics card and presenting it took about 5 ms of each frame on the Switch, on the same
 // core as the emulation. On the Switch the emulation thread has core 0 to itself (the main
 // thread moves to core 2) and a stack as big as the main thread's.
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -44,6 +45,20 @@ public:
     {
         std::unique_lock<std::mutex> lock(M);
         CV.wait(lock, [this] { return !Pending; });
+    }
+
+    // Until the job started by the last Kick has finished, calling service() meanwhile (every
+    // fraction of a millisecond), for work the job hands to this thread.
+    template <typename F> void WaitServicing(F service)
+    {
+        std::unique_lock<std::mutex> lock(M);
+        while (Pending)
+        {
+            lock.unlock();
+            service();
+            lock.lock();
+            if (Pending) CV.wait_for(lock, std::chrono::microseconds(250), [this] { return !Pending; });
+        }
     }
 
     void Stop()
