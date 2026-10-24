@@ -46,38 +46,65 @@ bool SsrCreateGLContext(std::string& info)
         info = EglError("eglBindAPI(OpenGL)");
         return false;
     }
-    const EGLint configAttrs[] = {
-        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
-        EGL_NONE };
+    // A configuration that can draw desktop OpenGL. Its kind of surface is not asked for: the
+    // Switch's driver only has ones for windows (asking for off-screen ones found none, and
+    // the context then failed with EGL_BAD_CONFIG); the drawing goes into the renderer's own
+    // framebuffers anyway. (devkitPro's OpenGL example asks for the same.)
+    const EGLint configLists[][16] = {
+        { EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
+          EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8, EGL_NONE },
+        { EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE },
+    };
     EGLConfig config = nullptr;
     EGLint count = 0;
-    if (!eglChooseConfig(display, configAttrs, &config, 1, &count) || count < 1)
-        config = nullptr;
-    const EGLint contextAttrs[] = {
-        EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 3,
-        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
-        EGL_NONE };
-    EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttrs);
+    for (const EGLint* attrs : configLists)
+        if (eglChooseConfig(display, attrs, &config, 1, &count) && count > 0) break;
+    if (count < 1) config = nullptr;
+    // OpenGL 4.3 core (as devkitPro's example), else 3.3 core, which melonDS's renderer needs.
+    const EGLint contextLists[][8] = {
+        { EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+          EGL_CONTEXT_MAJOR_VERSION, 4, EGL_CONTEXT_MINOR_VERSION, 3, EGL_NONE },
+        { EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+          EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 3, EGL_NONE },
+    };
+    EGLContext context = EGL_NO_CONTEXT;
+    std::string tried;
+    for (const EGLint* attrs : contextLists)
+    {
+        context = eglCreateContext(display, config, EGL_NO_CONTEXT, attrs);
+        if (context != EGL_NO_CONTEXT) break;
+        tried += EglError(attrs[3] == 4 ? "eglCreateContext(4.3 core)" : "eglCreateContext(3.3 core)") + "; ";
+    }
     if (context == EGL_NO_CONTEXT)
     {
-        info = EglError("eglCreateContext(OpenGL 3.3 core)");
+        // What the driver has, for the log.
+        EGLint all = 0;
+        eglGetConfigs(display, nullptr, 0, &all);
+        const char* ext = eglQueryString(display, EGL_EXTENSIONS);
+        char buf[96];
+        snprintf(buf, sizeof(buf), "%d OpenGL configs of %d; ", (int)count, (int)all);
+        info = tried + buf + "EGL extensions: " + (ext ? ext : "?");
         return false;
     }
     // Drawing goes into the renderer's own framebuffers, so no surface is needed where EGL
-    // allows that; otherwise a small off-screen one.
+    // allows that (EGL_KHR_surfaceless_context); otherwise a small off-screen one.
     if (!eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, context))
     {
+        const std::string surfacelessError = EglError("eglMakeCurrent without a surface");
         EGLSurface surface = EGL_NO_SURFACE;
-        if (config)
+        const EGLint pbufferConfigAttrs[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE };
+        EGLConfig pconfig = nullptr;
+        EGLint pcount = 0;
+        if (eglChooseConfig(display, pbufferConfigAttrs, &pconfig, 1, &pcount) && pcount > 0)
         {
             const EGLint pbufferAttrs[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE };
-            surface = eglCreatePbufferSurface(display, config, pbufferAttrs);
+            surface = eglCreatePbufferSurface(display, pconfig, pbufferAttrs);
         }
         if (surface == EGL_NO_SURFACE || !eglMakeCurrent(display, surface, surface, context))
         {
-            info = EglError("eglMakeCurrent");
+            const char* ext = eglQueryString(display, EGL_EXTENSIONS);
+            info = surfacelessError + "; " + (surface == EGL_NO_SURFACE ? std::string("no off-screen surface") : EglError("eglMakeCurrent(off-screen)"))
+                + "; EGL extensions: " + (ext ? ext : "?");
             eglDestroyContext(display, context);
             return false;
         }
