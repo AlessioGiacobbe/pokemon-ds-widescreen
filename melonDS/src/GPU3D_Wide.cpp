@@ -20,6 +20,7 @@
 #include "GPU3D_Soft.h"
 #include "SsrThreads.h"
 #include "GPU3D_GLThread.h"
+#include "GPU3D_WideGpu.h"
 
 namespace melonDS
 {
@@ -165,6 +166,7 @@ struct WideAccess
     static inline std::unique_ptr<Workers> Pool;
     static inline bool Drawing = false;
     static inline bool DrawingOnGL = false; // by the graphics chip (GPU3D_GLThread.h)
+    static inline bool DrawingOnWideGpu = false; // by the graphics chip (GPU3D_WideGpu.h)
 
     // Ends the drawing threads (at the end of the program; a new pool is made if needed).
     static void Shutdown()
@@ -176,7 +178,12 @@ struct WideAccess
     // Blocks until the picture being drawn in the background is finished.
     static void Wait()
     {
-        if (Drawing)
+        if (Drawing && DrawingOnWideGpu)
+        {
+            SsrWaitTimer t(SsrStats().WaitWideNs);
+            if (WideGpuCurrent) WideGpuCurrent->Fetch(Back.data());
+        }
+        else if (Drawing)
         {
 #ifdef OGLRENDERER_ENABLED
             if (DrawingOnGL)
@@ -193,6 +200,7 @@ struct WideAccess
         }
         Drawing = false;
         DrawingOnGL = false;
+        DrawingOnWideGpu = false;
     }
 
     // Textures are decoded texel by texel as they are first used in a frame: an entry is
@@ -597,6 +605,36 @@ struct WideAccess
             return;
         }
 #endif
+        if (WideGpuCurrent)
+        {
+            // Worked out here, drawn by the graphics chip while the emulation goes on; Wait()
+            // fetches the picture.
+            static WideGpuFrame frame;
+            static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
+            const auto t0 = std::chrono::steady_clock::now();
+            Back.resize((size_t)W * H);
+            BackW = W;
+            BackH = H;
+            WideGpuBuild(gpu, list, npolys, W, H, frame);
+            if (WideGpuCurrent->Submit(frame))
+            {
+                Drawing = true;
+                DrawingOnWideGpu = true;
+            }
+            if (prof)
+            {
+                static double total = 0;
+                static u64 frames = 0, vertices = 0, draws = 0;
+                total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                vertices += frame.Vertices.size();
+                draws += frame.Draws.size();
+                if (++frames % 200 == 0)
+                    fprintf(stderr, "[wide] %dx%d on the graphics chip (%s): %.2f ms to set up and send, %llu triangles, %llu draws\n",
+                        W, H, WideGpuCurrent->Name(), total / frames, (unsigned long long)(vertices / 3 / frames),
+                        (unsigned long long)(draws / frames));
+            }
+            return;
+        }
         const SoftRenderer& soft = static_cast<const SoftRenderer&>(g.GetCurrentRenderer());
 
         Back.resize((size_t)W * H);

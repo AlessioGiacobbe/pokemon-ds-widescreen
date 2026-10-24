@@ -59,6 +59,7 @@
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
+#include "GPU3D_WideGpu.h"
 #include "SsrThreads.h"
 #include "switch_platform.h"
 #include "funcwatch.h"
@@ -471,6 +472,7 @@ struct Options
     bool keepSettings = false;   // never write the settings file
     bool dekoProbe = false;      // Switch: a test of deko3D when the window is up (frontend/dekoprobe.h)
     bool windowShots = true;     // in a window, screenshots also read back what was shown
+    int wideGpu = -1;            // the widescreen world by the graphics chip: -1 = from settings
 };
 
 static void Usage()
@@ -498,6 +500,8 @@ static void Usage()
         "  --keep-settings      never write the settings file\n"
         "  --deko-probe         Switch: test deko3D (the Switch's graphics API) at start, in the log\n"
         "  --no-window-shots    in a window, no window_*.png read back from the screen (only frame_*)\n"
+        "  --wide-gpu           the widescreen world drawn by the graphics chip (Switch: deko3D;\n"
+        "                       elsewhere OpenGL, with --headless only, for tests; also SSR_WIDE_GPU=1)\n"
         "  --shot-dir <dir>     where screenshots go\n"
         "  --shot-at <a,b,c>    screenshot these frames\n"
         "  --shot-every <n>     screenshot every n frames\n"
@@ -571,6 +575,8 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--keep-settings") o.keepSettings = true;
         else if (a == "--deko-probe") o.dekoProbe = true;
         else if (a == "--no-window-shots") o.windowShots = false;
+        else if (a == "--wide-gpu") o.wideGpu = 1;
+        else if (a == "--no-wide-gpu") o.wideGpu = 0;
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;
         else if (a == "--lockstep") { o.lockstep = true; o.headless = true; o.noSave = true; }
@@ -1143,6 +1149,7 @@ struct Settings
     // read from ssrecomp.cfg ("gpu3d_test=1"), never offered in the menu or on by default. (The
     // key replaced "gpu3d", which the build that hung saved as 1.)
     bool gpu3d = false;
+    bool wideGpu = false;        // the widescreen world drawn by the graphics chip (GPU3D_WideGpu.h)
 
     void Load(const std::string& path)
     {
@@ -1184,6 +1191,7 @@ struct Settings
             else if (k == "cgear_start") cgearOff = v != "ask";
             else if (k == "pipeline") pipeline = v != "0";
             else if (k == "gpu3d_test") gpu3d = v == "1";
+            else if (k == "wide_gpu") wideGpu = v == "1";
         }
     }
 
@@ -1206,6 +1214,7 @@ struct Settings
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
 #ifdef SSR_GPU3D
         f << "gpu3d_test=" << (gpu3d ? 1 : 0) << "\n";
+        f << "wide_gpu=" << (wideGpu ? 1 : 0) << "\n";
 #endif
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
@@ -1464,6 +1473,31 @@ int main(int argc, char** argv)
     }
 #endif
     ApplyRenderer3D(*nds, gpu3dWanted);
+
+    // The widescreen world by the graphics chip (GPU3D_WideGpu.h): deko3D on the Switch;
+    // elsewhere OpenGL, for comparing with the software rasteriser in headless tests (its
+    // context is then current on this thread, which is the one that draws).
+    {
+        if (opt.wideGpu < 0 && getenv("SSR_WIDE_GPU")) opt.wideGpu = atoi(getenv("SSR_WIDE_GPU")) ? 1 : 0;
+        bool want = opt.wideGpu >= 0 ? opt.wideGpu == 1 : cfg.wideGpu;
+#ifndef __SWITCH__
+        want = want && opt.headless;
+#endif
+#ifdef SSR_GPU3D
+        if (want && UseGpu3D) want = false; // (the 3D on the graphics chip draws the wide view itself)
+        melonDS::GLThreadRenderer::CreateContext = SsrCreateGLContext;
+#endif
+        if (want)
+        {
+            std::string info;
+            if (melonDS::WideGpuStart(info))
+                fprintf(stderr, "[widegpu] the widescreen world is drawn by the graphics chip (%s)%s%s\n",
+                    melonDS::WideGpuCurrent->Name(), info.empty() ? "" : ": ", info.c_str());
+            else
+                fprintf(stderr, "[widegpu] the graphics chip could not be set up (%s); the processor draws the widescreen world\n",
+                    info.c_str());
+        }
+    }
 
     // SSR_PERF=1 prints where the time of a frame goes, averaged over 300 frames.
     const bool perfOn = getenv("SSR_PERF") != nullptr;
@@ -4688,6 +4722,7 @@ int main(int argc, char** argv)
     exitStep("widescreen threads");
     melonDS::WideWait();
     melonDS::WideShutdown();
+    melonDS::WideGpuStop();
     melonDS::Wide.Owner = nullptr;
 #ifdef SSR_GPU3D
     // The graphics chip's renderer ends its thread and its OpenGL objects while EGL is still

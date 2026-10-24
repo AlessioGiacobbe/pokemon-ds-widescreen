@@ -39,6 +39,7 @@ add_library(core STATIC
     GPU3D.cpp
     GPU3D_Soft.cpp
     GPU3D_Wide.cpp
+    GPU3D_WideGpu.cpp
     GPU3D_Texcache.cpp
     GPU3D_Texcache.h
     melonDLDI.h
@@ -99,7 +100,22 @@ if (ENABLE_OGLRENDERER)
         OpenGLSupport.cpp
         # ssrecomp: the OpenGL renderer on its own thread, and the function loader.
         GPU3D_GLThread.cpp
-        frontend/glad/glad.c)
+        frontend/glad/glad.c
+        # ssrecomp: the widescreen view on the graphics chip through OpenGL (PC tests).
+        GPU3D_WideGpu_GL.cpp)
+    # Its shaders (wide_gpu/*.glsl, shared with deko3D) built in as text.
+    set(SSR_WIDE_GPU_TEXT "${CMAKE_CURRENT_BINARY_DIR}/wide_gpu")
+    file(MAKE_DIRECTORY "${SSR_WIDE_GPU_TEXT}")
+    foreach(name wide_vsh wide_fsh final_vsh final_fsh)
+        add_custom_command(OUTPUT "${SSR_WIDE_GPU_TEXT}/${name}_text.h"
+            COMMAND "${CMAKE_COMMAND}" "-DIN=${CMAKE_CURRENT_SOURCE_DIR}/wide_gpu/${name}.glsl"
+                "-DOUT=${SSR_WIDE_GPU_TEXT}/${name}_text.h" "-DNAME=${name}_text"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/switch/embed.cmake"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/wide_gpu/${name}.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/switch/embed.cmake"
+            VERBATIM)
+        target_sources(core PRIVATE "${SSR_WIDE_GPU_TEXT}/${name}_text.h")
+    endforeach()
+    target_include_directories(core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
     target_compile_definitions(core PUBLIC OGLRENDERER_ENABLED)
     # ssrecomp: the bundled glad loader (PlatformOGL.h's default spelling of it does not expand).
