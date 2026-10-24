@@ -151,6 +151,9 @@ struct Scene
     // reaches one side before the other), other sprites (the banner's badge and words) would
     // be repeated with them.
     bool weatherObj = false;
+    // Rows of each screen drawn on below its last line (belowscreen.h), which its pieces may
+    // show: the screen images then have 192 + extraRows rows.
+    int extraRows[2] = { 0, 0 };
 };
 
 
@@ -182,8 +185,8 @@ struct WideImage
 
 struct ScreenImage
 {
-    const uint32_t* pixels;   // 256x192 XRGB
-    const uint8_t* flags;     // 256x192 renderer flags, may be null
+    const uint32_t* pixels;   // 256x192 XRGB (taller with Scene::extraRows)
+    const uint8_t* flags;     // 256x192 renderer flags, may be null (likewise)
     // Each row's first and last pixel before blending, how it is blended with the 3D world,
     // and whether the pixels next to it match (GPU2D::SoftRenderer::EdgeColour, EdgeBlend and
     // EdgeFlat); may be null. See Scene::smartEdges.

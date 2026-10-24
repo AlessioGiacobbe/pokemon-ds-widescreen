@@ -29,8 +29,10 @@
 - Switch: quitting no longer hangs when closing the sound never returns (seen at
   "[exit] audio"): after three seconds the program ends without it.
 - Black 2: the world no longer flashes up for a frame between CONTINUE and the season's
-  screen (the widescreen world is left out while the game shows no 3D), and the start menu
-  is drawn with sharp pixels.
+  screen (the widescreen world is left out while the game shows no 3D). The start menu is
+  drawn with sharp pixels and fills the height of a wide view: its list and the saved
+  game's card go on below the screens, drawn from what the game has ready there, so the
+  last entry is no longer cut in half.
 - **Test runs on the Switch:** a `test.txt` in the game's folder lists runs (a snapshot to
   start from, how many frames, which frames to take pictures of, an input script, settings
   for the run only). Each start of the game does the next run, writes the pictures (BMP), a

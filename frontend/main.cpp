@@ -56,6 +56,7 @@
 #include "glcontext.h"
 #endif
 #include "battlewide.h"
+#include "belowscreen.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
@@ -2151,7 +2152,12 @@ int main(int argc, char** argv)
             // both come out larger than the two whole screens would, over the screens' own
             // dark grey. (After CONTINUE, the screens with the C-Gear's questions are shown
             // whole, below.)
-            sc = Stack("launch-menu", { Crop(0, 28, 0, 200, 192), Crop(1, 18, 0, 220, 192) }, true, viewWidth);
+            // The list goes on below the screen (the DS shows the eighth entry cut in half), and
+            // so does the card of the saved game: both are drawn on below the screens
+            // (belowscreen.h) as far as fills the height of a wide view.
+            const int extra = viewWidth > 300 ? std::clamp((int)(420.0f * 192.0f / viewWidth) - 192, 0, 64) : 0;
+            sc = Stack("launch-menu", { Crop(0, 28, 0, 200, 192 + extra), Crop(1, 18, 0, 220, 192 + extra) }, true, viewWidth);
+            sc.extraRows[0] = sc.extraRows[1] = extra;
             // (Text and outlines: nearest pixels, not smoothed into a blur at three times the size.)
             for (Element& el : sc.items) el.crisp = true;
             sc.bgScreen = 1;
@@ -3288,7 +3294,7 @@ int main(int argc, char** argv)
             for (int i = 0; i < 2; i++)
             {
                 ScreenImage& sc = screens[i];
-                if (sc.flags) { flags[i].assign(sc.flags, sc.flags + 256 * 192); sc.flags = flags[i].data(); }
+                if (sc.flags) { flags[i].assign(sc.flags, sc.flags + 256 * (192 + scene.extraRows[i])); sc.flags = flags[i].data(); }
                 if (sc.edge) { edge[i].assign(sc.edge, sc.edge + 2 * 192); sc.edge = edge[i].data(); }
                 if (sc.edgeBlend) { edgeBlend[i].assign(sc.edgeBlend, sc.edgeBlend + 2 * 192); sc.edgeBlend = edgeBlend[i].data(); }
                 if (sc.edgeFlat) { edgeFlat[i].assign(sc.edgeFlat, sc.edgeFlat + 2 * 192); sc.edgeFlat = edgeFlat[i].data(); }
@@ -4460,7 +4466,7 @@ int main(int argc, char** argv)
         // The two screens with their per-pixel layer flags, for the merged view.
         auto& renderer2d = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
         const int topUnit = topUnitOf();
-        const ScreenImage screenImages[2] = {
+        ScreenImage screenImages[2] = {
             { top, renderer2d.LayerFlags[topUnit], renderer2d.EdgeColour[topUnit], renderer2d.EdgeBlend[topUnit], renderer2d.EdgeFlat[topUnit] },
             { bot, renderer2d.LayerFlags[1 - topUnit], renderer2d.EdgeColour[1 - topUnit], renderer2d.EdgeBlend[1 - topUnit], renderer2d.EdgeFlat[1 - topUnit] },
         };
@@ -4581,6 +4587,30 @@ int main(int argc, char** argv)
         {
             static uint32_t pictureFrame = 0;
             if (scene.wide && MergedEdgesArePicture(scene, screenImages)) pictureFrame = frame ? frame : 1;
+            // Screens drawn on below their last line (Scene::extraRows): copies with the rows
+            // added, two of each in turn (the pipeline shows one while the next is made).
+            for (int s = 0; s < 2; s++)
+            {
+                const int extra = scene.extraRows[s];
+                if (extra <= 0 || !screenImages[s].pixels) continue;
+                static std::vector<uint32_t> tallPx[2][2];
+                static std::vector<uint8_t> tallFlags[2][2];
+                std::vector<uint32_t>& px = tallPx[s][frame & 1];
+                std::vector<uint8_t>& fl = tallFlags[s][frame & 1];
+                px.assign((size_t)256 * (192 + extra), 0);
+                fl.assign((size_t)256 * (192 + extra), 0);
+                memcpy(px.data(), screenImages[s].pixels, 256 * 192 * 4);
+                if (screenImages[s].flags) memcpy(fl.data(), screenImages[s].flags, 256 * 192);
+                const int unitNum = s == 0 ? topUnit : 1 - topUnit;
+                if (!RenderBelowScreen(*nds, unitNum, extra, px.data() + 256 * 192))
+                    for (int r = 0; r < extra; r++) // (the last line, repeated)
+                        memcpy(px.data() + 256 * (192 + r), screenImages[s].pixels + 256 * 191, 256 * 4);
+                screenImages[s].pixels = px.data();
+                screenImages[s].flags = fl.data();
+                screenImages[s].edge = nullptr;
+                screenImages[s].edgeBlend = nullptr;
+                screenImages[s].edgeFlat = nullptr;
+            }
             scene.narrow = scene.wide && pictureFrame && frame - pictureFrame < 10;
         }
         if (opt.logSections)
