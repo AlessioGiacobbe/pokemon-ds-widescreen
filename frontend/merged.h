@@ -146,6 +146,10 @@ struct Scene
     // With `wide`: the game's weather particles (sprites over the world: sand, rain, snow) are
     // on the top screen; they are repeated beside it (the screen's sprites at their place one
     // screen width to the left and right), so that the weather reaches the edges of the view.
+    // Only in rows where the world shows beside the screen on both sides: where 2D is
+    // continued on either (an area's banner, a text box, a wipe; a banner's slanted edge
+    // reaches one side before the other), other sprites (the banner's badge and words) would
+    // be repeated with them.
     bool weatherObj = false;
 };
 
@@ -271,6 +275,13 @@ inline EdgeContinuation MergedEdgeContinuation(const Scene& scene, const ScreenI
     // Not mixed with the 3D world: as the screen shows it (with any fade or brightening).
     if (evb == 0) return finished;
     return { top.edge[sy * 2 + side] & 0xFFFFFF, eva, evb };
+}
+
+// Whether the weather's particles are repeated beside the top screen in row sy (see
+// Scene::weatherObj): only where neither side continues 2D.
+inline bool MergedWeatherRow(const Scene& scene, const ScreenImage& top, int sy)
+{
+    return MergedEdgeContinuation(scene, top, sy, 0).none() && MergedEdgeContinuation(scene, top, sy, 1).none();
 }
 
 // Whether a picture in a bitmap background (not a fill, not blended with the world) reaches a
@@ -747,6 +758,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                         if (scene.weatherObj)
                             for (int side = 0; side < 2; side++)
                             {
+                                if (!MergedWeatherRow(scene, top, sy)) break;
                                 const int xa = side ? std::max(right, 0) : 0, xb = side ? outW : std::min(left, outW);
                                 for (int x = xa; x < xb; x++)
                                 {
