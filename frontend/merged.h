@@ -432,6 +432,19 @@ inline bool MergedKeyed(const Element& el, uint32_t rgb)
 // With `smooth` off every piece is drawn with nearest-pixel sampling (hard edges, and fast);
 // with it on, pieces that are not marked crisp are filtered. The rows of the picture are
 // shared out between a few threads.
+// Whether the widescreen world has something drawn where the top screen's pixel (sx, sy) is
+// shown. Over the world, the top screen's backdrop (the colour behind everything) is left out
+// wherever the world has something: the DS's own 3D can leave a hairline gap where two
+// polygons meet (along the road of Skyarrow Bridge), and the backdrop showing through it there
+// would be drawn over the world's floor, enlarged into a line.
+inline bool MergedWideCovers(const WideImage& wide, const MergedView& v, int outW, int outH, int sx, int sy)
+{
+    const int x = (int)((v.originX + (sx + 0.5f) * v.unit) * wide.w / outW);
+    const int y = (int)((v.originY + (sy + 0.5f) * v.unit) * wide.h / outH);
+    if (x < 0 || x >= wide.w || y < 0 || y >= wide.h) return false;
+    return (wide.pixels[(size_t)y * wide.w + x] >> 24) != 0;
+}
+
 // The widescreen 3D picture with its holes beside the screen filled: where the game drew
 // nothing further out (a white flash drawn as one polygon the size of the DS's view, the
 // ground ending where the game stopped drawing it), each row goes on in the last colour drawn
@@ -743,6 +756,10 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
             }
             const ScreenImage& src = screens[el.screen];
             const float s = p.s;
+            // (Over the world, the first piece's backdrop where the world has something is left
+            // out: see MergedWideCovers.)
+            const bool overWorld = useWide && !placed && &p == &pieces[0];
+            const uint32_t* widePxRaw = overWorld ? wide->pixels : nullptr;
 
             const int oya = std::max(ya, y0), oyb = std::min(yb, y0 + h);
             if (p.nearest)
@@ -774,6 +791,9 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                         int sx = col[x];
                         if (el.Skips(sx, sy)) continue;
                         if (el.drop && frow && (LayerClass(frow[sx]) & el.drop)) continue;
+                        if (overWorld && frow && LayerClass(frow[sx]) == LAYER_BACKDROP &&
+                            (widePxRaw[(size_t)((int64_t)oy * wide->h / outH) * wide->w + wcol[x0 + x]] >> 24))
+                            continue;
                         uint32_t c = row[sx];
                         if (spriteKey && LayerClass(frow[sx]) == LAYER_OBJ &&
                             std::min(sx - el.sx, el.sx + el.sw - 1 - sx) < el.dropSpriteCorner &&
@@ -826,6 +846,9 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                         if (el.Skips(srcX, srcY)) continue;
                         int si = srcY * 256 + srcX;
                         if (el.drop && src.flags && (LayerClass(src.flags[si]) & el.drop)) continue;
+                        if (overWorld && src.flags && LayerClass(src.flags[si]) == LAYER_BACKDROP &&
+                            MergedWideCovers(*wide, v, outW, outH, srcX, srcY))
+                            continue;
                         uint32_t c = src.pixels[si];
                         if (MergedKeyed(el, c & 0xFFFFFF)) continue;
                         acc[0] += ((c >> 16) & 0xFF) * wt[k];

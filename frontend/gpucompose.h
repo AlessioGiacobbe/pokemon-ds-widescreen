@@ -44,6 +44,9 @@ public:
             first = false;
             if (useWide && isFirst && wide->placed) continue;
             if (useWide && isFirst) el.drop |= LAYER_3D;
+            // (Over the world, its backdrop where the world has something is left out: see
+            // MergedWideCovers.)
+            const bool overWorld = useWide && isFirst && !wide->placed;
             if (el.wideOnly && !useWide) continue;
             if (!useWide) el.holeCount = 0;
             const float s = v.unit * el.scale;
@@ -117,6 +120,8 @@ public:
                         uint32_t c = row[x] & 0xFFFFFF;
                         bool skip = el.Skips(el.sx + x, sy) ||
                             (el.drop && frow && (LayerClass(frow[x]) & el.drop)) ||
+                            (overWorld && frow && LayerClass(frow[x]) == LAYER_BACKDROP &&
+                                MergedWideCovers(*wide, v, outW, outH, el.sx + x, sy)) ||
                             (spriteKey && LayerClass(frow[x]) == LAYER_OBJ && std::min(x, el.sw - 1 - x) < el.dropSpriteCorner &&
                                 std::min(y, el.sh - 1 - y) < el.dropSpriteCorner) ||
                             (keyed && MergedKeyed(el, c) &&
