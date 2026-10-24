@@ -16,12 +16,16 @@
   JIT on the Switch (EMULATION in the pause menu; hold L while starting for the
   interpreter, which is also used by itself after a start where the JIT failed).
 
-- **Widescreen world on the graphics chip (Switch, testing):** with `wide_gpu=1` in
-  ssrecomp.cfg the widescreen world is drawn by the Switch's graphics chip through deko3D,
-  its own graphics API, instead of the processor, into the same picture. On a PC the same
+- **WORLD ON GPU (Switch, pause menu):** the widescreen world drawn by the Switch's
+  graphics chip through deko3D, its own graphics API, instead of the processor, into the
+  same picture. On the Skyarrow Bridge at WORLD DETAIL 720 a frame went from about 34 ms
+  (30 fps) to about 19 ms. Off by default for now; if the game does not get 600 frames
+  into it, it is off at the next start. On a PC the same
   drawing runs through OpenGL in headless tests (`--wide-gpu`), to compare with the
   processor's picture: they differ only along the edges of polygons.
 
+- Switch: quitting no longer hangs when closing the sound never returns (seen at
+  "[exit] audio"): after three seconds the program ends without it.
 - **Test runs on the Switch:** a `test.txt` in the game's folder lists runs (a snapshot to
   start from, how many frames, which frames to take pictures of, an input script, settings
   for the run only). Each start of the game does the next run, writes the pictures (BMP), a

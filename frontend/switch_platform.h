@@ -39,5 +39,8 @@ void MoveMainThread();
 
 // Called last: puts the processor back to its normal speed.
 void Finish();
+
+// Ends the program at once (after Finish), for an exit that has got stuck.
+[[noreturn]] void ForceExit();
 }
 #endif

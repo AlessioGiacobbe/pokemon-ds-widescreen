@@ -471,6 +471,7 @@ struct Options
     std::vector<std::string> sets; // settings for this run only ("wide_lines=720"); the settings file is then not written
     bool keepSettings = false;   // never write the settings file
     bool dekoProbe = false;      // Switch: a test of deko3D when the window is up (frontend/dekoprobe.h)
+    bool testRun = false;        // a run from test.txt: controllers and the pause menu ignored
     bool windowShots = true;     // in a window, screenshots also read back what was shown
     int wideGpu = -1;            // the widescreen world by the graphics chip: -1 = from settings
 };
@@ -499,6 +500,7 @@ static void Usage()
         "  --set key=value      a setting for this run only (as in ssrecomp.cfg); settings are not saved\n"
         "  --keep-settings      never write the settings file\n"
         "  --deko-probe         Switch: test deko3D (the Switch's graphics API) at start, in the log\n"
+        "  --test-run           ignore controllers and the pause menu (test runs from test.txt)\n"
         "  --no-window-shots    in a window, no window_*.png read back from the screen (only frame_*)\n"
         "  --env NAME=VALUE     set an environment variable (diagnostics such as SSR_WIDE_PROF=1)\n"
         "  --wide-gpu           the widescreen world drawn by the graphics chip (Switch: deko3D;\n"
@@ -575,6 +577,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--set") o.sets.push_back(next());
         else if (a == "--keep-settings") o.keepSettings = true;
         else if (a == "--deko-probe") o.dekoProbe = true;
+        else if (a == "--test-run") o.testRun = true;
         else if (a == "--no-window-shots") o.windowShots = false;
         else if (a == "--wide-gpu") o.wideGpu = 1;
         else if (a == "--env")
@@ -665,6 +668,29 @@ static bool UseGpu3D = false;
 // if it is there at the next start, that one hung or crashed (the whole Switch hung once), and
 // the setting is turned off.
 static std::string Gpu3DMarker;
+// The same for the widescreen world on the graphics chip (GPU3D_WideGpu.h).
+static std::string WideGpuMarker;
+static uint32_t WideGpuFrames = 0;
+static bool StartWideGpu()
+{
+    if (!WideGpuMarker.empty())
+        if (FILE* f = fopen(WideGpuMarker.c_str(), "wb"))
+        {
+            fclose(f);
+            WideGpuFrames = 0;
+        }
+    std::string info;
+    if (melonDS::WideGpuStart(info))
+    {
+        fprintf(stderr, "[widegpu] the widescreen world is drawn by the graphics chip (%s)%s%s\n",
+            melonDS::WideGpuCurrent->Name(), info.empty() ? "" : ": ", info.c_str());
+        return true;
+    }
+    fprintf(stderr, "[widegpu] the graphics chip could not be set up (%s); the processor draws the widescreen world\n",
+        info.c_str());
+    if (!WideGpuMarker.empty()) remove(WideGpuMarker.c_str());
+    return false;
+}
 static uint32_t Gpu3DFrames = 0;
 
 #ifdef SSR_GPU3D
@@ -1502,16 +1528,25 @@ int main(int argc, char** argv)
         if (want && UseGpu3D) want = false; // (the 3D on the graphics chip draws the wide view itself)
         melonDS::GLThreadRenderer::CreateContext = SsrCreateGLContext;
 #endif
-        if (want)
+        // If it was on last time and the game never got 600 frames into it (a file made when it
+        // starts and removed after that says so), it is turned off.
+        if (opt.wideGpu < 0 && !opt.headless && !opt.testRun)
         {
-            std::string info;
-            if (melonDS::WideGpuStart(info))
-                fprintf(stderr, "[widegpu] the widescreen world is drawn by the graphics chip (%s)%s%s\n",
-                    melonDS::WideGpuCurrent->Name(), info.empty() ? "" : ": ", info.c_str());
-            else
-                fprintf(stderr, "[widegpu] the graphics chip could not be set up (%s); the processor draws the widescreen world\n",
-                    info.c_str());
+            WideGpuMarker = opt.config + ".widegpu-starting";
+            if (FILE* f = fopen(WideGpuMarker.c_str(), "rb"))
+            {
+                fclose(f);
+                remove(WideGpuMarker.c_str());
+                if (cfg.wideGpu)
+                {
+                    want = cfg.wideGpu = false;
+                    cfg.Save(opt.config);
+                    fprintf(stderr, "[widegpu] the world on the graphics chip did not keep going last time: turned off "
+                        "(WORLD ON GPU in the pause menu turns it back on)\n");
+                }
+            }
         }
+        if (want) StartWideGpu();
     }
 
     // SSR_PERF=1 prints where the time of a frame goes, averaged over 300 frames.
@@ -3042,6 +3077,9 @@ int main(int argc, char** argv)
     enum
     {
         M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_AUTODETAIL,
+#ifdef SSR_DEKO3D
+        M_WIDEGPU,
+#endif
 #if defined(SSR_GPU3D) && !defined(__SWITCH__)
         M_GPU3D,
 #endif
@@ -3079,6 +3117,10 @@ int main(int argc, char** argv)
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
             { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
+#ifdef SSR_DEKO3D
+            // ON: the widescreen world drawn by the graphics chip (deko3D), not the processor.
+            { "WORLD ON GPU", melonDS::WideGpuCurrent ? "ON" : cfg.wideGpu ? "ON (NOT AVAILABLE)" : "OFF" },
+#endif
 #if defined(SSR_GPU3D) && !defined(__SWITCH__)
             // ON: the 3D scene drawn by the graphics chip instead of the processor. (Not on the
             // Switch: its OpenGL driver hung the console from a second thread and, from the main
@@ -3593,6 +3635,17 @@ int main(int argc, char** argv)
             }
         }
 
+        // A test run (testrun.h) goes by its script alone: buttons pressed meanwhile (or a
+        // controller going away, which opens the pause menu) would pause it, and it would
+        // never get to its last frame and end.
+        if (opt.testRun)
+        {
+            ps = PadState();
+            keys = 0;
+            toggleMenu = false;
+            mouseDown = false;
+        }
+
         const bool mashing = opt.battleMash && appRunning("Battle");
         if (mashing && (frame / 12) % 2 == 0)
         {
@@ -3817,6 +3870,23 @@ int main(int argc, char** argv)
                 cfg.gpu3d = !cfg.gpu3d;
                 ApplyRenderer3D(*nds, cfg.gpu3d);
                 if (cfg.gpu3d && !UseGpu3D) say("NOT AVAILABLE: SEE GAME.LOG");
+                break;
+#endif
+#ifdef SSR_DEKO3D
+            case M_WIDEGPU:
+                // (between frames: the emulation thread is idle here)
+                cfg.wideGpu = !cfg.wideGpu;
+                melonDS::WideWait();
+                if (cfg.wideGpu)
+                {
+                    if (!melonDS::WideGpuCurrent && !StartWideGpu()) say("NOT AVAILABLE: SEE GAME.LOG");
+                }
+                else
+                {
+                    melonDS::WideGpuStop();
+                    if (!WideGpuMarker.empty()) remove(WideGpuMarker.c_str());
+                    fprintf(stderr, "[widegpu] off: the processor draws the widescreen world\n");
+                }
                 break;
 #endif
             case M_SHOWFPS:
@@ -4262,6 +4332,11 @@ int main(int argc, char** argv)
         if (!opt.headless) SwitchPlatform::KeepBoost(frame);
         if (frame == 300) SwitchPlatform::JitStarted();
 #endif
+        if (melonDS::WideGpuCurrent && ++WideGpuFrames == 600 && !WideGpuMarker.empty())
+        {
+            remove(WideGpuMarker.c_str());
+            fprintf(stderr, "[widegpu] 600 frames: kept on\n");
+        }
 #ifdef SSR_GPU3D
         if (UseGpu3D && ++Gpu3DFrames == 600 && !Gpu3DMarker.empty())
         {
@@ -4738,6 +4813,7 @@ int main(int argc, char** argv)
     melonDS::WideWait();
     melonDS::WideShutdown();
     melonDS::WideGpuStop();
+    if (!WideGpuMarker.empty()) remove(WideGpuMarker.c_str());
     melonDS::Wide.Owner = nullptr;
 #ifdef SSR_GPU3D
     // The graphics chip's renderer ends its thread and its OpenGL objects while EGL is still
@@ -4756,6 +4832,19 @@ int main(int argc, char** argv)
     if (opt.audioStats && AudioSamples)
         fprintf(stderr, "[audio] %llu samples, peak %d, rms %.1f\n", (unsigned long long)AudioSamples, AudioPeak,
             sqrt(AudioSumSq / AudioSamples));
+#ifdef __SWITCH__
+    // Closing the sound has now and then never returned on the Switch (the game hung at
+    // "[exit] audio", in a test run with nothing else going on); everything that matters is
+    // saved by then, so after three seconds the program ends without the rest.
+    std::atomic<bool> sdlClosed { false };
+    std::thread exitWatch([&sdlClosed] {
+        for (int i = 0; i < 300 && !sdlClosed; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (sdlClosed) return;
+        fprintf(stderr, "[exit] closing the sound or SDL did not finish within 3 seconds: ending the program without it\n");
+        SwitchPlatform::Finish();
+        SwitchPlatform::ForceExit();
+    });
+#endif
     if (!opt.headless)
     {
         if (audio)
@@ -4768,6 +4857,10 @@ int main(int argc, char** argv)
         exitStep("SDL");
         SDL_Quit();
     }
+#ifdef __SWITCH__
+    sdlClosed = true;
+    exitWatch.join();
+#endif
 #ifdef __SWITCH__
     exitStep("processor speed");
     SwitchPlatform::Finish();

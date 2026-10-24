@@ -457,6 +457,13 @@ std::string Status()
     return buf;
 }
 
+void ForceExit()
+{
+    fflush(stderr);
+    svcExitProcess();
+    for (;;) {}
+}
+
 void Finish()
 {
     JitStarted(); // (an ordinary exit: the JIT did start)

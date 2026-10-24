@@ -207,6 +207,7 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
     // The game's own save and settings are left as they were.
     args.push_back("--no-save");
     args.push_back("--keep-settings");
+    args.push_back("--test-run");
     args.push_back("--relative");
     args.push_back("--shot-dir");
     args.push_back(st.results);
