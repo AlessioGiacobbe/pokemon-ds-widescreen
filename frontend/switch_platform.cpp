@@ -157,6 +157,8 @@ bool Start(int& argc, char**& argv)
             {
                 if (!strncmp(line, "jit=", 4)) jit = line[4] != '0';
                 if (!strncmp(line, "fastmem=", 8)) fastMem = line[8] != '0';
+                // The widescreen drawing threads on core 0 too (melonDS/src/SsrThreads.h).
+                if (!strncmp(line, "wide_core0=", 11) && line[11] == '0') setenv("SSR_WIDE_CORE0", "0", 1);
             }
             fclose(f);
         }

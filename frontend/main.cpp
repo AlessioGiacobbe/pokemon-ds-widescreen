@@ -3109,8 +3109,9 @@ int main(int argc, char** argv)
                 snprintf(extra, sizeof(extra), "; waited for 3D %.2f wide %.2f ms (wide lines %d)", w3d, wwide, WideLinesNow);
                 std::string tail = extra;
 #ifdef __SWITCH__
-                snprintf(extra, sizeof(extra), "; 3D thread on cores 1/2 %u/%u, wide %u/%u", ts.RenderCore[1].exchange(0),
-                    ts.RenderCore[2].exchange(0), ts.WideCore[1].exchange(0), ts.WideCore[2].exchange(0));
+                // (wide: on cores 0/1/2; core 0 only with wide_core0, see melonDS/src/SsrThreads.h)
+                snprintf(extra, sizeof(extra), "; 3D thread on cores 1/2 %u/%u, wide %u/%u/%u", ts.RenderCore[1].exchange(0),
+                    ts.RenderCore[2].exchange(0), ts.WideCore[0].exchange(0), ts.WideCore[1].exchange(0), ts.WideCore[2].exchange(0));
                 tail += extra;
                 const std::string status = SwitchPlatform::Status();
                 if (!status.empty()) tail += "; " + status;
