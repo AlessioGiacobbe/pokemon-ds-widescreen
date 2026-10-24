@@ -7,6 +7,7 @@
 #include "GPU3D_WideGpu.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include "OpenGLSupport.h"
 #include "GPU3D_GLThread.h"
@@ -34,6 +35,14 @@ std::string Source(const unsigned char* text, size_t size)
     return s;
 }
 
+// The same with a #define after the #version line (a variant: see wide_fsh.glsl).
+std::string Variant(std::string s, const char* define)
+{
+    const size_t eol = s.find('\n');
+    s.insert(eol + 1, std::string("#define ") + define + " 1\n");
+    return s;
+}
+
 class WideGpuGL : public WideGpuBackend
 {
 public:
@@ -41,8 +50,18 @@ public:
 
     bool Init(std::string& info)
     {
+        // (SSR_WIDEGPU_SHADER=texbuf: the Switch's variant, the texture memory read as buffer
+        // textures, to check its pictures here.)
+        const char* variant = getenv("SSR_WIDEGPU_SHADER");
+        TexBuf = variant && !strcmp(variant, "texbuf");
+        std::string fsh = Source(wide_fsh_text, sizeof(wide_fsh_text));
+        if (TexBuf)
+        {
+            fsh = Variant(fsh, "WIDE_TEXBUF");
+            fprintf(stderr, "[widegpu] OpenGL: the buffer-texture fragment shader\n");
+        }
         if (!OpenGL::CompileVertexFragmentProgram(MainProgram, Source(wide_vsh_text, sizeof(wide_vsh_text)),
-                Source(wide_fsh_text, sizeof(wide_fsh_text)), "WideMain", {}, {}) ||
+                fsh, "WideMain", {}, {}) ||
             !OpenGL::CompileVertexFragmentProgram(FinalProgram, Source(final_vsh_text, sizeof(final_vsh_text)),
                 Source(final_fsh_text, sizeof(final_fsh_text)), "WideFinal", {}, {}))
         {
@@ -58,6 +77,14 @@ public:
         glBufferData(GL_SHADER_STORAGE_BUFFER, 512 * 1024, nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[3]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, 128 * 1024, nullptr, GL_DYNAMIC_DRAW);
+        glGenTextures(3, BufTex);
+        const GLenum formats[3] = { GL_R8UI, GL_R16UI, GL_R16UI };
+        for (int i = 0; i < 3; i++)
+        {
+            glBindTexture(GL_TEXTURE_BUFFER, BufTex[i]);
+            glTexBuffer(GL_TEXTURE_BUFFER, formats[i], SSBO[i < 2 ? 2 : 3]);
+        }
+        glBindTexture(GL_TEXTURE_BUFFER, 0);
         glBindBuffer(GL_UNIFORM_BUFFER, FrameUBO);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(WideGpuFrameConstants), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_UNIFORM_BUFFER, DrawUBO);
@@ -72,6 +99,7 @@ public:
         glDeleteProgram(FinalProgram);
         glDeleteBuffers(1, &FrameUBO);
         glDeleteBuffers(1, &DrawUBO);
+        glDeleteTextures(3, BufTex);
         glDeleteBuffers(4, SSBO);
         glDeleteBuffers(1, &ReadPBO);
         glDeleteVertexArrays(1, &EmptyVAO);
@@ -111,6 +139,13 @@ public:
             TexVersion = f.TexVersion;
         }
         for (int i = 0; i < 4; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, SSBO[i]);
+        if (TexBuf)
+            for (int i = 0; i < 3; i++)
+            {
+                glActiveTexture(GL_TEXTURE0 + i);
+                glBindTexture(GL_TEXTURE_BUFFER, BufTex[i]);
+            }
+        glActiveTexture(GL_TEXTURE0);
 
         glBindFramebuffer(GL_FRAMEBUFFER, MainFBO);
         const GLenum bufs[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
@@ -243,6 +278,8 @@ private:
 
     GLuint MainProgram = 0, FinalProgram = 0;
     GLuint FrameUBO = 0, DrawUBO = 0, SSBO[4] {}, ReadPBO = 0, EmptyVAO = 0;
+    GLuint BufTex[3] {};   // the texture memory as bytes and 16-bit texels, the palette memory (WIDE_TEXBUF)
+    bool TexBuf = false;
     GLuint MainFBO = 0, FinalFBO = 0, ColorTex = 0, AttrTex = 0, FinalTex = 0, DepthRB = 0;
     int W = 0, H = 0;
     ClipControlFn ClipControl = nullptr;

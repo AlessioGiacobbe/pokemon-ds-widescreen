@@ -14,6 +14,14 @@ struct WidePolygon
     uint attr, texParam, texPalette, flags; // flags: bit 0 W-buffer, bit 1 textured
 };
 
+#ifdef WIDE_TEXBUF
+// A variant for the Switch (deko3D): the texture and palette memory read as buffer textures,
+// through the texture cache, rather than as storage buffers, which the Switch's graphics chip
+// reads without its first-level cache; and the polygon's attributes from the vertices.
+layout (binding = 0) uniform usamplerBuffer uTex8;  // the texture memory, a byte a texel
+layout (binding = 1) uniform usamplerBuffer uTex16; // the same, 16 bits a texel
+layout (binding = 2) uniform usamplerBuffer uPal16; // the palette memory, 16 bits a texel
+#else
 layout (std430, binding = 1) readonly buffer Polygons
 {
     WidePolygon polys[];
@@ -26,6 +34,7 @@ layout (std430, binding = 3) readonly buffer PalMem
 {
     uint palMem[]; // 128 KB
 };
+#endif
 
 layout (std140, binding = 0) uniform Frame
 {
@@ -42,6 +51,7 @@ layout (std140, binding = 1) uniform Draw
 };
 
 flat in uint vPoly;
+flat in uvec4 vPolyData;
 in vec3 vColor;
 in vec2 vTex;
 noperspective in float vZLinear;
@@ -50,6 +60,22 @@ in float vZPersp;
 layout (location = 0) out vec4 oColor;
 layout (location = 1) out uvec2 oAttr;
 
+#ifdef WIDE_TEXBUF
+uint Tex8(uint addr)
+{
+    return texelFetch(uTex8, int(addr & 0x7FFFFu)).r;
+}
+
+uint Tex16(uint addr)
+{
+    return texelFetch(uTex16, int((addr & 0x7FFFEu) >> 1)).r;
+}
+
+uint Pal16(uint addr)
+{
+    return texelFetch(uPal16, int((addr & 0x1FFFEu) >> 1)).r;
+}
+#else
 uint Tex8(uint addr)
 {
     addr &= 0x7FFFFu;
@@ -67,6 +93,7 @@ uint Pal16(uint addr)
     addr &= 0x1FFFEu;
     return (palMem[addr >> 2] >> ((addr & 2u) * 8u)) & 0xFFFFu;
 }
+#endif
 
 int Wrap(int t, int size, bool repeat, bool mirror)
 {
@@ -195,7 +222,11 @@ uint ToonEntry(uint i)
 
 void main()
 {
+#ifdef WIDE_TEXBUF
+    WidePolygon poly = WidePolygon(vPolyData.x, vPolyData.y, vPolyData.z, vPolyData.w);
+#else
     WidePolygon poly = polys[vPoly];
+#endif
     uint attr = poly.attr;
     uint dispCnt = uSize.z;
     uint polyAlpha = (attr >> 16) & 31u;

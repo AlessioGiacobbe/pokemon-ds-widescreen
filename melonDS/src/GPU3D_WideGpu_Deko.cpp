@@ -13,12 +13,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deko3d.h>
 #include <switch.h>
 
 #include "deko_shaders/wide_vsh_dksh.h"
 #include "deko_shaders/wide_fsh_dksh.h"
+#include "deko_shaders/wide_fsh_texbuf_dksh.h"
 #include "deko_shaders/final_vsh_dksh.h"
 #include "deko_shaders/final_fsh_dksh.h"
 
@@ -35,8 +37,12 @@ constexpr u32 OffFrame = 0;                            // uniform buffer 0
 constexpr u32 FrameSize = 0x200;
 constexpr u32 OffDraw = 0x200;                         // uniform buffer 1, set per draw
 constexpr u32 DrawSize = 0x100;
-constexpr u32 OffImageDesc = 0x300;                    // two image descriptors
-constexpr u32 OffSamplerDesc = 0x380;                  // one sampler descriptor
+constexpr u32 OffImageDesc = 0x300;                    // image descriptors (see ImageIds)
+constexpr u32 OffSamplerDesc = 0x400;                  // one sampler descriptor
+// The images in the descriptor set: the final pass's two textures (what was drawn), and the
+// texture and palette memory as buffer textures (the WIDE_TEXBUF shader, see Shared).
+enum ImageIds : u32 { ImgColor, ImgAttr, ImgTex8, ImgTex16, ImgPal16, ImageCount };
+static_assert(OffImageDesc + ImageCount * 32 <= OffSamplerDesc, "the image descriptors fit");
 constexpr u32 OffPolygons = 0x1000;
 constexpr u32 OffTex = OffPolygons + MaxPolygons * sizeof(WideGpuPolygon);
 constexpr u32 OffPal = OffTex + 512 * 1024;
@@ -73,6 +79,11 @@ struct Shared
     DkMemBlock CodeMem = nullptr;
     DkShader MainVsh, MainFsh, FinalVsh, FinalFsh;
     int Users = 0;
+    // For measuring on the Switch (SSR_WIDEGPU_SHADER=texbuf, SSR_WIDEGPU_ZCULL=1 in the
+    // environment, e.g. through a test run's --env): the fragment shader that reads the texture
+    // and palette memory as buffer textures, through the texture cache; the graphics chip's
+    // coarse depth test (Zcull), which rejects hidden pixels in blocks before they are shaded.
+    bool TexBuf = false, Zcull = false;
 };
 Shared* Sh = nullptr;
 
@@ -135,10 +146,17 @@ bool AcquireShared(std::string& info)
         ReleaseShared();
         return false;
     }
+    const char* shader = getenv("SSR_WIDEGPU_SHADER");
+    const char* zcull = getenv("SSR_WIDEGPU_ZCULL");
+    Sh->TexBuf = shader && !strcmp(shader, "texbuf");
+    Sh->Zcull = zcull && !strcmp(zcull, "1");
+    fprintf(stderr, "[widegpu] deko3D: %s fragment shader, Zcull %s\n", Sh->TexBuf ? "buffer-texture" : "storage-buffer",
+        Sh->Zcull ? "on" : "off");
     Sh->CodeMem = MakeBlock(256 * 1024, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Code);
     u32 used = 0;
     if (!Sh->CodeMem || !LoadShader(Sh->MainVsh, wide_vsh_dksh, sizeof(wide_vsh_dksh), used) ||
-        !LoadShader(Sh->MainFsh, wide_fsh_dksh, sizeof(wide_fsh_dksh), used) ||
+        !(Sh->TexBuf ? LoadShader(Sh->MainFsh, wide_fsh_texbuf_dksh, sizeof(wide_fsh_texbuf_dksh), used)
+                     : LoadShader(Sh->MainFsh, wide_fsh_dksh, sizeof(wide_fsh_dksh), used)) ||
         !LoadShader(Sh->FinalVsh, final_vsh_dksh, sizeof(final_vsh_dksh), used) ||
         !LoadShader(Sh->FinalFsh, final_fsh_dksh, sizeof(final_fsh_dksh), used))
     {
@@ -148,7 +166,7 @@ bool AcquireShared(std::string& info)
     }
     DkQueueMaker qm;
     dkQueueMakerDefaults(&qm, Sh->Device);
-    qm.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
+    qm.flags = DkQueueFlags_Graphics | (Sh->Zcull ? DkQueueFlags_EnableZcull : DkQueueFlags_DisableZcull);
     Sh->Queue = dkQueueCreate(&qm);
     if (!Sh->Queue)
     {
@@ -195,6 +213,27 @@ public:
         DkSamplerDescriptor sd;
         dkSamplerDescriptorInitialize(&sd, &sampler);
         memcpy(Data + OffSamplerDesc, &sd, sizeof(sd));
+
+        // The texture memory (as bytes and as 16-bit texels) and the palette memory (16-bit) as
+        // buffer textures over the data memory.
+        auto buffer = [&](DkImage& image, DkImageFormat format, u32 offset, u32 texels, u32 id) {
+            DkImageLayoutMaker lm;
+            dkImageLayoutMakerDefaults(&lm, Sh->Device);
+            lm.type = DkImageType_Buffer;
+            lm.format = format;
+            lm.dimensions[0] = texels;
+            DkImageLayout layout;
+            dkImageLayoutInitialize(&layout, &lm);
+            dkImageInitialize(&image, &layout, DataMem, offset);
+            DkImageView view;
+            dkImageViewDefaults(&view, &image);
+            DkImageDescriptor desc;
+            dkImageDescriptorInitialize(&desc, &view, false, false);
+            memcpy(Data + OffImageDesc + id * sizeof(desc), &desc, sizeof(desc));
+        };
+        buffer(Tex8Image, DkImageFormat_R8_Uint, OffTex, 512 * 1024, ImgTex8);
+        buffer(Tex16Image, DkImageFormat_R16_Uint, OffTex, 256 * 1024, ImgTex16);
+        buffer(Pal16Image, DkImageFormat_R16_Uint, OffPal, 64 * 1024, ImgPal16);
         return true;
     }
 
@@ -258,7 +297,8 @@ public:
         dkCmdBufClear(Cmd);
         dkCmdBufAddMemory(Cmd, CmdMem, 0, CmdSize);
         // What the processor wrote since the last frame is read afresh.
-        dkCmdBufBarrier(Cmd, DkBarrier_None, DkInvalidateFlags_Shader | DkInvalidateFlags_Descriptors | DkInvalidateFlags_L2Cache);
+        dkCmdBufBarrier(Cmd, DkBarrier_None, DkInvalidateFlags_Shader | DkInvalidateFlags_Image |
+            DkInvalidateFlags_Descriptors | DkInvalidateFlags_L2Cache);
 
         DkImageView colorView, attrView, depthView, finalView;
         dkImageViewDefaults(&colorView, &ColorImage);
@@ -288,13 +328,25 @@ public:
         dkCmdBufBindUniformBuffers(Cmd, DkStage_Vertex, 0, ubos, 2);
         dkCmdBufBindUniformBuffers(Cmd, DkStage_Fragment, 0, ubos, 2);
         const DkBufExtents vertices = { DataAddr + OffVertices, Align((u32)std::max<size_t>(16, f.Vertices.size() * sizeof(WideGpuVertex)), 16) };
-        dkCmdBufBindStorageBuffers(Cmd, DkStage_Vertex, 0, &vertices, 1);
-        const DkBufExtents frag[3] = {
-            { DataAddr + OffPolygons, MaxPolygons * (u32)sizeof(WideGpuPolygon) },
-            { DataAddr + OffTex, 512 * 1024 },
-            { DataAddr + OffPal, 128 * 1024 },
-        };
-        dkCmdBufBindStorageBuffers(Cmd, DkStage_Fragment, 1, frag, 3);
+        const DkBufExtents polygons = { DataAddr + OffPolygons, MaxPolygons * (u32)sizeof(WideGpuPolygon) };
+        const DkBufExtents vert[2] = { vertices, polygons };
+        dkCmdBufBindStorageBuffers(Cmd, DkStage_Vertex, 0, vert, 2);
+        dkCmdBufBindImageDescriptorSet(Cmd, DataAddr + OffImageDesc, ImageCount);
+        dkCmdBufBindSamplerDescriptorSet(Cmd, DataAddr + OffSamplerDesc, 1);
+        if (Sh->TexBuf)
+        {
+            const DkResHandle mem[3] = { dkMakeTextureHandle(ImgTex8, 0), dkMakeTextureHandle(ImgTex16, 0), dkMakeTextureHandle(ImgPal16, 0) };
+            dkCmdBufBindTextures(Cmd, DkStage_Fragment, 0, mem, 3);
+        }
+        else
+        {
+            const DkBufExtents frag[3] = {
+                polygons,
+                { DataAddr + OffTex, 512 * 1024 },
+                { DataAddr + OffPal, 128 * 1024 },
+            };
+            dkCmdBufBindStorageBuffers(Cmd, DkStage_Fragment, 1, frag, 3);
+        }
 
         DkRasterizerState rs;
         dkRasterizerStateDefaults(&rs);
@@ -353,9 +405,7 @@ public:
         dkCmdBufBindColorWriteState(Cmd, &all);
         const DkShader* fin[2] = { &Sh->FinalVsh, &Sh->FinalFsh };
         dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, fin, 2);
-        dkCmdBufBindImageDescriptorSet(Cmd, DataAddr + OffImageDesc, 2);
-        dkCmdBufBindSamplerDescriptorSet(Cmd, DataAddr + OffSamplerDesc, 1);
-        const DkResHandle tex[2] = { dkMakeTextureHandle(0, 0), dkMakeTextureHandle(1, 0) };
+        const DkResHandle tex[2] = { dkMakeTextureHandle(ImgColor, 0), dkMakeTextureHandle(ImgAttr, 0) };
         dkCmdBufBindTextures(Cmd, DkStage_Fragment, 0, tex, 2);
         dkCmdBufDraw(Cmd, DkPrimitive_Triangles, 3, 1, 0, 0);
 
@@ -461,7 +511,7 @@ private:
         DkImageDescriptor desc[2];
         dkImageDescriptorInitialize(&desc[0], &colorView, false, false);
         dkImageDescriptorInitialize(&desc[1], &attrView, false, false);
-        memcpy(Data + OffImageDesc, desc, sizeof(desc));
+        memcpy(Data + OffImageDesc + ImgColor * sizeof(desc[0]), desc, sizeof(desc));
         W = w;
         H = h;
         fprintf(stderr, "[widegpu] deko3D targets %dx%d\n", w, h);
@@ -488,6 +538,7 @@ private:
     Times T;
     DkCmdBuf Cmd = nullptr;
     DkImage ColorImage, AttrImage, DepthImage, FinalImage;
+    DkImage Tex8Image, Tex16Image, Pal16Image;
     DkFence Fence;
     u8* Data = nullptr;
     DkGpuAddr DataAddr = 0;

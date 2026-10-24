@@ -18,6 +18,16 @@ layout (std430, binding = 0) readonly buffer Vertices
     WideVertex vtx[];
 };
 
+struct WidePolygon
+{
+    uint attr, texParam, texPalette, flags;
+};
+
+layout (std430, binding = 1) readonly buffer Polygons
+{
+    WidePolygon polys[];
+};
+
 layout (std140, binding = 0) uniform Frame
 {
     uvec4 uSize;          // width, height, DISP3DCNT, alpha test reference
@@ -33,6 +43,9 @@ layout (std140, binding = 1) uniform Draw
 };
 
 flat out uint vPoly;
+// The polygon's attributes, for wide_fsh.glsl's WIDE_TEXBUF variant (read once a vertex, not
+// once a pixel).
+flat out uvec4 vPolyData;
 out vec3 vColor;
 out vec2 vTex;
 noperspective out float vZLinear;
@@ -56,6 +69,8 @@ void main()
     if (uScale.w != 0.0) d = d * 2.0 - 1.0;
     gl_Position = vec4(ndc * v.w, d * v.w, v.w);
     vPoly = v.poly;
+    WidePolygon p = polys[v.poly];
+    vPolyData = uvec4(p.attr, p.texParam, p.texPalette, p.flags);
     vColor = vec3(v.r, v.g, v.b);
     vTex = vec2(v.s, v.t);
     // Z-buffered depth runs straight across the screen; W-buffered depth is W itself,
