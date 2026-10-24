@@ -1628,6 +1628,7 @@ int main(int argc, char** argv)
         int startContinue = -1, confirmDialog = -1, startMain = -1, intro = -1, nameEntry = -1;
         int battleList = -1, battleBag = -1, battleChoice = -1, battleYesNo = -1;
         int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
+        std::vector<int> weatherObj; // the weathers with particles (see Scene::weatherObj)
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
     int cgearStep = 0;
@@ -1667,12 +1668,22 @@ int main(int argc, char** argv)
         bw2.setupDouble = bw2Find("BtlMain_SetupAloneDouble");
         bw2.setupTriple = bw2Find("BtlMain_SetupAloneTriple");
         bw2.setupRotation = bw2Find("BtlMain_SetupAloneRotation");
+        // The weathers with particles, each running in its own overlay (75: snow, 76: rain, 77:
+        // sandstorm; pokebw2's include/field/weather_*.h) while it fades in, lasts and fades out.
+        for (const char* w : { "Flake", "Blizzard", "Flutter", "Speck", "Rain", "Thunder", "GustyRain", "Sandstorm" })
+            for (const char* phase : { "_Main", "_FadeIn", "_FadeOut" })
+                bw2.weatherObj.push_back(bw2Find((std::string(w) + phase).c_str()));
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
     }
     Scene lastKnownBw2;
     uint32_t lastKnownBw2Frame = 0;
+    auto weatherParticles = [&]() {
+        for (int f : bw2.weatherObj)
+            if (funcWatch.Ran(f, 4)) return true;
+        return false;
+    };
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
         Scene sc;
         sc.smartEdges = true;
@@ -1794,6 +1805,7 @@ int main(int argc, char** argv)
             // like it should.
             only("start-menu", 0);
             sc.wide = wideView;
+            sc.weatherObj = weatherParticles();
             // The strip along the bottom of the top screen (BG1, with an arrow down) only says
             // to look at the other screen; without it the overworld shows there instead.
             sc.items[0].drop = LAYER_BG1;
@@ -1838,6 +1850,7 @@ int main(int argc, char** argv)
         {
             only("top", 0);
             sc.wide = wideView;
+            sc.weatherObj = weatherParticles();
         }
         else if (funcWatch.Ran(bw2.bag, 2))
         {

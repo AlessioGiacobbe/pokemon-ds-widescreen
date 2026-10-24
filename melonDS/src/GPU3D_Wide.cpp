@@ -427,8 +427,47 @@ struct WideAccess
             }
 
             if (xnum != xden)
-                for (int i = 0; i < nverts; i++)
-                    g.TempVertexBuffer[i].Position[0] = (s32)((s64)g.TempVertexBuffer[i].Position[0] * xnum / xden);
+            {
+                // A quad that exactly fills the DS's view (its corners on the corners of the
+                // view, at one depth) is a layer drawn in front of the camera on purpose: the
+                // weathers' scrolling backgrounds (Black 2's sandstorm haze, blizzard, rain;
+                // pokebw2's Field3DBG_DrawBillboard) and full-screen covers. Squeezed like the
+                // world it would only cover the middle of the wide view, so it keeps its size,
+                // filling the whole view, and its texture goes on instead of stretching where
+                // it repeats.
+                bool fillsView = nverts == 4;
+                bool left = false, right = false, top = false, bottom = false;
+                for (int i = 0; fillsView && i < 4; i++)
+                {
+                    const s32* p = g.TempVertexBuffer[i].Position;
+                    const s64 w = p[3], tol = std::max<s64>(16, std::abs(w) / 32);
+                    if (w <= 0 || std::abs(std::abs((s64)p[0]) - w) > tol || std::abs(std::abs((s64)p[1]) - w) > tol ||
+                        std::abs((s64)g.TempVertexBuffer[0].Position[3] - w) > tol)
+                        fillsView = false;
+                    left |= p[0] < 0;
+                    right |= p[0] > 0;
+                    top |= p[1] > 0;
+                    bottom |= p[1] < 0;
+                }
+                fillsView = fillsView && left && right && top && bottom;
+                if (fillsView)
+                {
+                    if (cur.TexParam & (1 << 16)) // repeats across: more of the texture, not a wider one
+                    {
+                        s32 centre = 0;
+                        for (int i = 0; i < 4; i++) centre += g.TempVertexBuffer[i].TexCoords[0];
+                        centre /= 4;
+                        for (int i = 0; i < 4; i++)
+                        {
+                            s16& s = g.TempVertexBuffer[i].TexCoords[0];
+                            s = (s16)std::clamp<s64>(centre + (s64)(s - centre) * xden / xnum, -32768, 32767);
+                        }
+                    }
+                }
+                else
+                    for (int i = 0; i < nverts; i++)
+                        g.TempVertexBuffer[i].Position[0] = (s32)((s64)g.TempVertexBuffer[i].Position[0] * xnum / xden);
+            }
 
             g.PolygonMode = cur.PolygonMode;
             g.CurPolygonAttr = cur.PolygonAttr;

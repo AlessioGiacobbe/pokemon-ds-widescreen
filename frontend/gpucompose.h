@@ -273,6 +273,25 @@ private:
                 SDL_RenderCopyF(R, e, &src, &dst);
             }
         }
+        // The weather's particles beside the screen (Scene::weatherObj): the top screen's
+        // sprites, drawn again one screen width to the left and to the right.
+        if (scene.weatherObj && (left > 0 || right < outW))
+        {
+            SDL_Texture* w = Make(WeatherTex, 256, 192);
+            if (w)
+            {
+                for (int i = 0; i < 256 * 192; i++)
+                    Weather[i] = LayerClass(top.flags[i]) == LAYER_OBJ ? 0xFF000000u | (top.pixels[i] & 0xFFFFFF) : 0u;
+                SDL_SetTextureBlendMode(w, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(w, SDL_ScaleModeNearest);
+                SDL_UpdateTexture(w, nullptr, Weather, 256 * 4);
+                for (int k = -1; k <= 1; k += 2)
+                {
+                    const SDL_FRect dst = { v.originX + k * 256 * v.unit, (float)y0, 256 * v.unit, (float)h };
+                    SDL_RenderCopyF(R, w, nullptr, &dst);
+                }
+            }
+        }
         (void)outH;
     }
 
@@ -329,11 +348,12 @@ private:
     SDL_Renderer* R;
     SDL_BlendMode Premultiplied;
     std::vector<Tex> Slots;
-    Tex WideTex, EdgeTex[2], FillTex[2], NarrowTex[2];
+    Tex WideTex, EdgeTex[2], FillTex[2], NarrowTex[2], WeatherTex;
     uint32_t Fill[16 * 192];
     std::vector<SDL_Rect> Spans;
     std::vector<uint32_t> Buf, WideFilled;
     uint32_t Edge[16 * 192];
+    uint32_t Weather[256 * 192];
     SDL_BlendMode EdgeMode = SDL_BLENDMODE_INVALID;
     bool EdgeCustomFailed = false;
 };

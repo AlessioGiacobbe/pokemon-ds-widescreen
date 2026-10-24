@@ -143,7 +143,12 @@ struct Scene
     // A single screen at full height on a wide view: the bars beside it in soft colours from
     // its edges (MergedNarrowBars) rather than one colour.
     bool softBars = false;
+    // With `wide`: the game's weather particles (sprites over the world: sand, rain, snow) are
+    // on the top screen; they are repeated beside it (the screen's sprites at their place one
+    // screen width to the left and right), so that the weather reaches the edges of the view.
+    bool weatherObj = false;
 };
+
 
 // A plain rectangle, for the backing of a group of pieces.
 inline Element FillRect(float dx, float dy, int w, int h, uint32_t rgb)
@@ -182,6 +187,17 @@ struct ScreenImage
     const uint16_t* edgeBlend = nullptr;
     const uint8_t* edgeFlat = nullptr;
 };
+
+// The colour of the weather particle beside the top screen at base x bx (outside 0..255) and
+// row sy, if there is one there (see Scene::weatherObj).
+inline bool MergedWeatherPixel(const ScreenImage& top, int bx, int sy, uint32_t& rgb)
+{
+    const int sx = ((bx % 256) + 256) % 256;
+    const size_t i = (size_t)sy * 256 + sx;
+    if (LayerClass(top.flags[i]) != LAYER_OBJ) return false;
+    rgb = top.pixels[i] & 0xFFFFFF;
+    return true;
+}
 
 // Mapping between base pixels and output pixels.
 struct MergedView
@@ -727,6 +743,18 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                                 dst[x] = 0xFF000000 | nr << 16 | ng << 8 | nb;
                             }
                         }
+                        // The weather's particles beside the screen (Scene::weatherObj).
+                        if (scene.weatherObj)
+                            for (int side = 0; side < 2; side++)
+                            {
+                                const int xa = side ? std::max(right, 0) : 0, xb = side ? outW : std::min(left, outW);
+                                for (int x = xa; x < xb; x++)
+                                {
+                                    uint32_t rgb;
+                                    if (MergedWeatherPixel(top, (int)std::floor((x - v.originX) / v.unit), sy, rgb))
+                                        dst[x] = 0xFF000000 | rgb;
+                                }
+                            }
                     }
                 }
             }
