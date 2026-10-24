@@ -143,30 +143,39 @@ elseif(SSR_SWITCH)
 
     # deko3D, the Switch's own graphics API (devkitPro's switch-dev has the library and uam,
     # which compiles its shaders, written in GLSL, at build time; they are then built into the
-    # program as arrays). For now only a test of it: frontend/dekoprobe.cpp.
+    # program as arrays): the widescreen world on the graphics chip (melonDS/src/GPU3D_WideGpu.h)
+    # and a test of deko3D (frontend/dekoprobe.cpp).
     find_library(SSR_DEKO3D_LIB deko3d HINTS "${DEVKITPRO}/libnx/lib")
     find_program(SSR_UAM uam HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
     if(SSR_DEKO3D_LIB AND SSR_UAM)
         set(SSR_DEKO_OUT "${CMAKE_CURRENT_BINARY_DIR}/deko_shaders")
         file(MAKE_DIRECTORY "${SSR_DEKO_OUT}")
         set(SSR_DEKO_HEADERS)
-        foreach(shader probe_vsh:vert probe_fsh:frag)
+        # folder:shader:stage:header (the header deko_shaders/<header>.h holds the array <header>)
+        foreach(shader frontend/deko:probe_vsh:vert:probe_vsh frontend/deko:probe_fsh:frag:probe_fsh
+                melonDS/src/wide_gpu:wide_vsh:vert:wide_vsh_dksh melonDS/src/wide_gpu:wide_fsh:frag:wide_fsh_dksh
+                melonDS/src/wide_gpu:final_vsh:vert:final_vsh_dksh melonDS/src/wide_gpu:final_fsh:frag:final_fsh_dksh)
             string(REPLACE ":" ";" parts "${shader}")
-            list(GET parts 0 name)
-            list(GET parts 1 stage)
-            set(src "${CMAKE_CURRENT_SOURCE_DIR}/frontend/deko/${name}.glsl")
-            add_custom_command(OUTPUT "${SSR_DEKO_OUT}/${name}.h"
-                COMMAND "${SSR_UAM}" -o "${SSR_DEKO_OUT}/${name}.dksh" -s ${stage} "${src}"
-                COMMAND "${CMAKE_COMMAND}" "-DIN=${SSR_DEKO_OUT}/${name}.dksh" "-DOUT=${SSR_DEKO_OUT}/${name}.h" "-DNAME=${name}"
+            list(GET parts 0 folder)
+            list(GET parts 1 name)
+            list(GET parts 2 stage)
+            list(GET parts 3 header)
+            set(src "${CMAKE_CURRENT_SOURCE_DIR}/${folder}/${name}.glsl")
+            add_custom_command(OUTPUT "${SSR_DEKO_OUT}/${header}.h"
+                COMMAND "${SSR_UAM}" -o "${SSR_DEKO_OUT}/${header}.dksh" -s ${stage} "${src}"
+                COMMAND "${CMAKE_COMMAND}" "-DIN=${SSR_DEKO_OUT}/${header}.dksh" "-DOUT=${SSR_DEKO_OUT}/${header}.h" "-DNAME=${header}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/embed.cmake"
                 DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/embed.cmake"
                 COMMENT "Compiling the shader ${name}"
                 VERBATIM)
-            list(APPEND SSR_DEKO_HEADERS "${SSR_DEKO_OUT}/${name}.h")
+            list(APPEND SSR_DEKO_HEADERS "${SSR_DEKO_OUT}/${header}.h")
         endforeach()
         target_sources(ssrecomp PRIVATE frontend/dekoprobe.cpp ${SSR_DEKO_HEADERS})
         target_include_directories(ssrecomp PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
         target_compile_definitions(ssrecomp PRIVATE SSR_DEKO3D)
+        target_sources(core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/melonDS/src/GPU3D_WideGpu_Deko.cpp" ${SSR_DEKO_HEADERS})
+        target_include_directories(core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+        target_compile_definitions(core PRIVATE SSR_DEKO3D)
         target_link_libraries(ssrecomp PRIVATE "${SSR_DEKO3D_LIB}" nx)
         message(STATUS "deko3D: ${SSR_DEKO3D_LIB}, shaders compiled by ${SSR_UAM}")
     else()

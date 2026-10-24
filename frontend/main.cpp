@@ -500,6 +500,7 @@ static void Usage()
         "  --keep-settings      never write the settings file\n"
         "  --deko-probe         Switch: test deko3D (the Switch's graphics API) at start, in the log\n"
         "  --no-window-shots    in a window, no window_*.png read back from the screen (only frame_*)\n"
+        "  --env NAME=VALUE     set an environment variable (diagnostics such as SSR_WIDE_PROF=1)\n"
         "  --wide-gpu           the widescreen world drawn by the graphics chip (Switch: deko3D;\n"
         "                       elsewhere OpenGL, with --headless only, for tests; also SSR_WIDE_GPU=1)\n"
         "  --shot-dir <dir>     where screenshots go\n"
@@ -576,6 +577,20 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--deko-probe") o.dekoProbe = true;
         else if (a == "--no-window-shots") o.windowShots = false;
         else if (a == "--wide-gpu") o.wideGpu = 1;
+        else if (a == "--env")
+        {
+            // (For test runs from test.txt on the Switch, which cannot set the environment.)
+            const std::string kv = next();
+            const size_t eq = kv.find('=');
+            if (eq != std::string::npos)
+            {
+#ifdef _WIN32
+                _putenv_s(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str());
+#else
+                setenv(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), 1);
+#endif
+            }
+        }
         else if (a == "--no-wide-gpu") o.wideGpu = 0;
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;

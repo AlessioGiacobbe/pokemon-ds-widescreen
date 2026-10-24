@@ -16,6 +16,12 @@
   JIT on the Switch (EMULATION in the pause menu; hold L while starting for the
   interpreter, which is also used by itself after a start where the JIT failed).
 
+- **Widescreen world on the graphics chip (Switch, testing):** with `wide_gpu=1` in
+  ssrecomp.cfg the widescreen world is drawn by the Switch's graphics chip through deko3D,
+  its own graphics API, instead of the processor, into the same picture. On a PC the same
+  drawing runs through OpenGL in headless tests (`--wide-gpu`), to compare with the
+  processor's picture: they differ only along the edges of polygons.
+
 - **Test runs on the Switch:** a `test.txt` in the game's folder lists runs (a snapshot to
   start from, how many frames, which frames to take pictures of, an input script, settings
   for the run only). Each start of the game does the next run, writes the pictures (BMP), a

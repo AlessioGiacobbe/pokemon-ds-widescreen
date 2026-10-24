@@ -181,7 +181,16 @@ struct WideAccess
         if (Drawing && DrawingOnWideGpu)
         {
             SsrWaitTimer t(SsrStats().WaitWideNs);
+            static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
+            const auto t0 = std::chrono::steady_clock::now();
             if (WideGpuCurrent) WideGpuCurrent->Fetch(Back.data());
+            if (prof)
+            {
+                static double total = 0;
+                static u64 n = 0;
+                total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                if (++n % 200 == 0) fprintf(stderr, "[wide] waiting for and fetching the graphics chip's picture: %.2f ms\n", total / n);
+            }
         }
         else if (Drawing)
         {
