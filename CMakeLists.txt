@@ -141,6 +141,38 @@ elseif(SSR_SWITCH)
         target_link_libraries(ssrecomp PRIVATE nx)
     endif()
 
+    # deko3D, the Switch's own graphics API (devkitPro's switch-dev has the library and uam,
+    # which compiles its shaders, written in GLSL, at build time; they are then built into the
+    # program as arrays). For now only a test of it: frontend/dekoprobe.cpp.
+    find_library(SSR_DEKO3D_LIB deko3d HINTS "${DEVKITPRO}/libnx/lib")
+    find_program(SSR_UAM uam HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
+    if(SSR_DEKO3D_LIB AND SSR_UAM)
+        set(SSR_DEKO_OUT "${CMAKE_CURRENT_BINARY_DIR}/deko_shaders")
+        file(MAKE_DIRECTORY "${SSR_DEKO_OUT}")
+        set(SSR_DEKO_HEADERS)
+        foreach(shader probe_vsh:vert probe_fsh:frag)
+            string(REPLACE ":" ";" parts "${shader}")
+            list(GET parts 0 name)
+            list(GET parts 1 stage)
+            set(src "${CMAKE_CURRENT_SOURCE_DIR}/frontend/deko/${name}.glsl")
+            add_custom_command(OUTPUT "${SSR_DEKO_OUT}/${name}.h"
+                COMMAND "${SSR_UAM}" -o "${SSR_DEKO_OUT}/${name}.dksh" -s ${stage} "${src}"
+                COMMAND "${CMAKE_COMMAND}" "-DIN=${SSR_DEKO_OUT}/${name}.dksh" "-DOUT=${SSR_DEKO_OUT}/${name}.h" "-DNAME=${name}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/embed.cmake"
+                DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/embed.cmake"
+                COMMENT "Compiling the shader ${name}"
+                VERBATIM)
+            list(APPEND SSR_DEKO_HEADERS "${SSR_DEKO_OUT}/${name}.h")
+        endforeach()
+        target_sources(ssrecomp PRIVATE frontend/dekoprobe.cpp ${SSR_DEKO_HEADERS})
+        target_include_directories(ssrecomp PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+        target_compile_definitions(ssrecomp PRIVATE SSR_DEKO3D)
+        target_link_libraries(ssrecomp PRIVATE "${SSR_DEKO3D_LIB}" nx)
+        message(STATUS "deko3D: ${SSR_DEKO3D_LIB}, shaders compiled by ${SSR_UAM}")
+    else()
+        message(STATUS "deko3D or uam not found (both come with switch-dev): built without the deko3D test")
+    endif()
+
     find_program(SSR_NACPTOOL nacptool HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
     find_program(SSR_ELF2NRO elf2nro HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
     if(NOT SSR_NACPTOOL OR NOT SSR_ELF2NRO)

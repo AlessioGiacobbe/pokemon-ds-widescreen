@@ -62,6 +62,9 @@
 #include "SsrThreads.h"
 #include "switch_platform.h"
 #include "funcwatch.h"
+#if defined(__SWITCH__) && defined(SSR_DEKO3D)
+#include "dekoprobe.h"
+#endif
 
 #ifdef __ANDROID__
 // The app holds the player's own game, so it cannot update itself as the setup window does:
@@ -464,6 +467,7 @@ struct Options
     std::string timing;          // a line per frame with where its time went (CSV)
     std::vector<std::string> sets; // settings for this run only ("wide_lines=720"); the settings file is then not written
     bool keepSettings = false;   // never write the settings file
+    bool dekoProbe = false;      // Switch: a test of deko3D when the window is up (frontend/dekoprobe.h)
 };
 
 static void Usage()
@@ -489,6 +493,7 @@ static void Usage()
         "  --timing <file.csv>  a line per frame: where its time went (ms)\n"
         "  --set key=value      a setting for this run only (as in ssrecomp.cfg); settings are not saved\n"
         "  --keep-settings      never write the settings file\n"
+        "  --deko-probe         Switch: test deko3D (the Switch's graphics API) at start, in the log\n"
         "  --shot-dir <dir>     where screenshots go\n"
         "  --shot-at <a,b,c>    screenshot these frames\n"
         "  --shot-every <n>     screenshot every n frames\n"
@@ -560,6 +565,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--timing") o.timing = next();
         else if (a == "--set") o.sets.push_back(next());
         else if (a == "--keep-settings") o.keepSettings = true;
+        else if (a == "--deko-probe") o.dekoProbe = true;
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;
         else if (a == "--lockstep") { o.lockstep = true; o.headless = true; o.noSave = true; }
@@ -1540,6 +1546,19 @@ int main(int argc, char** argv)
             SDL_RendererInfo info;
             if (SDL_GetRendererInfo(renderer, &info) == 0)
                 fprintf(stderr, "SDL renderer %s, video driver %s\n", info.name, SDL_GetCurrentVideoDriver());
+        }
+        if (opt.dekoProbe)
+        {
+#if defined(__SWITCH__) && defined(SSR_DEKO3D)
+            // (Beside SDL's OpenGL, which has drawn a frame by now.)
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderPresent(renderer);
+            DekoProbe::Run(1280, 720);
+            DekoProbe::Run(960, 540);
+#else
+            fprintf(stderr, "[deko] not in this build (Switch builds with deko3d and uam only)\n");
+#endif
         }
         for (int i = 0; i < 2; i++)
             tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 192);
