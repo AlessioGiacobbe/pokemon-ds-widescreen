@@ -1056,11 +1056,11 @@ struct Settings
     bool fastMem = true;  // ... and its fast memory (also read at start-up)
     bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
     bool pipeline = true; // Switch: show each frame while the next one is emulated (emuthread.h)
-#ifdef __SWITCH__
-    bool gpu3d = true;    // the 3D scene drawn by the graphics chip (melonDS/src/GPU3D_GLThread.h)
-#else
+    // The 3D scene drawn by the graphics chip (melonDS/src/GPU3D_GLThread.h). Off unless asked
+    // for: on the Switch, turning it on hung the whole console (Oct 24), so there it is only
+    // read from ssrecomp.cfg ("gpu3d_test=1"), never offered in the menu or on by default. (The
+    // key replaced "gpu3d", which the build that hung saved as 1.)
     bool gpu3d = false;
-#endif
 
     void Load(const std::string& path)
     {
@@ -1088,7 +1088,7 @@ struct Settings
             else if (k == "fastmem") fastMem = v == "1";
             else if (k == "cgear_start") cgearOff = v != "ask";
             else if (k == "pipeline") pipeline = v != "0";
-            else if (k == "gpu3d") gpu3d = v != "0";
+            else if (k == "gpu3d_test") gpu3d = v == "1";
         }
 #ifdef __SWITCH__
         // The Switch's buttons are labelled where the DS's are, so labels and positions are
@@ -1112,7 +1112,7 @@ struct Settings
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
 #ifdef SSR_GPU3D
-        f << "gpu3d=" << (gpu3d ? 1 : 0) << "\n";
+        f << "gpu3d_test=" << (gpu3d ? 1 : 0) << "\n";
 #endif
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
@@ -2868,7 +2868,7 @@ int main(int argc, char** argv)
     enum
     {
         M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_AUTODETAIL,
-#ifdef SSR_GPU3D
+#if defined(SSR_GPU3D) && !defined(__SWITCH__)
         M_GPU3D,
 #endif
         M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
@@ -2905,7 +2905,7 @@ int main(int argc, char** argv)
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
             { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
-#ifdef SSR_GPU3D
+#if defined(SSR_GPU3D) && !defined(__SWITCH__)
             // ON: the 3D scene drawn by the graphics chip instead of the processor.
             { "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF" },
 #endif
@@ -3604,7 +3604,7 @@ int main(int argc, char** argv)
             case M_AUTODETAIL:
                 cfg.autoDetail = !cfg.autoDetail;
                 break;
-#ifdef SSR_GPU3D
+#if defined(SSR_GPU3D) && !defined(__SWITCH__)
             case M_GPU3D:
                 // (between frames: the emulation thread is idle here)
                 cfg.gpu3d = !cfg.gpu3d;
