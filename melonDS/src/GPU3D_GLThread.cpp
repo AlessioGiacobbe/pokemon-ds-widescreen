@@ -1,6 +1,7 @@
 // ssrecomp: the 3D scene drawn on the graphics chip. See GPU3D_GLThread.h.
 #ifdef OGLRENDERER_ENABLED
 #include "GPU3D_GLThread.h"
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include "GPU.h"
@@ -72,6 +73,21 @@ bool GLThreadRenderer::HasWork()
     return PendingDS || PendingWide;
 }
 
+// Where a turn's time goes (milliseconds, summed), written to the log every 300 turns.
+namespace
+{
+struct TurnTimes
+{
+    double Enter = 0, DSDraw = 0, DSRead = 0, WideDraw = 0, WideRead = 0, Leave = 0;
+    unsigned Turns = 0, DSFrames = 0, WideFrames = 0;
+};
+TurnTimes Times;
+double Now()
+{
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}
+
 void GLThreadRenderer::Service(bool dsOnly)
 {
     {
@@ -79,7 +95,9 @@ void GLThreadRenderer::Service(bool dsOnly)
         if (!PendingDS && (dsOnly || !PendingWide)) return;
     }
     Step("switching to the 3D context");
+    double t = Now();
     Enter();
+    Times.Enter += Now() - t;
     for (;;)
     {
         bool ds, wide;
@@ -105,16 +123,33 @@ void GLThreadRenderer::Service(bool dsOnly)
         Done.notify_all();
     }
     Step("back to SDL's context");
+    t = Now();
     Leave();
+    Times.Leave += Now() - t;
     FramesDrawn++;
+    if (++Times.Turns == 300 && Trace)
+    {
+        char buf[256];
+        const double n = Times.Turns;
+        snprintf(buf, sizeof(buf), "per turn (300 turns, %u DS and %u wide pictures): enter %.2f, DS draw %.2f, "
+            "DS read back %.2f, wide draw %.2f, wide read back %.2f, leave %.2f ms",
+            Times.DSFrames, Times.WideFrames, Times.Enter / n, Times.DSDraw / n, Times.DSRead / n,
+            Times.WideDraw / n, Times.WideRead / n, Times.Leave / n);
+        Trace(buf);
+        Times = TurnTimes();
+    }
 }
 
 void GLThreadRenderer::DrawDS()
 {
     Step("drawing the DS picture");
+    double t = Now();
     DS->RenderFrameState(*State);
     DS->ReadbackStart();
+    Times.DSDraw += Now() - t;
+    Times.DSFrames++;
     Step("reading the DS picture back");
+    t = Now();
     const u32* pixels = DS->ReadbackMap();
     if (!pixels)
         std::memset(DSLines, 0, sizeof(DSLines));
@@ -130,11 +165,13 @@ void GLThreadRenderer::DrawDS()
         }
     }
     DS->ReadbackUnmap();
+    Times.DSRead += Now() - t;
 }
 
 void GLThreadRenderer::DrawWide()
 {
     Step("drawing the wide picture");
+    double t = Now();
     if (!Wide)
     {
         Wide = GLRenderer::NewReadback(4096);
@@ -148,8 +185,11 @@ void GLThreadRenderer::DrawWide()
     st.UploadTextures = false; // the DS-resolution picture of the same frame did
     Wide->RenderFrameState(st);
     Wide->ReadbackStart();
+    Times.WideDraw += Now() - t;
+    Times.WideFrames++;
     const size_t n = (size_t)WideW * WideH;
     Step("reading the wide picture back");
+    t = Now();
     const u32* pixels = Wide->ReadbackMap();
     if (!pixels)
     {
@@ -176,6 +216,7 @@ void GLThreadRenderer::DrawWide()
         WideOut[i] = (((a << 3) | (a >> 2)) << 24) | (r << 16) | (g << 8) | b;
     }
     Wide->ReadbackUnmap();
+    Times.WideRead += Now() - t;
 }
 
 void GLThreadRenderer::WaitIdle()

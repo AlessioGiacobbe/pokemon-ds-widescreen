@@ -4052,16 +4052,14 @@ int main(int argc, char** argv)
                 // The last frame is shown while this one is emulated.
 #ifdef SSR_GPU3D
                 // The 3D on the graphics chip is drawn on this thread, between the turns of
-                // SDL's drawing (see GPU3D_GLThread.h): the DS-resolution picture the emulation
-                // handed over at the end of the last frame before the next one starts (it needs
-                // it at once), the widescreen one while it runs, and anything else while
-                // waiting for it.
-                if (auto* gl = melonDS::GLThreadRenderer::Current) gl->Service(true);
-#endif
-                emuThread.Kick();
-#ifdef SSR_GPU3D
+                // SDL's drawing (see GPU3D_GLThread.h): what the emulation handed over at the end
+                // of the last frame, in one turn (switching OpenGL contexts costs), before the
+                // next frame starts (it needs the DS-resolution picture at once); anything
+                // handed over during a frame (several frames at a time when fast forwarding)
+                // while waiting for it.
                 if (auto* gl = melonDS::GLThreadRenderer::Current) gl->Service();
 #endif
+                emuThread.Kick();
                 drawFrame(pendingJob);
                 pendingJob.valid = false;
 #ifdef SSR_GPU3D
