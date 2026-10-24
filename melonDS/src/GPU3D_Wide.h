@@ -22,8 +22,10 @@ struct WideState
     float ViewWidth = 256;    // width of the view in DS pixels (256 = no extra width)
 
     // The image that belongs to the frame the 2D renderer has just output: XRGB, with
-    // the top byte 0 where no polygon was drawn.
-    std::vector<u32> Front;
+    // the top byte 0 where no polygon was drawn. Three buffers take turns, so it stays as it
+    // is until the one after the next is published: it can be read while the next frame is
+    // emulated and drawn. (It may be memory the graphics chip writes, see GPU3D_WideGpu.h.)
+    const u32* Front = nullptr;
     int FrontW = 0, FrontH = 0;
     u64 FrontSerial = 0;      // changes whenever Front does
 };
@@ -34,4 +36,7 @@ extern WideState Wide;
 void WideWait();
 // Ends its drawing threads (the frontend calls it before shutting down, after WideWait).
 void WideShutdown();
+// Before the graphics chip's renderer goes (GPU3D_WideGpu.h): pictures in its memory are
+// copied out.
+void WideReleaseGpu();
 }

@@ -3237,8 +3237,10 @@ int main(int argc, char** argv)
         // For drawing while the next frame is emulated: copies of what that changes. The
         // screens themselves stay: the emulation draws into the other framebuffer and swaps
         // them at its very end. The layer flags and edges are redrawn line by line, and the
-        // widescreen picture is swapped when the 3D is drawn.
-        void Keep()
+        // widescreen picture is swapped when the 3D is drawn. (The widescreen picture itself
+        // stays as it is for the next frame, GPU3D_Wide.h, but not over several: copied when
+        // fast forwarding.)
+        void Keep(bool severalFrames)
         {
             for (int i = 0; i < 2; i++)
             {
@@ -3248,7 +3250,7 @@ int main(int argc, char** argv)
                 if (sc.edgeBlend) { edgeBlend[i].assign(sc.edgeBlend, sc.edgeBlend + 2 * 192); sc.edgeBlend = edgeBlend[i].data(); }
                 if (sc.edgeFlat) { edgeFlat[i].assign(sc.edgeFlat, sc.edgeFlat + 2 * 192); sc.edgeFlat = edgeFlat[i].data(); }
             }
-            if (wide.pixels && wide.w > 0 && wide.h > 0 && wide.pixels == melonDS::Wide.Front.data())
+            if (severalFrames && wide.pixels && wide.w > 0 && wide.h > 0 && wide.pixels == melonDS::Wide.Front)
             {
                 widePixels.assign(wide.pixels, wide.pixels + (size_t)wide.w * wide.h);
                 wide.pixels = widePixels.data();
@@ -4069,9 +4071,9 @@ int main(int argc, char** argv)
             if (scene.edgeFill && cfg.wide && !opt.noWide)
             {
                 WideImage world;
-                if (wideFrames > 3 && !melonDS::Wide.Front.empty())
+                if (wideFrames > 3 && melonDS::Wide.Front)
                 {
-                    world.pixels = melonDS::Wide.Front.data();
+                    world.pixels = melonDS::Wide.Front;
                     world.w = melonDS::Wide.FrontW;
                     world.h = melonDS::Wide.FrontH;
                 }
@@ -4087,9 +4089,9 @@ int main(int argc, char** argv)
             }
             else
                 battleWide.Reset();
-            if (wideFrames > 3 && !melonDS::Wide.Front.empty())
+            if (wideFrames > 3 && melonDS::Wide.Front)
             {
-                wideImage.pixels = melonDS::Wide.Front.data();
+                wideImage.pixels = melonDS::Wide.Front;
                 wideImage.w = melonDS::Wide.FrontW;
                 wideImage.h = melonDS::Wide.FrontH;
                 // Fades: the game darkens or whitens its screen with the master brightness
@@ -4761,7 +4763,7 @@ int main(int argc, char** argv)
             job.wide = wideImage;
             if (pipelined)
             {
-                job.Keep();
+                job.Keep(speed > 1);
                 job.valid = true;
                 perfMark(2);
             }

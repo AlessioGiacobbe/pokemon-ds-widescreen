@@ -72,7 +72,13 @@ public:
         FreeTargets();
     }
 
-    bool Submit(WideGpuFrame& f) override
+    u32* Target(int slot, int w, int h) override
+    {
+        Slots[slot].resize((size_t)w * h);
+        return Slots[slot].data();
+    }
+
+    bool Submit(WideGpuFrame& f, int slot) override
     {
         if (f.W != W || f.H != H) MakeTargets(f.W, f.H);
         // Rows from the bottom of the view are the first in memory (see wide_vsh.glsl).
@@ -161,8 +167,9 @@ public:
         return true;
     }
 
-    void Fetch(u32* out) override
+    void Fetch(int slot) override
     {
+        u32* out = Slots[slot].data();
         glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadPBO);
         const void* p = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
         if (p) memcpy(out, p, (size_t)W * H * 4);
@@ -223,6 +230,7 @@ private:
     GLuint FrameUBO = 0, DrawUBO = 0, SSBO[4] {}, ReadPBO = 0, EmptyVAO = 0;
     GLuint MainFBO = 0, FinalFBO = 0, ColorTex = 0, AttrTex = 0, FinalTex = 0, DepthRB = 0;
     int W = 0, H = 0;
+    std::vector<u32> Slots[3];
 };
 }
 

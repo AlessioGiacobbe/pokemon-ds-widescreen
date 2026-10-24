@@ -96,11 +96,15 @@ class WideGpuBackend
 public:
     virtual ~WideGpuBackend() = default;
     virtual const char* Name() const = 0;
-    // Starts drawing the frame (the backend's direction of y is put in Constants.Scale[2]);
-    // everything in it is copied before this returns.
-    virtual bool Submit(WideGpuFrame& frame) = 0;
-    // Waits for the picture of the last Submit and copies it to out (W x H).
-    virtual void Fetch(u32* out) = 0;
+    // Memory for the pictures (W x H, XRGB), one for each of three slots that take turns
+    // (GPU3D_Wide.cpp's buffers), which the graphics chip writes the picture into, so that it
+    // need not be copied; the processor reads it after Fetch. nullptr if there is none.
+    virtual u32* Target(int slot, int w, int h) = 0;
+    // Starts drawing the frame into the slot (the backend's direction of y is put in
+    // Constants.Scale[2]); everything in it is copied before this returns.
+    virtual bool Submit(WideGpuFrame& frame, int slot) = 0;
+    // Waits for the picture of the last Submit; Target(slot)'s memory then holds it.
+    virtual void Fetch(int slot) = 0;
 };
 
 // Works out what to draw for the polygons of a wide frame (as GPU3D_Wide.cpp's Draw sees

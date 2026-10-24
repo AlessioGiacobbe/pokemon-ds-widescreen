@@ -126,6 +126,8 @@ public:
     {
         if (Queue) dkQueueWaitIdle(Queue);
         FreeTargets();
+        for (Slot& s : Slots)
+            if (s.Mem) dkMemBlockDestroy(s.Mem);
         if (Cmd) dkCmdBufDestroy(Cmd);
         if (Queue) dkQueueDestroy(Queue);
         if (DataMem) dkMemBlockDestroy(DataMem);
@@ -134,9 +136,29 @@ public:
         if (Device) dkDeviceDestroy(Device);
     }
 
-    bool Submit(WideGpuFrame& f) override
+    u32* Target(int slot, int w, int h) override
+    {
+        Slot& s = Slots[slot];
+        const u32 size = (u32)w * h * 4;
+        if (s.Mem && s.Size != size)
+        {
+            // (This slot is not the one on show, nor the one before: GPU3D_Wide.cpp.)
+            dkMemBlockDestroy(s.Mem);
+            s.Mem = nullptr;
+        }
+        if (!s.Mem)
+        {
+            s.Mem = Block(size, DkMemBlockFlags_CpuCached | DkMemBlockFlags_GpuCached);
+            s.Size = s.Mem ? size : 0;
+        }
+        return s.Mem ? (u32*)dkMemBlockGetCpuAddr(s.Mem) : nullptr;
+    }
+
+    bool Submit(WideGpuFrame& f, int slot) override
     {
         if (f.Vertices.size() > MaxVertices || f.Polygons.size() > MaxPolygons) return false;
+        if (!Slots[slot].Mem || Slots[slot].Size != (u32)f.W * f.H * 4) return false;
+        const double t0 = Now();
         if (f.W != W || f.H != H)
         {
             if (!MakeTargets(f.W, f.H)) return false;
@@ -149,6 +171,7 @@ public:
         memcpy(Data + OffTex, f.TexMem, 512 * 1024);
         memcpy(Data + OffPal, f.PalMem, 128 * 1024);
         memcpy(Data + OffVertices, f.Vertices.data(), f.Vertices.size() * sizeof(WideGpuVertex));
+        const double t1 = Now();
 
         dkCmdBufClear(Cmd);
         dkCmdBufAddMemory(Cmd, CmdMem, 0, CmdSize);
@@ -256,29 +279,48 @@ public:
         // The picture to memory the processor reads.
         dkCmdBufBarrier(Cmd, DkBarrier_Fragments, 0);
         const DkImageRect rect = { 0, 0, 0, (u32)W, (u32)H, 1 };
-        const DkCopyBuf dst = { dkMemBlockGetGpuAddr(ReadMem), (u32)W * 4, 0 };
+        const DkCopyBuf dst = { dkMemBlockGetGpuAddr(Slots[slot].Mem), (u32)W * 4, 0 };
         dkCmdBufCopyImageToBuffer(Cmd, &finalView, &rect, &dst, 0);
         dkCmdBufBarrier(Cmd, DkBarrier_Full, DkInvalidateFlags_L2Cache);
         dkCmdBufSignalFence(Cmd, &Fence, true);
         dkQueueSubmitCommands(Queue, dkCmdBufFinishList(Cmd));
         dkQueueFlush(Queue);
         Pending = true;
+        const double t2 = Now();
+        T.Copy += t1 - t0;
+        T.Record += t2 - t1;
+        T.Draws += (u32)f.Draws.size();
+        T.Triangles += (u32)f.Vertices.size() / 3;
         return true;
     }
 
-    void Fetch(u32* out) override
+    void Fetch(int slot) override
     {
         if (!Pending) return;
         Pending = false;
+        const double t0 = Now();
         if (dkFenceWait(&Fence, 1000000000ll) != DkResult_Success)
         {
             static int reported = 0;
             if (reported++ < 5) fprintf(stderr, "[widegpu] the graphics chip did not finish a picture within a second\n");
-            memset(out, 0, (size_t)W * H * 4);
             return;
         }
-        dkMemBlockFlushCpuCache(ReadMem, 0, (u32)W * H * 4);
-        memcpy(out, dkMemBlockGetCpuAddr(ReadMem), (size_t)W * H * 4);
+        const double t1 = Now();
+        // (Cached memory: lines the processor read before are dropped, so that it reads the
+        // graphics chip's picture.)
+        dkMemBlockFlushCpuCache(Slots[slot].Mem, 0, Slots[slot].Size);
+        const double t2 = Now();
+        T.Wait += t1 - t0;
+        T.Flush += t2 - t1;
+        // Where the time goes, now and then in the log.
+        if (++T.Pictures == 600)
+        {
+            const double n = T.Pictures;
+            fprintf(stderr, "[widegpu] per picture (%dx%d, over %u): copying the data %.2f ms, making the commands %.2f ms, "
+                "waiting for the graphics chip %.2f ms, cache %.2f ms; %u triangles, %u draws\n", W, H, T.Pictures,
+                T.Copy / n, T.Record / n, T.Wait / n, T.Flush / n, (u32)(T.Triangles / n), (u32)(T.Draws / n));
+            T = Times();
+        }
     }
 
 private:
@@ -324,9 +366,14 @@ private:
         return true;
     }
 
+    static double Now()
+    {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
     void FreeTargets()
     {
-        for (DkMemBlock* m : { &ColorMem, &AttrMem, &DepthMem, &FinalMem, &ReadMem })
+        for (DkMemBlock* m : { &ColorMem, &AttrMem, &DepthMem, &FinalMem })
         {
             if (*m) dkMemBlockDestroy(*m);
             *m = nullptr;
@@ -348,12 +395,6 @@ private:
             FreeTargets();
             return false;
         }
-        ReadMem = Block((u32)w * h * 4, DkMemBlockFlags_CpuCached | DkMemBlockFlags_GpuCached);
-        if (!ReadMem)
-        {
-            FreeTargets();
-            return false;
-        }
         // The final pass's two textures.
         DkImageView colorView, attrView;
         dkImageViewDefaults(&colorView, &ColorImage);
@@ -370,7 +411,21 @@ private:
 
     DkDevice Device = nullptr;
     DkMemBlock CmdMem = nullptr, CodeMem = nullptr, DataMem = nullptr;
-    DkMemBlock ColorMem = nullptr, AttrMem = nullptr, DepthMem = nullptr, FinalMem = nullptr, ReadMem = nullptr;
+    DkMemBlock ColorMem = nullptr, AttrMem = nullptr, DepthMem = nullptr, FinalMem = nullptr;
+    // The pictures (see Target).
+    struct Slot
+    {
+        DkMemBlock Mem = nullptr;
+        u32 Size = 0;
+    };
+    Slot Slots[3];
+    struct Times
+    {
+        double Copy = 0, Record = 0, Wait = 0, Flush = 0;
+        u64 Triangles = 0, Draws = 0;
+        u32 Pictures = 0;
+    };
+    Times T;
     DkQueue Queue = nullptr;
     DkCmdBuf Cmd = nullptr;
     DkShader MainVsh, MainFsh, FinalVsh, FinalFsh;

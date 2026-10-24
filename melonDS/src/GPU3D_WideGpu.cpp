@@ -12,7 +12,7 @@ std::unique_ptr<WideGpuBackend> WideGpuCurrent;
 
 bool WideGpuStart(std::string& info)
 {
-    WideGpuCurrent.reset();
+    WideGpuStop();
 #ifdef SSR_DEKO3D
     WideGpuCurrent = WideGpuMakeDeko(info);
 #elif defined(OGLRENDERER_ENABLED)
@@ -23,8 +23,12 @@ bool WideGpuStart(std::string& info)
     return WideGpuCurrent != nullptr;
 }
 
+void WideReleaseGpu();
+
 void WideGpuStop()
 {
+    // (Pictures in the renderer's memory, the one on show among them, are copied out first.)
+    if (WideGpuCurrent) WideReleaseGpu();
     WideGpuCurrent.reset();
 }
 

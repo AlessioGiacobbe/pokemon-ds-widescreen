@@ -134,6 +134,15 @@ static inline VI WrapCoord(VI t, int size, bool repeat, bool mirror)
     return Select((t & size) != 0, (size - 1) - m, m);
 }
 
+// One of the three pictures that take turns (see WideState::Front).
+struct WideBuffer
+{
+    std::vector<u32> Own;
+    u32* Pixels = nullptr; // Own's, or the graphics chip renderer's memory
+    int W = 0, H = 0;
+    bool OnGpu = false;
+};
+
 struct WideVertex
 {
     float X, Y;      // output pixels
@@ -153,8 +162,48 @@ struct WideAccess
     static inline std::vector<Polygon*> ListReal, ListInterp;
     static inline u32 NumReal = 0, NumInterp = 0;
     static inline bool Dirty = false, NeedReal = false, PendingPublish = false;
-    static inline std::vector<u32> Back;
-    static inline int BackW = 0, BackH = 0;
+    // The three pictures that take turns (see WideState::Front): drawn into Bufs[Next], which is
+    // then published, and Next moves on.
+    static inline WideBuffer Bufs[3];
+    static inline int Next = 0;
+    static inline u32* BackPx = nullptr; // Bufs[Next].Pixels while it is drawn
+    // The buffer for the next picture, in memory of our own or the graphics chip renderer's.
+    static u32* BackFor(int W, int H, bool gpu)
+    {
+        WideBuffer& b = Bufs[Next];
+        b.Pixels = gpu ? WideGpuCurrent->Target(Next, W, H) : nullptr;
+        b.OnGpu = b.Pixels != nullptr;
+        if (!b.Pixels)
+        {
+            b.Own.resize((size_t)W * H);
+            b.Pixels = b.Own.data();
+        }
+        b.W = W;
+        b.H = H;
+        return BackPx = b.Pixels;
+    }
+    static void Publish()
+    {
+        const WideBuffer& b = Bufs[Next];
+        Wide.Front = b.Pixels;
+        Wide.FrontW = b.W;
+        Wide.FrontH = b.H;
+        Wide.FrontSerial++;
+        Next = (Next + 1) % 3;
+    }
+    static void ReleaseGpu()
+    {
+        Wait();
+        for (WideBuffer& b : Bufs)
+        {
+            if (!b.OnGpu) continue;
+            const u32* old = b.Pixels;
+            b.Own.assign(old, old + (size_t)b.W * b.H);
+            b.Pixels = b.Own.data();
+            b.OnGpu = false;
+            if (Wide.Front == old) Wide.Front = b.Pixels;
+        }
+    }
     // Per drawing thread, for the strip of rows it is drawing (see Draw): small enough to
     // stay in the processor's cache, unlike buffers the size of the picture.
     struct StripBuffers
@@ -167,6 +216,7 @@ struct WideAccess
     static inline bool Drawing = false;
     static inline bool DrawingOnGL = false; // by the graphics chip (GPU3D_GLThread.h)
     static inline bool DrawingOnWideGpu = false; // by the graphics chip (GPU3D_WideGpu.h)
+    static inline int PendingSlot = 0;
 
     // Ends the drawing threads (at the end of the program; a new pool is made if needed).
     static void Shutdown()
@@ -183,7 +233,7 @@ struct WideAccess
             SsrWaitTimer t(SsrStats().WaitWideNs);
             static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
             const auto t0 = std::chrono::steady_clock::now();
-            if (WideGpuCurrent) WideGpuCurrent->Fetch(Back.data());
+            if (WideGpuCurrent) WideGpuCurrent->Fetch(PendingSlot);
             if (prof)
             {
                 static double total = 0;
@@ -574,10 +624,7 @@ struct WideAccess
         Wait();
         if (PendingPublish)
         {
-            Wide.Front.swap(Back);
-            std::swap(Wide.FrontW, BackW);
-            std::swap(Wide.FrontH, BackH);
-            Wide.FrontSerial++;
+            Publish();
             PendingPublish = false;
         }
         if (Wide.Width <= 0 || Wide.Height <= 0) return;
@@ -588,7 +635,7 @@ struct WideAccess
             Dirty = false;
             PendingPublish = true;
         }
-        else if (Dirty || NeedReal || BackW != Wide.Width || BackH != Wide.Height)
+        else if (Dirty || NeedReal || Wide.FrontW != Wide.Width || Wide.FrontH != Wide.Height)
         {
             Draw(gpu, ListReal.data(), NumReal);
             NeedReal = false;
@@ -605,10 +652,7 @@ struct WideAccess
         // With the 3D drawn by the graphics chip, so is this picture (same thread, same frame).
         if (GLThreadRenderer* gl = GLThreadRenderer::Current; gl && &g.GetCurrentRenderer() == gl)
         {
-            Back.resize((size_t)W * H);
-            BackW = W;
-            BackH = H;
-            gl->QueueWide(list, npolys, W, H, Back.data());
+            gl->QueueWide(list, npolys, W, H, BackFor(W, H, false));
             Drawing = true;
             DrawingOnGL = true;
             return;
@@ -621,14 +665,13 @@ struct WideAccess
             static WideGpuFrame frame;
             static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
             const auto t0 = std::chrono::steady_clock::now();
-            Back.resize((size_t)W * H);
-            BackW = W;
-            BackH = H;
+            BackFor(W, H, true);
             WideGpuBuild(gpu, list, npolys, W, H, frame);
-            if (WideGpuCurrent->Submit(frame))
+            if (WideGpuCurrent->Submit(frame, Next))
             {
                 Drawing = true;
                 DrawingOnWideGpu = true;
+                PendingSlot = Next;
             }
             if (prof)
             {
@@ -646,9 +689,7 @@ struct WideAccess
         }
         const SoftRenderer& soft = static_cast<const SoftRenderer&>(g.GetCurrentRenderer());
 
-        Back.resize((size_t)W * H);
-        BackW = W;
-        BackH = H;
+        BackFor(W, H, false);
 
         // Rear plane.
         const s32 clearZ = (s32)(((g.RenderClearAttr2 & 0x7FFF) * 0x200) + 0x1FF);
@@ -796,7 +837,7 @@ struct WideAccess
             buffers.Depth.resize((size_t)stripRows * W + Lanes);
             buffers.Attr.resize((size_t)stripRows * W);
             buffers.Writer.resize((size_t)stripRows * W + Lanes);
-            std::fill(Back.begin() + (size_t)rowA * W, Back.begin() + (size_t)rowB * W, clearColor);
+            std::fill(BackPx + (size_t)rowA * W, BackPx + (size_t)rowB * W, clearColor);
             std::fill(buffers.Depth.begin(), buffers.Depth.begin() + stripPixels, clearZ);
             std::fill(buffers.Attr.begin(), buffers.Attr.begin() + stripPixels, clearAttr);
             std::fill(buffers.Writer.begin(), buffers.Writer.begin() + stripPixels, 0xFFFF);
@@ -863,7 +904,7 @@ struct WideAccess
                     const bool frontFirst = t.FrontFirst;
                     const u16 order = t.Order;
                     const int Wl = W;
-                    u32* const backData = Back.data();
+                    u32* const backData = BackPx;
                     // (the strip's buffers start at its first row)
                     s32* const depthData = buffers.Depth.data() - (ptrdiff_t)rowA * W;
                     u8* const attrData = buffers.Attr.data() - (ptrdiff_t)rowA * W;
@@ -1198,7 +1239,7 @@ struct WideAccess
             {
                 for (int y = rowA; y < rowB; y++)
                 {
-                    u32* color = &Back[(size_t)y * W];
+                    u32* color = &BackPx[(size_t)y * W];
                     const s32* depth = &buffers.Depth[(size_t)(y - rowA) * W];
                     const u8* pattr = &buffers.Attr[(size_t)(y - rowA) * W];
                     for (int x = 0; x < W; x++)
@@ -1260,6 +1301,7 @@ struct WideAccess
 
 void WideWait() { WideAccess::Wait(); }
 void WideShutdown() { WideAccess::Shutdown(); }
+void WideReleaseGpu() { WideAccess::ReleaseGpu(); }
 void WideOnFlush(GPU3D& g) { WideAccess::OnFlush(g); }
 void WideOnRender(GPU& gpu, bool showingInterp) { WideAccess::OnRender(gpu, showingInterp); }
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
