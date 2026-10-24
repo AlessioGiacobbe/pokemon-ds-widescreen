@@ -169,6 +169,20 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
         notes += "[test] every run in test.txt has been done; it is now test-done.txt\n";
         return false;
     }
+    // A snapshot that is not there yet (test.txt copied before SAVE STATE was used): an
+    // ordinary start, so that it can be made; the runs wait until it is there.
+    for (size_t i = 0; i + 1 < chosen->args.size(); i++)
+    {
+        if (chosen->args[i] != "--state-load") continue;
+        const std::string& f = chosen->args[i + 1];
+        const std::string path = f.find(':') == std::string::npos && f[0] != '/' ? dir + "/" + f : f;
+        if (stat(path.c_str(), &sb) != 0)
+        {
+            notes += "[test] " + f + " is not there yet (the pause menu's SAVE STATE makes it): an ordinary start; "
+                "the test runs start once it is there\n";
+            return false;
+        }
+    }
     st.active = true;
     st.dir = dir;
     st.name = chosen->name;
