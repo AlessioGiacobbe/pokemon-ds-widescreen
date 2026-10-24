@@ -94,7 +94,7 @@ bool Start(int& argc, char**& argv)
     // finished keeps it).
     struct stat testSt;
     const bool testList = stat((dir + "/test.txt").c_str(), &testSt) == 0;
-    if (testList) rename((dir + "/game.log").c_str(), (dir + "/game-last.log").c_str());
+    if (testList) TestRun::Replace(dir + "/game.log", dir + "/game-last.log");
 
     // Messages go to game.log beside the game, as run.sh does on a PC, with the frame timing,
     // so that a log can be sent with a bug report.

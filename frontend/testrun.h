@@ -102,6 +102,13 @@ inline void Note(const std::string& path, const char* what, const std::string& n
     }
 }
 
+// A rename onto a file that is already there fails on the Switch's SD card: it goes first.
+inline void Replace(const std::string& from, const std::string& to)
+{
+    remove(to.c_str());
+    rename(from.c_str(), to.c_str());
+}
+
 inline bool CopyFile(const std::string& from, const std::string& to)
 {
     FILE* in = fopen(from.c_str(), "rb");
@@ -165,7 +172,7 @@ inline bool Setup(const std::string& dir, std::vector<std::string>& args, State&
     if (!chosen)
     {
         // All done (the last one failed): an ordinary start.
-        rename(list.c_str(), (dir + "/test-done.txt").c_str());
+        Replace(list, dir + "/test-done.txt");
         notes += "[test] every run in test.txt has been done; it is now test-done.txt\n";
         return false;
     }
@@ -222,7 +229,7 @@ inline bool Finish(const State& st)
     Note(st.dir + "/test-results/progress.txt", "done", st.name);
     if (!st.more)
     {
-        rename((st.dir + "/test.txt").c_str(), (st.dir + "/test-done.txt").c_str());
+        Replace(st.dir + "/test.txt", st.dir + "/test-done.txt");
         return false;
     }
     return true;
