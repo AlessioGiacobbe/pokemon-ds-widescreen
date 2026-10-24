@@ -130,6 +130,15 @@ elseif(SSR_SWITCH)
         # (glad's loader includes <dlfcn.h>, which the Switch does not have; it is not used)
         target_include_directories(core BEFORE PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/frontend/switch_stub")
         target_include_directories(core PRIVATE ${SDL2_STATIC_INCLUDE_DIRS})
+        # EGL and Mesa (SDL's OpenGL ES drawing uses them too; named here in case its
+        # pkg-config file does not pass them on).
+        foreach(lib EGL glapi drm_nouveau)
+            find_library(SSR_SWITCH_${lib} ${lib} HINTS "${DEVKITPRO}/portlibs/switch/lib")
+            if(SSR_SWITCH_${lib})
+                target_link_libraries(ssrecomp PRIVATE "${SSR_SWITCH_${lib}}")
+            endif()
+        endforeach()
+        target_link_libraries(ssrecomp PRIVATE nx)
     endif()
 
     find_program(SSR_NACPTOOL nacptool HINTS "${DEVKITPRO}/tools/bin" NO_CMAKE_FIND_ROOT_PATH)
