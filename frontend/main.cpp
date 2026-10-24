@@ -3495,6 +3495,14 @@ int main(int argc, char** argv)
                 char extra[200];
                 snprintf(extra, sizeof(extra), "; waited for 3D %.2f wide %.2f ms (wide lines %d)", w3d, wwide, WideLinesNow);
                 std::string tail = extra;
+                if (gpuCompose && gpuCompose->WideUploads)
+                {
+                    snprintf(extra, sizeof(extra), "; of compose, the world picture's upload %.2f ms",
+                        gpuCompose->WideUploadMs / perfN);
+                    tail += extra;
+                    gpuCompose->WideUploadMs = 0;
+                    gpuCompose->WideUploads = 0;
+                }
 #ifdef __SWITCH__
                 // (wide: on cores 0/1/2; core 0 only with wide_core0, see melonDS/src/SsrThreads.h)
                 snprintf(extra, sizeof(extra), "; 3D thread on cores 1/2 %u/%u, wide %u/%u/%u", ts.RenderCore[1].exchange(0),

@@ -4,6 +4,7 @@
 // and is what the headless tests use; the two have to be kept in step.
 #pragma once
 
+#include <chrono>
 #include <vector>
 #include <SDL.h>
 #include "merged.h"
@@ -169,10 +170,13 @@ private:
         if (!tex) return;
         SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
         SDL_SetTextureScaleMode(tex, smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+        const auto t0 = std::chrono::steady_clock::now();
         const uint32_t* px = wide.placed ? wide.pixels
             : MergedFillWideHoles(wide, (int)std::floor(v.originX * wide.w / outW),
                   (int)std::ceil((v.originX + 256 * v.unit) * wide.w / outW), WideFilled);
         SDL_UpdateTexture(tex, nullptr, px, wide.w * 4);
+        WideUploadMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        WideUploads++;
         if (wide.placed)
         {
             // The widened top screen, at its place in the view.
@@ -356,6 +360,12 @@ private:
         }
     }
 
+public:
+    // Time spent handing the widescreen picture to the renderer (for the frontend's timing line).
+    double WideUploadMs = 0;
+    unsigned WideUploads = 0;
+
+private:
     SDL_Renderer* R;
     SDL_BlendMode Premultiplied;
     std::vector<Tex> Slots;
