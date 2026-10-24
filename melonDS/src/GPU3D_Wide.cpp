@@ -19,6 +19,7 @@
 #include "GPU3D.h"
 #include "GPU3D_Soft.h"
 #include "SsrThreads.h"
+#include "GPU3D_GLThread.h"
 
 namespace melonDS
 {
@@ -163,6 +164,7 @@ struct WideAccess
     };
     static inline std::unique_ptr<Workers> Pool;
     static inline bool Drawing = false;
+    static inline bool DrawingOnGL = false; // by the graphics chip (GPU3D_GLThread.h)
 
     // Ends the drawing threads (at the end of the program; a new pool is made if needed).
     static void Shutdown()
@@ -176,10 +178,21 @@ struct WideAccess
     {
         if (Drawing)
         {
-            SsrWaitTimer t(SsrStats().WaitWideNs);
-            Pool->Wait();
+#ifdef OGLRENDERER_ENABLED
+            if (DrawingOnGL)
+            {
+                // (the renderer counts its own waiting)
+                if (GLThreadRenderer::Current) GLThreadRenderer::Current->WaitIdle();
+            }
+            else
+#endif
+            {
+                SsrWaitTimer t(SsrStats().WaitWideNs);
+                Pool->Wait();
+            }
         }
         Drawing = false;
+        DrawingOnGL = false;
     }
 
     // Textures are decoded texel by texel as they are first used in a frame: an entry is
@@ -532,6 +545,19 @@ struct WideAccess
     {
         const int W = Wide.Width, H = Wide.Height;
         const GPU3D& g = gpu.GPU3D;
+#ifdef OGLRENDERER_ENABLED
+        // With the 3D drawn by the graphics chip, so is this picture (same thread, same frame).
+        if (GLThreadRenderer* gl = GLThreadRenderer::Current; gl && &g.GetCurrentRenderer() == gl)
+        {
+            Back.resize((size_t)W * H);
+            BackW = W;
+            BackH = H;
+            gl->QueueWide(list, npolys, W, H, Back.data());
+            Drawing = true;
+            DrawingOnGL = true;
+            return;
+        }
+#endif
         const SoftRenderer& soft = static_cast<const SoftRenderer&>(g.GetCurrentRenderer());
 
         Back.resize((size_t)W * H);

@@ -96,9 +96,14 @@ if (ENABLE_OGLRENDERER)
         GPU3D_TexcacheOpenGL.cpp
         GPU3D_TexcacheOpenGL.h
         GPU3D_OpenGL_shaders.h
-        OpenGLSupport.cpp)
+        OpenGLSupport.cpp
+        # ssrecomp: the OpenGL renderer on its own thread, and the function loader.
+        GPU3D_GLThread.cpp
+        frontend/glad/glad.c)
 
     target_compile_definitions(core PUBLIC OGLRENDERER_ENABLED)
+    # ssrecomp: the bundled glad loader (PlatformOGL.h's default spelling of it does not expand).
+    target_compile_definitions(core PRIVATE [[MELONDS_GL_HEADER="frontend/glad/glad.h"]])
 endif()
 
 if (ENABLE_JIT)

@@ -19,6 +19,7 @@
 #pragma once
 
 #ifdef OGLRENDERER_ENABLED
+#include <vector>
 #include "GPU3D.h"
 #include "GPU_OpenGL.h"
 #include "OpenGLSupport.h"
@@ -26,6 +27,24 @@
 namespace melonDS
 {
 class GPU;
+
+// ssrecomp: everything a frame is drawn from, so that it can be drawn on another thread
+// after the emulation has moved on (GPU3D_GLThread.cpp), and from a list of polygons other
+// than the console's own (the widescreen view's, GPU3D_Wide.cpp).
+struct GLFrameState
+{
+    Polygon* const* List = nullptr;
+    u32 NumPolygons = 0;
+    u32 DispCnt = 0, ClearAttr1 = 0, ClearAttr2 = 0;
+    u32 FogColor = 0, FogOffset = 0, FogShift = 0;
+    u16 ToonTable[32] {}, EdgeTable[8] {};
+    u8 FogDensity[34] {};
+    // Texture and palette memory as mapped (4 x 128 KB, 6 x 16 KB); nullptr where nothing
+    // is mapped. Not uploaded at all with UploadTextures off (a renderer sharing another's).
+    const u8* TexVRAM[4] {};
+    const u8* PalVRAM[6] {};
+    bool UploadTextures = true;
+};
 
 class GLRenderer : public Renderer3D
 {
@@ -51,9 +70,30 @@ public:
     void BindOutputTexture(int buffer) override;
 
     static std::unique_ptr<GLRenderer> New() noexcept;
+
+    // ssrecomp: a renderer whose picture is read back for melonDS's software 2D renderer
+    // (Accelerated off), for up to maxPolygons polygons a frame (more than the DS's 2048 for
+    // the widescreen view).
+    static std::unique_ptr<GLRenderer> NewReadback(int maxPolygons) noexcept;
+    // Draws at any size: vertices are scaled from the DS's 256x192 to it (the widescreen
+    // view's polygons are squeezed into 256 pixels across).
+    void SetOutputSize(int w, int h) noexcept;
+    // Uses another renderer's texture memory instead of its own (the same GL context).
+    void ShareTexturesWith(const GLRenderer& other) noexcept;
+    void RenderFrameState(const GLFrameState& state);
+    // Reads the picture back as 32-bit BGRA pixels, ScreenW x ScreenH, row 0 at the top:
+    // colour in 6 bits (shifted left by 2), alpha in 5 (shifted left by 3).
+    void ReadbackStart();
+    // The pixels (waiting for the drawing and the copy), valid until ReadbackUnmap; nullptr if
+    // they could not be had (ReadbackUnmap is still called).
+    const u32* ReadbackMap();
+    void ReadbackUnmap();
+    int OutputWidth() const { return ScreenW; }
+    int OutputHeight() const { return ScreenH; }
 private:
     // Used by New()
-    GLRenderer(GLCompositor&& compositor) noexcept;
+    GLRenderer(GLCompositor&& compositor, bool accelerated = true, int maxPolygons = 2048) noexcept;
+    static std::unique_ptr<GLRenderer> Create(bool accelerated, int maxPolygons) noexcept;
 
     // GL version requirements
     // * texelFetch: 3.0 (GLSL 1.30)     (3.2/1.50 for MS)
@@ -74,7 +114,9 @@ private:
     };
 
     GLCompositor CurGLCompositor;
-    RendererPolygon PolygonList[2048] {};
+    // ssrecomp: sized for MaxPolygons (2048 for the DS's own picture).
+    const int MaxPolygons;
+    std::vector<RendererPolygon> PolygonList;
 
     bool BuildRenderShader(u32 flags, const std::string& vs, const std::string& fs);
     void UseRenderShader(u32 flags);
@@ -84,7 +126,12 @@ private:
     int RenderSinglePolygon(int i) const;
     int RenderPolygonBatch(int i) const;
     int RenderPolygonEdgeBatch(int i) const;
-    void RenderSceneChunk(const GPU3D& gpu3d, int y, int h);
+    void RenderSceneChunk(int y, int h);
+    void AllocateBuffers() noexcept;
+public:
+    // ssrecomp: where texture and palette memory are mapped (nullptr where nothing is).
+    static void GetTextureMemory(const GPU& gpu, const u8* tex[4], const u8* pal[6]);
+private:
 
     enum
     {
@@ -137,15 +184,15 @@ private:
     // * bit9: W-buffering (?)
 
     GLuint VertexBufferID {};
-    u32 VertexBuffer[10240 * 7] {};
+    std::vector<u32> VertexBuffer; // MaxPolygons * 10 vertices of 7 words
     u32 NumVertices {};
 
     GLuint VertexArrayID {};
     GLuint IndexBufferID {};
-    u16 IndexBuffer[2048 * 40] {};
+    std::vector<u16> IndexBuffer;  // MaxPolygons * 30 for triangles, then * 20 for edges
     u32 NumIndices {}, NumEdgeIndices {};
 
-    const u32 EdgeIndicesOffset = 2048 * 30;
+    const u32 EdgeIndicesOffset;
 
     GLuint TexMemID {};
     GLuint TexPalMemID {};
@@ -160,6 +207,10 @@ private:
 
     GLuint MainFramebuffer {}, DownscaleFramebuffer {};
     u32 Framebuffer[256*192] {};
+    // ssrecomp: see GLFrameState. St is the frame being drawn.
+    GLFrameState St;
+    bool CustomSize = false, OwnsTextures = true;
+    GLuint ReadbackBufferID {};
 };
 }
 #endif

@@ -51,6 +51,10 @@
 #include "audiostretch.h"
 #include "gpucompose.h"
 #include "emuthread.h"
+#ifdef SSR_GPU3D
+#include "GPU3D_GLThread.h"
+#include "glcontext.h"
+#endif
 #include "battlewide.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -412,6 +416,7 @@ struct Options
     bool layoutGiven = false;
     bool audioStats = false;
     int interp60 = -1;                   // 3D frame interpolation: -1 = from settings (off when headless)
+    int gpu3d = -1;                      // 3D on the graphics chip: -1 = from settings (off when headless)
     bool battleMash = false;             // test aid: tap A through battles, pausing the script meanwhile
     bool countChanges = false;           // report how many frames changed the top screen
     bool shotLayers = false;             // also write a per-pixel layer map with each screenshot
@@ -451,6 +456,7 @@ static void Usage()
         "  --hash-every <n>     print a state hash every n frames\n"
         "  --log-sections       print which overlays run code and which merged scene is shown, on change\n"
         "  --interp60 / --no-interp60   force the 60 fps 3D interpolation on or off\n"
+        "  --gpu3d / --no-gpu3d   draw the 3D scene on the graphics chip (OpenGL through EGL) or not\n"
         "  --battle-mash        while a battle is running, tap A and hold the input script (and the\n"
         "                       frame used by --state-at) still, so scripts can walk through grass\n"
         "  --count-changes      report on how many frames the top screen image changed\n"
@@ -487,6 +493,8 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--battle-mash") o.battleMash = true;
         else if (a == "--interp60") o.interp60 = 1;
         else if (a == "--no-interp60") o.interp60 = 0;
+        else if (a == "--gpu3d") o.gpu3d = 1;
+        else if (a == "--no-gpu3d") o.gpu3d = 0;
 
         else if (a == "--symbols") o.symbols = next();
         else if (a == "--trace-funcs")
@@ -574,6 +582,50 @@ static bool UseFastMem = false; // the JIT's fast memory came on (MakeConsole)
 #else
 #define SSR_MENU_EMULATION 0
 #endif
+
+// Whether the 3D scene is drawn by the graphics chip (melonDS/src/GPU3D_GLThread.h) rather than
+// by melonDS's software renderer on a thread of its own.
+static bool UseGpu3D = false;
+
+// Puts the chosen 3D renderer in place, between frames. The graphics chip's needs an OpenGL
+// context (frontend/glcontext.cpp); without one the software renderer stays. The framebuffers
+// stay as they are (GPU3D::SetCurrentRenderer, not GPU::SetRenderer3D, which makes new ones):
+// the frame waiting to be shown points into them.
+static void ApplyRenderer3D(NDS& nds, bool gpu)
+{
+#ifdef SSR_GPU3D
+    if (gpu && !UseGpu3D)
+    {
+        melonDS::WideWait(); // (its threads read the software renderer's textures)
+        melonDS::GLThreadRenderer::CreateContext = SsrCreateGLContext;
+        std::string info;
+        auto r = melonDS::GLThreadRenderer::Start(info);
+        if (r)
+        {
+            if (auto* soft = dynamic_cast<melonDS::SoftRenderer*>(&nds.GPU.GetRenderer3D()))
+                soft->SetThreaded(false, nds.GPU);
+            nds.GPU.GPU3D.SetCurrentRenderer(std::move(r));
+            UseGpu3D = true;
+            fprintf(stderr, "[gpu3d] on: %s\n", info.c_str());
+            return;
+        }
+        fprintf(stderr, "[gpu3d] not available (%s): the 3D is drawn by the processor\n", info.c_str());
+    }
+    else if (!gpu && UseGpu3D)
+    {
+        melonDS::WideWait(); // (the graphics chip's thread may be drawing it)
+        nds.GPU.GPU3D.SetCurrentRenderer(std::make_unique<melonDS::SoftRenderer>());
+        UseGpu3D = false;
+        fprintf(stderr, "[gpu3d] off\n");
+    }
+#else
+    (void)gpu;
+#endif
+    // The DS-resolution 3D picture is drawn on its own thread, alongside the CPU emulation.
+    if (!UseGpu3D && !getenv("SSR_NO_RENDER_THREAD"))
+        if (auto* soft = dynamic_cast<melonDS::SoftRenderer*>(&nds.GPU.GetRenderer3D()))
+            soft->SetThreaded(true, nds.GPU);
+}
 
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
@@ -1004,6 +1056,11 @@ struct Settings
     bool fastMem = true;  // ... and its fast memory (also read at start-up)
     bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
     bool pipeline = true; // Switch: show each frame while the next one is emulated (emuthread.h)
+#ifdef __SWITCH__
+    bool gpu3d = true;    // the 3D scene drawn by the graphics chip (melonDS/src/GPU3D_GLThread.h)
+#else
+    bool gpu3d = false;
+#endif
 
     void Load(const std::string& path)
     {
@@ -1031,6 +1088,7 @@ struct Settings
             else if (k == "fastmem") fastMem = v == "1";
             else if (k == "cgear_start") cgearOff = v != "ask";
             else if (k == "pipeline") pipeline = v != "0";
+            else if (k == "gpu3d") gpu3d = v != "0";
         }
 #ifdef __SWITCH__
         // The Switch's buttons are labelled where the DS's are, so labels and positions are
@@ -1053,6 +1111,9 @@ struct Settings
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
+#ifdef SSR_GPU3D
+        f << "gpu3d=" << (gpu3d ? 1 : 0) << "\n";
+#endif
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
         f << "jit=" << (jit ? 1 : 0) << "\n";
@@ -1273,9 +1334,28 @@ int main(int argc, char** argv)
     if (opt.headless) cfg.fps60 = false; // tests compare images with the plain renderer unless asked
     if (opt.interp60 >= 0) cfg.fps60 = opt.interp60 == 1;
     nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60 && !opt.lockstep;
-    // The DS-resolution 3D picture is drawn on its own thread, alongside the CPU emulation.
-    if (!getenv("SSR_NO_RENDER_THREAD"))
-        static_cast<melonDS::SoftRenderer&>(nds->GPU.GetRenderer3D()).SetThreaded(true, nds->GPU);
+    // The 3D scene: by the graphics chip where chosen (not in headless tests unless asked),
+    // otherwise by the processor on a thread of its own. A start with the graphics chip that
+    // never got going (a file made here, removed 300 frames in) turns it off in the settings.
+    bool gpu3dWanted = opt.gpu3d >= 0 ? opt.gpu3d == 1 : (cfg.gpu3d && !opt.headless && !opt.lockstep);
+#ifdef SSR_GPU3D
+    const std::string gpu3dMarker = opt.config + ".gpu3d-starting";
+    if (gpu3dWanted && opt.gpu3d < 0)
+    {
+        if (FILE* f = fopen(gpu3dMarker.c_str(), "rb"))
+        {
+            fclose(f);
+            remove(gpu3dMarker.c_str());
+            gpu3dWanted = cfg.gpu3d = false;
+            cfg.Save(opt.config);
+            fprintf(stderr, "[gpu3d] the last start with the 3D on the graphics chip did not get going: "
+                "turned off (3D ON GPU in the pause menu turns it back on)\n");
+        }
+        else if (FILE* f = fopen(gpu3dMarker.c_str(), "wb"))
+            fclose(f);
+    }
+#endif
+    ApplyRenderer3D(*nds, gpu3dWanted);
 
     // SSR_PERF=1 prints where the time of a frame goes, averaged over 300 frames.
     const bool perfOn = getenv("SSR_PERF") != nullptr;
@@ -2774,7 +2854,11 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_AUTODETAIL, M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_AUTODETAIL,
+#ifdef SSR_GPU3D
+        M_GPU3D,
+#endif
+        M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
@@ -2808,6 +2892,10 @@ int main(int argc, char** argv)
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
             { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
+#ifdef SSR_GPU3D
+            // ON: the 3D scene drawn by the graphics chip instead of the processor.
+            { "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF" },
+#endif
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
 #ifdef __SWITCH__
             { "BUTTONS", "AS LABELLED" },
@@ -3503,6 +3591,14 @@ int main(int argc, char** argv)
             case M_AUTODETAIL:
                 cfg.autoDetail = !cfg.autoDetail;
                 break;
+#ifdef SSR_GPU3D
+            case M_GPU3D:
+                // (between frames: the emulation thread is idle here)
+                cfg.gpu3d = !cfg.gpu3d;
+                ApplyRenderer3D(*nds, cfg.gpu3d);
+                if (cfg.gpu3d && !UseGpu3D) say("NOT AVAILABLE: SEE GAME.LOG");
+                break;
+#endif
             case M_SHOWFPS:
                 cfg.showFps = !cfg.showFps;
                 break;
@@ -3931,6 +4027,12 @@ int main(int argc, char** argv)
 #ifdef __SWITCH__
         if (!opt.headless) SwitchPlatform::KeepBoost(frame);
         if (frame == 300) SwitchPlatform::JitStarted();
+#endif
+#ifdef SSR_GPU3D
+        if (frame == 300) remove(gpu3dMarker.c_str());
+        // Test aid: SSR_GPU3D_TOGGLE=<frame> switches the 3D renderer there, as the menu does.
+        static const uint32_t gpu3dToggleAt = getenv("SSR_GPU3D_TOGGLE") ? (uint32_t)atoi(getenv("SSR_GPU3D_TOGGLE")) : 0;
+        if (gpu3dToggleAt && frame == gpu3dToggleAt) ApplyRenderer3D(*nds, !UseGpu3D);
 #endif
         if (!holdScript) scriptClock++;
 
@@ -4387,7 +4489,8 @@ int main(int argc, char** argv)
     Sampler::Stop();
     // The 3D render thread must be finished before anything it draws from is torn down.
     exitStep("3D render thread");
-    static_cast<melonDS::SoftRenderer&>(nds->GPU.GetRenderer3D()).SetThreaded(false, nds->GPU);
+    if (auto* soft = dynamic_cast<melonDS::SoftRenderer*>(&nds->GPU.GetRenderer3D()))
+        soft->SetThreaded(false, nds->GPU);
     // The widescreen picture may still be being drawn in the background: its threads read
     // data that is destroyed when the program ends (this crashed on exit now and then). Its
     // threads are ended here too, rather than by the program's own clean-up at the very end.
@@ -4395,6 +4498,16 @@ int main(int argc, char** argv)
     melonDS::WideWait();
     melonDS::WideShutdown();
     melonDS::Wide.Owner = nullptr;
+#ifdef SSR_GPU3D
+    // The graphics chip's renderer ends its thread and its OpenGL objects while EGL is still
+    // up (SDL_Quit below can take it down).
+    if (UseGpu3D)
+    {
+        exitStep("3D on the graphics chip");
+        nds->GPU.GPU3D.SetCurrentRenderer(std::make_unique<melonDS::SoftRenderer>());
+        UseGpu3D = false;
+    }
+#endif
     if (nds->GPU.GPU3D.InterpolationEnabled)
         fprintf(stderr, "[60fps] %u in-between frames drawn in %u frames\n", nds->GPU.GPU3D.InterpolatedFrames, frame);
     if (opt.countChanges) fprintf(stderr, "[changes] top screen changed on %u of %u frames\n", TopChanges, frame);

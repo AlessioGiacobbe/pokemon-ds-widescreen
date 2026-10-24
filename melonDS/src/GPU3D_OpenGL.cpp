@@ -85,9 +85,14 @@ void SetupDefaultTexParams(GLuint tex)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
-GLRenderer::GLRenderer(GLCompositor&& compositor) noexcept :
-    Renderer3D(true),
-    CurGLCompositor(std::move(compositor))
+GLRenderer::GLRenderer(GLCompositor&& compositor, bool accelerated, int maxPolygons) noexcept :
+    Renderer3D(accelerated),
+    CurGLCompositor(std::move(compositor)),
+    MaxPolygons(maxPolygons),
+    PolygonList(maxPolygons),
+    VertexBuffer((size_t)maxPolygons * 10 * 7),
+    IndexBuffer((size_t)maxPolygons * 50),
+    EdgeIndicesOffset((u32)maxPolygons * 30)
 {
     // GLRenderer::New() will be used to actually initialize the renderer;
     // The various glDelete* functions silently ignore invalid IDs,
@@ -95,6 +100,16 @@ GLRenderer::GLRenderer(GLCompositor&& compositor) noexcept :
 }
 
 std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
+{
+    return Create(true, 2048);
+}
+
+std::unique_ptr<GLRenderer> GLRenderer::NewReadback(int maxPolygons) noexcept
+{
+    return Create(false, maxPolygons);
+}
+
+std::unique_ptr<GLRenderer> GLRenderer::Create(bool accelerated, int maxPolygons) noexcept
 {
     assert(glEnable != nullptr);
 
@@ -104,7 +119,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
 
     // Will be returned if the initialization succeeds,
     // or cleaned up via RAII if it fails.
-    std::unique_ptr<GLRenderer> result = std::unique_ptr<GLRenderer>(new GLRenderer(std::move(*compositor)));
+    std::unique_ptr<GLRenderer> result = std::unique_ptr<GLRenderer>(new GLRenderer(std::move(*compositor), accelerated, maxPolygons));
     compositor = std::nullopt;
 
     glEnable(GL_DEPTH_TEST);
@@ -215,7 +230,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
 
     glGenBuffers(1, &result->VertexBufferID);
     glBindBuffer(GL_ARRAY_BUFFER, result->VertexBufferID);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(VertexBuffer), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, result->VertexBuffer.size() * 4, nullptr, GL_DYNAMIC_DRAW);
 
     glGenVertexArrays(1, &result->VertexArrayID);
     glBindVertexArray(result->VertexArrayID);
@@ -230,7 +245,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
 
     glGenBuffers(1, &result->IndexBufferID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result->IndexBufferID);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(IndexBuffer), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, result->IndexBuffer.size() * 2, nullptr, GL_DYNAMIC_DRAW);
 
     glGenFramebuffers(1, &result->MainFramebuffer);
     glGenFramebuffers(1, &result->DownscaleFramebuffer);
@@ -259,6 +274,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
     glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
 
     glGenBuffers(1, &result->PixelbufferID);
+    glGenBuffers(1, &result->ReadbackBufferID);
 
     glActiveTexture(GL_TEXTURE0);
     glGenTextures(1, &result->TexMemID);
@@ -287,8 +303,13 @@ GLRenderer::~GLRenderer()
 {
     assert(glDeleteTextures != nullptr);
 
-    glDeleteTextures(1, &TexMemID);
-    glDeleteTextures(1, &TexPalMemID);
+    if (OwnsTextures)
+    {
+        glDeleteTextures(1, &TexMemID);
+        glDeleteTextures(1, &TexPalMemID);
+    }
+    glDeleteBuffers(1, &PixelbufferID);
+    glDeleteBuffers(1, &ReadbackBufferID);
 
     glDeleteFramebuffers(1, &MainFramebuffer);
     glDeleteFramebuffers(1, &DownscaleFramebuffer);
@@ -339,7 +360,40 @@ void GLRenderer::SetRenderSettings(bool betterpolygons, int scale) noexcept
 
     ScreenW = 256 * scale;
     ScreenH = 192 * scale;
+    CustomSize = false;
+    AllocateBuffers();
+}
 
+void GLRenderer::SetOutputSize(int w, int h) noexcept
+{
+    if (CustomSize && w == ScreenW && h == ScreenH)
+        return;
+    if (!ScaleFactor)
+    {
+        // (the compositor, unused here, still wants a size)
+        CurGLCompositor.SetScaleFactor(1);
+        ScaleFactor = 1;
+    }
+    ScreenW = w;
+    ScreenH = h;
+    CustomSize = true;
+    AllocateBuffers();
+}
+
+void GLRenderer::ShareTexturesWith(const GLRenderer& other) noexcept
+{
+    if (OwnsTextures)
+    {
+        glDeleteTextures(1, &TexMemID);
+        glDeleteTextures(1, &TexPalMemID);
+    }
+    TexMemID = other.TexMemID;
+    TexPalMemID = other.TexPalMemID;
+    OwnsTextures = false;
+}
+
+void GLRenderer::AllocateBuffers() noexcept
+{
     glBindTexture(GL_TEXTURE_2D, ColorBufferTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ScreenW, ScreenH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
@@ -361,6 +415,9 @@ void GLRenderer::SetRenderSettings(bool betterpolygons, int scale) noexcept
 
     glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
     glBufferData(GL_PIXEL_PACK_BUFFER, 256*192*4, NULL, GL_DYNAMIC_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadbackBufferID);
+    glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr)ScreenW*ScreenH*4, NULL, GL_DYNAMIC_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -427,7 +484,13 @@ u32* GLRenderer::SetupVertex(const Polygon* poly, int vid, const Vertex* vtx, u3
     while (z > 0xFFFF) { z >>= 1; zshift++; }
 
     u32 x, y;
-    if (ScaleFactor > 1)
+    if (CustomSize)
+    {
+        // ssrecomp: HiresPosition is in sixteenths of a DS pixel.
+        x = (u32)(((s64)vtx->HiresPosition[0] * ScreenW) / (256 * 16));
+        y = (u32)(((s64)vtx->HiresPosition[1] * ScreenH) / (192 * 16));
+    }
+    else if (ScaleFactor > 1)
     {
         x = (vtx->HiresPosition[0] * ScaleFactor) >> 4;
         y = (vtx->HiresPosition[1] * ScaleFactor) >> 4;
@@ -749,14 +812,14 @@ int GLRenderer::RenderPolygonEdgeBatch(int i) const
     return numpolys;
 }
 
-void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+void GLRenderer::RenderSceneChunk(int y, int h)
 {
     u32 flags = 0;
-    if (gpu3d.RenderPolygonRAM[0]->WBuffer) flags |= RenderFlag_WBuffer;
+    if (NumFinalPolys > 0 && PolygonList[0].PolyData->WBuffer) flags |= RenderFlag_WBuffer;
 
     if (h != 192) glScissor(0, y<<ScaleFactor, 256<<ScaleFactor, h<<ScaleFactor);
 
-    GLboolean fogenable = (gpu3d.RenderDispCnt & (1<<7)) ? GL_TRUE : GL_FALSE;
+    GLboolean fogenable = (St.DispCnt & (1<<7)) ? GL_TRUE : GL_FALSE;
 
     // TODO: proper 'equal' depth test!
     // (has margin of +-0x200 in Z-buffer mode, +-0xFF in W-buffer mode)
@@ -828,7 +891,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
     glEnable(GL_BLEND);
     glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
 
-    if (gpu3d.RenderDispCnt & (1<<3))
+    if (St.DispCnt & (1<<3))
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
     else
         glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ONE);
@@ -840,7 +903,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
         // pass 2: if needed, render translucent pixels that are against background pixels
         // when background alpha is zero, those need to be rendered with blending disabled
 
-        if ((gpu3d.RenderClearAttr1 & 0x001F0000) == 0)
+        if ((St.ClearAttr1 & 0x001F0000) == 0)
         {
             glDisable(GL_BLEND);
 
@@ -904,7 +967,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
                     if (rp->PolyData->IsShadow)
                     {
                         // shadow against clear-plane will only pass if its polyID matches that of the clear plane
-                        u32 clrpolyid = (gpu3d.RenderClearAttr1 >> 24) & 0x3F;
+                        u32 clrpolyid = (St.ClearAttr1 >> 24) & 0x3F;
                         if (polyid != clrpolyid) { i++; continue; }
 
                         glEnable(GL_BLEND);
@@ -1052,7 +1115,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
         }
     }
 
-    if (gpu3d.RenderDispCnt & 0x00A0) // fog/edge enabled
+    if (St.DispCnt & 0x00A0) // fog/edge enabled
     {
         glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -1074,7 +1137,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
         glBindBuffer(GL_ARRAY_BUFFER, ClearVertexBufferID);
         glBindVertexArray(ClearVertexArrayID);
 
-        if (gpu3d.RenderDispCnt & (1<<5))
+        if (St.DispCnt & (1<<5))
         {
             // edge marking
             // TODO: depth/polyid values at screen edges
@@ -1086,19 +1149,19 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
             glDrawArrays(GL_TRIANGLES, 0, 2*3);
         }
 
-        if (gpu3d.RenderDispCnt & (1<<7))
+        if (St.DispCnt & (1<<7))
         {
             // fog
 
             glUseProgram(FinalPassFogShader);
 
-            if (gpu3d.RenderDispCnt & (1<<6))
+            if (St.DispCnt & (1<<6))
                 glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA);
             else
                 glBlendFuncSeparate(GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA, GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA);
 
             {
-                u32 c = gpu3d.RenderFogColor;
+                u32 c = St.FogColor;
                 u32 r = c & 0x1F;
                 u32 g = (c >> 5) & 0x1F;
                 u32 b = (c >> 10) & 0x1F;
@@ -1115,6 +1178,52 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
 
 void GLRenderer::RenderFrame(GPU& gpu)
 {
+    // ssrecomp: the state is gathered first (GLFrameState), so that it can come from elsewhere.
+    GLFrameState st;
+    st.List = gpu.GPU3D.RenderPolygonRAM.data();
+    st.NumPolygons = gpu.GPU3D.RenderNumPolygons;
+    st.DispCnt = gpu.GPU3D.RenderDispCnt;
+    st.ClearAttr1 = gpu.GPU3D.RenderClearAttr1;
+    st.ClearAttr2 = gpu.GPU3D.RenderClearAttr2;
+    st.FogColor = gpu.GPU3D.RenderFogColor;
+    st.FogOffset = gpu.GPU3D.RenderFogOffset;
+    st.FogShift = gpu.GPU3D.RenderFogShift;
+    memcpy(st.ToonTable, gpu.GPU3D.RenderToonTable, sizeof(st.ToonTable));
+    memcpy(st.EdgeTable, gpu.GPU3D.RenderEdgeTable, sizeof(st.EdgeTable));
+    memcpy(st.FogDensity, gpu.GPU3D.RenderFogDensityTable, sizeof(st.FogDensity));
+    GetTextureMemory(gpu, st.TexVRAM, st.PalVRAM);
+    RenderFrameState(st);
+}
+
+void GLRenderer::GetTextureMemory(const GPU& gpu, const u8* tex[4], const u8* pal[6])
+{
+    for (int i = 0; i < 4; i++)
+    {
+        u32 mask = gpu.VRAMMap_Texture[i];
+        const u8* vram = nullptr;
+        if (!mask) vram = nullptr;
+        else if (mask & (1<<0)) vram = gpu.VRAM_A;
+        else if (mask & (1<<1)) vram = gpu.VRAM_B;
+        else if (mask & (1<<2)) vram = gpu.VRAM_C;
+        else if (mask & (1<<3)) vram = gpu.VRAM_D;
+        tex[i] = vram;
+    }
+    for (int i = 0; i < 6; i++)
+    {
+        // 6 x 16K chunks
+        u32 mask = gpu.VRAMMap_TexPal[i];
+        const u8* vram = nullptr;
+        if (!mask) vram = nullptr;
+        else if (mask & (1<<4)) vram = &gpu.VRAM_E[(i&3)*0x4000];
+        else if (mask & (1<<5)) vram = gpu.VRAM_F;
+        else if (mask & (1<<6)) vram = gpu.VRAM_G;
+        pal[i] = vram;
+    }
+}
+
+void GLRenderer::RenderFrameState(const GLFrameState& state)
+{
+    St = state;
     CurShaderID = -1;
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -1122,11 +1231,11 @@ void GLRenderer::RenderFrame(GPU& gpu)
 
     ShaderConfig.uScreenSize[0] = ScreenW;
     ShaderConfig.uScreenSize[1] = ScreenH;
-    ShaderConfig.uDispCnt = gpu.GPU3D.RenderDispCnt;
+    ShaderConfig.uDispCnt = St.DispCnt;
 
     for (int i = 0; i < 32; i++)
     {
-        u16 c = gpu.GPU3D.RenderToonTable[i];
+        u16 c = St.ToonTable[i];
         u32 r = c & 0x1F;
         u32 g = (c >> 5) & 0x1F;
         u32 b = (c >> 10) & 0x1F;
@@ -1138,7 +1247,7 @@ void GLRenderer::RenderFrame(GPU& gpu)
 
     for (int i = 0; i < 8; i++)
     {
-        u16 c = gpu.GPU3D.RenderEdgeTable[i];
+        u16 c = St.EdgeTable[i];
         u32 r = c & 0x1F;
         u32 g = (c >> 5) & 0x1F;
         u32 b = (c >> 10) & 0x1F;
@@ -1149,7 +1258,7 @@ void GLRenderer::RenderFrame(GPU& gpu)
     }
 
     {
-        u32 c = gpu.GPU3D.RenderFogColor;
+        u32 c = St.FogColor;
         u32 r = c & 0x1F;
         u32 g = (c >> 5) & 0x1F;
         u32 b = (c >> 10) & 0x1F;
@@ -1163,13 +1272,15 @@ void GLRenderer::RenderFrame(GPU& gpu)
 
     for (int i = 0; i < 34; i++)
     {
-        u8 d = gpu.GPU3D.RenderFogDensityTable[i];
+        u8 d = St.FogDensity[i];
         ShaderConfig.uFogDensity[i][0] = (float)d / 127.0;
     }
 
-    ShaderConfig.uFogOffset = gpu.GPU3D.RenderFogOffset;
-    ShaderConfig.uFogShift = gpu.GPU3D.RenderFogShift;
+    ShaderConfig.uFogOffset = St.FogOffset;
+    ShaderConfig.uFogShift = St.FogShift;
 
+    // ssrecomp: binding point 0 is shared by every renderer in the context.
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, ShaderConfigUBO);
     glBindBuffer(GL_UNIFORM_BUFFER, ShaderConfigUBO);
     void* unibuf = glMapBuffer(GL_UNIFORM_BUFFER, GL_WRITE_ONLY);
     if (unibuf) memcpy(unibuf, &ShaderConfig, sizeof(ShaderConfig));
@@ -1179,32 +1290,24 @@ void GLRenderer::RenderFrame(GPU& gpu)
     // TODO: detect when VRAM blocks are modified!
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, TexMemID);
-    for (int i = 0; i < 4; i++)
+    if (St.UploadTextures)
     {
-        u32 mask = gpu.VRAMMap_Texture[i];
-        u8* vram;
-        if (!mask) continue;
-        else if (mask & (1<<0)) vram = gpu.VRAM_A;
-        else if (mask & (1<<1)) vram = gpu.VRAM_B;
-        else if (mask & (1<<2)) vram = gpu.VRAM_C;
-        else if (mask & (1<<3)) vram = gpu.VRAM_D;
-
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*128, 1024, 128, GL_RED_INTEGER, GL_UNSIGNED_BYTE, vram);
+        for (int i = 0; i < 4; i++)
+        {
+            if (!St.TexVRAM[i]) continue;
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*128, 1024, 128, GL_RED_INTEGER, GL_UNSIGNED_BYTE, St.TexVRAM[i]);
+        }
     }
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, TexPalMemID);
-    for (int i = 0; i < 6; i++)
+    if (St.UploadTextures)
     {
-        // 6 x 16K chunks
-        u32 mask = gpu.VRAMMap_TexPal[i];
-        u8* vram;
-        if (!mask) continue;
-        else if (mask & (1<<4)) vram = &gpu.VRAM_E[(i&3)*0x4000];
-        else if (mask & (1<<5)) vram = gpu.VRAM_F;
-        else if (mask & (1<<6)) vram = gpu.VRAM_G;
-
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*8, 1024, 8, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram);
+        for (int i = 0; i < 6; i++)
+        {
+            if (!St.PalVRAM[i]) continue;
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*8, 1024, 8, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, St.PalVRAM[i]);
+        }
     }
 
     glDisable(GL_SCISSOR_TEST);
@@ -1227,13 +1330,13 @@ void GLRenderer::RenderFrame(GPU& gpu)
         glUseProgram(ClearShaderPlain);
         glDepthFunc(GL_ALWAYS);
 
-        u32 r = gpu.GPU3D.RenderClearAttr1 & 0x1F;
-        u32 g = (gpu.GPU3D.RenderClearAttr1 >> 5) & 0x1F;
-        u32 b = (gpu.GPU3D.RenderClearAttr1 >> 10) & 0x1F;
-        u32 fog = (gpu.GPU3D.RenderClearAttr1 >> 15) & 0x1;
-        u32 a = (gpu.GPU3D.RenderClearAttr1 >> 16) & 0x1F;
-        u32 polyid = (gpu.GPU3D.RenderClearAttr1 >> 24) & 0x3F;
-        u32 z = ((gpu.GPU3D.RenderClearAttr2 & 0x7FFF) * 0x200) + 0x1FF;
+        u32 r = St.ClearAttr1 & 0x1F;
+        u32 g = (St.ClearAttr1 >> 5) & 0x1F;
+        u32 b = (St.ClearAttr1 >> 10) & 0x1F;
+        u32 fog = (St.ClearAttr1 >> 15) & 0x1;
+        u32 a = (St.ClearAttr1 >> 16) & 0x1F;
+        u32 polyid = (St.ClearAttr1 >> 24) & 0x3F;
+        u32 z = ((St.ClearAttr2 & 0x7FFF) * 0x200) + 0x1FF;
 
         glStencilFunc(GL_ALWAYS, 0xFF, 0xFF);
         glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
@@ -1252,20 +1355,25 @@ void GLRenderer::RenderFrame(GPU& gpu)
         glDrawArrays(GL_TRIANGLES, 0, 2*3);
     }
 
-    if (gpu.GPU3D.RenderNumPolygons)
+    // ssrecomp: the texture memory is on units 0 and 1 while drawing (as the upload left it).
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, TexMemID);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, TexPalMemID);
+
+    NumFinalPolys = 0;
+    if (St.NumPolygons)
     {
         // render shit here
-        u32 flags = 0;
-        if (gpu.GPU3D.RenderPolygonRAM[0]->WBuffer) flags |= RenderFlag_WBuffer;
-
         int npolys = 0;
         int firsttrans = -1;
-        for (u32 i = 0; i < gpu.GPU3D.RenderNumPolygons; i++)
+        for (u32 i = 0; i < St.NumPolygons && npolys < MaxPolygons; i++)
         {
-            if (gpu.GPU3D.RenderPolygonRAM[i]->Degenerate) continue;
+            Polygon* poly = St.List[i];
+            if (!poly || poly->Degenerate) continue;
 
-            SetupPolygon(&PolygonList[npolys], gpu.GPU3D.RenderPolygonRAM[i]);
-            if (firsttrans < 0 && gpu.GPU3D.RenderPolygonRAM[i]->Translucent)
+            SetupPolygon(&PolygonList[npolys], poly);
+            if (firsttrans < 0 && poly->Translucent)
                 firsttrans = npolys;
 
             npolys++;
@@ -1273,17 +1381,44 @@ void GLRenderer::RenderFrame(GPU& gpu)
         NumFinalPolys = npolys;
         NumOpaqueFinalPolys = firsttrans;
 
-        BuildPolygons(&PolygonList[0], npolys);
-        glBindBuffer(GL_ARRAY_BUFFER, VertexBufferID);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, NumVertices*7*4, VertexBuffer);
+        if (npolys)
+        {
+            BuildPolygons(&PolygonList[0], npolys);
+            glBindBuffer(GL_ARRAY_BUFFER, VertexBufferID);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, NumVertices*7*4, VertexBuffer.data());
 
-        // bind to access the index buffer
-        glBindVertexArray(VertexArrayID);
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, NumIndices * 2, IndexBuffer);
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, EdgeIndicesOffset * 2, NumEdgeIndices * 2, IndexBuffer + EdgeIndicesOffset);
+            // bind to access the index buffer
+            glBindVertexArray(VertexArrayID);
+            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, NumIndices * 2, IndexBuffer.data());
+            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, EdgeIndicesOffset * 2, NumEdgeIndices * 2, IndexBuffer.data() + EdgeIndicesOffset);
 
-        RenderSceneChunk(gpu.GPU3D, 0, 192);
+            RenderSceneChunk(0, 192);
+        }
     }
+}
+
+void GLRenderer::ReadbackStart()
+{
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, MainFramebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadbackBufferID);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, ScreenW, ScreenH, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    // Starts the drawing and the copy now; mapping the buffer later waits for both.
+    glFlush();
+}
+
+const u32* GLRenderer::ReadbackMap()
+{
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadbackBufferID);
+    return (const u32*)glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+}
+
+void GLRenderer::ReadbackUnmap()
+{
+    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 }
 
 void GLRenderer::Stop(const GPU& gpu)
