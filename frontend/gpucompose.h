@@ -32,7 +32,7 @@ public:
 
         if (useWide) DrawWide(scene, screens, outW, outH, v, smooth, *wide);
         else if (scene.edgeFill && !scene.items.empty() && scene.items[0].screen >= 0) DrawEdgeFill(screens[scene.items[0].screen], outW, v);
-        else if (scene.wide && scene.narrow && !scene.items.empty() && scene.items[0].screen >= 0 && v.originX > 0)
+        else if ((scene.softBars || (scene.wide && scene.narrow)) && !scene.items.empty() && scene.items[0].screen >= 0 && v.originX > 0)
             DrawNarrowBars(screens[scene.items[0].screen], outW, outH, v);
 
         int slot = 0;

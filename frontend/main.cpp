@@ -1545,7 +1545,7 @@ int main(int argc, char** argv)
         int field = -1, fieldMenu = -1, bag = -1, battle = -1;
         int battleCommand = -1, battleMove = -1, party = -1, trainerCard = -1, townMap = -1;
         int options = -1, summary = -1, dexList = -1, dexEntry = -1, box = -1;
-        int startContinue = -1, confirmDialog = -1, startMain = -1;
+        int startContinue = -1, confirmDialog = -1, startMain = -1, intro = -1, nameEntry = -1;
         int battleList = -1, battleBag = -1, battleChoice = -1, battleYesNo = -1;
         int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
     } bw2;
@@ -1576,6 +1576,8 @@ int main(int argc, char** argv)
         bw2.box = bw2Find("Box2Proc_Main");             // the PC's boxes
         bw2.startContinue = bw2Find("StartMenu_Continue"); // CONTINUE chosen on the start menu
         bw2.startMain = bw2Find("StartMenu_Main");      // the start menu (CONTINUE, NEW GAME, ...)
+        bw2.intro = bw2Find("IntroProc_Main");          // a new game's introduction (the professor)
+        bw2.nameEntry = bw2Find("NameEntry_ProcMain");  // entering a name (the keyboard)
         bw2.confirmDialog = bw2Find("ConfirmDialog_Update"); // a YES / NO question
         bw2.battleList = bw2Find("BPlistMain_Task");    // the party in a battle (POKEMON, or after fainting)
         bw2.battleBag = bw2Find("BBagMain_Task");       // the Bag in a battle
@@ -1811,6 +1813,17 @@ int main(int argc, char** argv)
             sc.bgX = 2;
             sc.bgY = 2;
         }
+        else if (funcWatch.Ran(bw2.nameEntry, 2))
+            // The keyboard, below the question it answers ("Your name?", in the message box at
+            // the bottom of the other screen).
+            sc = Stack("naming", { Crop(0, 0, 144, 256, 48), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
+        else if (funcWatch.Ran(bw2.intro, 2))
+        {
+            // A new game's introduction: everything (the professor, the questions, the choice
+            // between the two characters) is on the top screen; the other only has a pattern.
+            only("intro", 0);
+            sc.softBars = true;
+        }
         else
         {
             // Nothing recognised. Mostly a moment between screens (a fade, a button pressed in
@@ -1835,7 +1848,7 @@ int main(int argc, char** argv)
             }
             // One screen with nothing on it (one colour), as in the logos and the opening
             // before the title screen: the other one alone at full size, the bars beside it
-            // in the colour of its corner. A change between that and both screens waits until
+            // in soft colours from its edges (white beside a white logo). A change between that and both screens waits until
             // it has lasted 6 frames, so that a screen fading out first does not flash a layout.
             static int shownAlone = -1, wantAlone = -1;
             static uint32_t wantSince = 0;
@@ -1853,6 +1866,7 @@ int main(int argc, char** argv)
                 sc.bgScreen = shownAlone;
                 sc.bgX = 0;
                 sc.bgY = 0;
+                sc.softBars = true;
                 return sc;
             }
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);

@@ -140,6 +140,9 @@ struct Scene
     // With `wide`: this frame shows the top screen at 4:3 after all, while the widescreen
     // renderer keeps running (a picture in 2D covers the world; see MergedEdgesArePicture).
     bool narrow = false;
+    // A single screen at full height on a wide view: the bars beside it in soft colours from
+    // its edges (MergedNarrowBars) rather than one colour.
+    bool softBars = false;
 };
 
 // A plain rectangle, for the backing of a group of pieces.
@@ -594,7 +597,8 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     }
 
     uint32_t narrowBar[2][192];
-    const bool narrowBars = scene.wide && scene.narrow && !scene.items.empty() && scene.items[0].screen >= 0 && v.originX > 0;
+    const bool narrowBars = (scene.softBars || (scene.wide && scene.narrow)) && !scene.items.empty() && scene.items[0].screen >= 0 &&
+        v.originX > 0;
     if (narrowBars) MergedNarrowBars(screens[scene.items[0].screen], narrowBar[0], narrowBar[1]);
 
     auto rows = [&](int ya, int yb) {
