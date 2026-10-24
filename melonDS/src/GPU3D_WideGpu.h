@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 #include "types.h"
+#include "GPU3D.h"
 
 namespace melonDS
 {
@@ -89,6 +90,7 @@ struct WideGpuFrame
     u8 ClearStencil = 0;
     const u8* TexMem = nullptr; // 512 KB, read during Submit
     const u8* PalMem = nullptr; // 128 KB
+    u64 TexVersion = 0;         // the same (not 0) as last time: the texture memory has not changed
 };
 
 class WideGpuBackend
@@ -110,6 +112,37 @@ public:
 // Works out what to draw for the polygons of a wide frame (as GPU3D_Wide.cpp's Draw sees
 // them), at w x h.
 void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int w, int h, WideGpuFrame& out);
+
+// The DS-resolution 3D picture (the one melonDS's 2D renderer builds the screens from) drawn by
+// the graphics chip too, in place of the software renderer, with the same rules as the
+// widescreen view (no shadows, edge marking or antialiasing, as in that view): with the
+// widescreen view on, the world shown is that view's, and this picture is seen only through
+// translucent 2D layers over it and in scenes without the widescreen view. It is drawn when
+// the frame is rendered (scanline 215) and fetched for the first line the 2D renderer needs,
+// a few milliseconds later: the graphics chip takes well under one.
+class WideGpuDSRenderer : public Renderer3D
+{
+public:
+    explicit WideGpuDSRenderer(std::unique_ptr<WideGpuBackend> backend);
+    ~WideGpuDSRenderer() override;
+    void Reset(GPU& gpu) override {}
+    void RenderFrame(GPU& gpu) override;
+    u32* GetLine(int line) override;
+
+private:
+    std::unique_ptr<WideGpuBackend> Backend;
+    WideGpuFrame Frame;
+    u32* Pixels = nullptr;
+    bool Pending = false, Fetched = true;
+    u64 Version = 0;
+    u32 Lines[256 * 192] {}; // in the format GetLine returns
+};
+std::unique_ptr<WideGpuDSRenderer> WideGpuMakeDS(std::string& info);
+
+// The texture memory's version as the DS-resolution renderer above last saw it: changes
+// whenever the memory may have changed, 0 when that renderer is not in use (the widescreen
+// view's renderer then copies the texture memory every frame).
+extern u64 WideGpuTexVersion;
 
 // The backend in use, if any (the frontend sets it up; see WideGpuStart).
 extern std::unique_ptr<WideGpuBackend> WideGpuCurrent;

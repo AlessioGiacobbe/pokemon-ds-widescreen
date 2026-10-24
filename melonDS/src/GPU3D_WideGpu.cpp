@@ -5,21 +5,90 @@
 #include <cstring>
 #include "GPU.h"
 #include "GPU3D.h"
+#include "SsrThreads.h"
 
 namespace melonDS
 {
 std::unique_ptr<WideGpuBackend> WideGpuCurrent;
+u64 WideGpuTexVersion = 0;
+
+namespace
+{
+std::unique_ptr<WideGpuBackend> MakeBackend(std::string& info)
+{
+#ifdef SSR_DEKO3D
+    return WideGpuMakeDeko(info);
+#elif defined(OGLRENDERER_ENABLED)
+    return WideGpuMakeGL(info);
+#else
+    info = "not in this build";
+    return nullptr;
+#endif
+}
+}
+
+WideGpuDSRenderer::WideGpuDSRenderer(std::unique_ptr<WideGpuBackend> backend)
+    : Renderer3D(false), Backend(std::move(backend))
+{
+}
+
+WideGpuDSRenderer::~WideGpuDSRenderer()
+{
+    if (Pending) Backend->Fetch(0);
+    WideGpuTexVersion = 0;
+}
+
+std::unique_ptr<WideGpuDSRenderer> WideGpuMakeDS(std::string& info)
+{
+    auto b = MakeBackend(info);
+    if (!b) return nullptr;
+    return std::make_unique<WideGpuDSRenderer>(std::move(b));
+}
+
+void WideGpuDSRenderer::RenderFrame(GPU& gpu)
+{
+    // The flat copies of texture memory brought up to date, as the software renderer does it.
+    auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(gpu.VRAMMap_Texture, gpu);
+    auto texPalDirty = gpu.VRAMDirty_TexPal.DeriveState(gpu.VRAMMap_TexPal, gpu);
+    const bool textureChanged = gpu.MakeVRAMFlat_TextureCoherent(textureDirty);
+    const bool texPalChanged = gpu.MakeVRAMFlat_TexPalCoherent(texPalDirty);
+    if (textureChanged || texPalChanged || !Version) Version++;
+    WideGpuTexVersion = Version;
+
+    if (Pending) Backend->Fetch(0); // (an earlier picture nobody asked for)
+    Pixels = Backend->Target(0, 256, 192);
+    WideGpuBuild(gpu, gpu.GPU3D.RenderPolygonRAM.data(), gpu.GPU3D.RenderNumPolygons, 256, 192, Frame);
+    Frame.TexVersion = Version;
+    Pending = Pixels && Backend->Submit(Frame, 0);
+    Fetched = false;
+}
+
+u32* WideGpuDSRenderer::GetLine(int line)
+{
+    if (!Fetched)
+    {
+        Fetched = true;
+        if (Pending)
+        {
+            SsrWaitTimer t(SsrStats().Wait3DNs);
+            Backend->Fetch(0);
+            Pending = false;
+            // XRGB (8 bits) with the alpha in the top byte, to the software renderer's format:
+            // red, green, blue in 6 bits from bits 0, 8, 16, alpha in 5 from bit 24.
+            for (int i = 0; i < 256 * 192; i++)
+            {
+                const u32 v = Pixels[i];
+                Lines[i] = ((v >> 18) & 0x3F) | (((v >> 10) & 0x3F) << 8) | (((v >> 2) & 0x3F) << 16) | (((v >> 27) & 0x1F) << 24);
+            }
+        }
+    }
+    return &Lines[256 * (line < 0 ? 0 : line > 191 ? 191 : line)];
+}
 
 bool WideGpuStart(std::string& info)
 {
     WideGpuStop();
-#ifdef SSR_DEKO3D
-    WideGpuCurrent = WideGpuMakeDeko(info);
-#elif defined(OGLRENDERER_ENABLED)
-    WideGpuCurrent = WideGpuMakeGL(info);
-#else
-    info = "not in this build";
-#endif
+    WideGpuCurrent = MakeBackend(info);
     return WideGpuCurrent != nullptr;
 }
 
@@ -76,6 +145,7 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
     f.ClearStencil = clearAlpha ? 0x80 : 0;
     f.TexMem = gpu.VRAMFlat_Texture;
     f.PalMem = gpu.VRAMFlat_TexPal;
+    f.TexVersion = WideGpuTexVersion;
 
     const bool texturing = dispCnt & 1;
     const bool blendEnabled = dispCnt & (1 << 3);

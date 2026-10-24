@@ -64,6 +64,101 @@ struct DkshHeader
     u32 Magic, HeaderSize, ControlSize, CodeSize, ProgramsOffset, NumPrograms;
 };
 
+// What every renderer shares: the device, the queue its commands go to, the shaders. (Two
+// renderers are in use at once: the widescreen view's and the DS-resolution picture's.)
+struct Shared
+{
+    DkDevice Device = nullptr;
+    DkQueue Queue = nullptr;
+    DkMemBlock CodeMem = nullptr;
+    DkShader MainVsh, MainFsh, FinalVsh, FinalFsh;
+    int Users = 0;
+};
+Shared* Sh = nullptr;
+
+DkMemBlock MakeBlock(u32 size, u32 flags)
+{
+    DkMemBlockMaker m;
+    dkMemBlockMakerDefaults(&m, Sh->Device, Align(size, DK_MEMBLOCK_ALIGNMENT));
+    m.flags = flags;
+    return dkMemBlockCreate(&m);
+}
+
+bool LoadShader(DkShader& shader, const unsigned char* file, size_t size, u32& used)
+{
+    DkshHeader h;
+    if (size < sizeof(h)) return false;
+    memcpy(&h, file, sizeof(h));
+    if (h.ControlSize + h.CodeSize > size) return false;
+    const u32 at = Align(used, DK_SHADER_CODE_ALIGNMENT);
+    if (at + h.CodeSize + DK_SHADER_CODE_UNUSABLE_SIZE > dkMemBlockGetSize(Sh->CodeMem)) return false;
+    memcpy((u8*)dkMemBlockGetCpuAddr(Sh->CodeMem) + at, file + h.ControlSize, h.CodeSize);
+    used = at + h.CodeSize;
+    DkShaderMaker m;
+    dkShaderMakerDefaults(&m, Sh->CodeMem, at);
+    m.control = file;
+    m.programId = 0;
+    dkShaderInitialize(&shader, &m);
+    return dkShaderIsValid(&shader);
+}
+
+void ReleaseShared()
+{
+    if (!Sh || --Sh->Users > 0) return;
+    if (Sh->Queue)
+    {
+        dkQueueWaitIdle(Sh->Queue);
+        dkQueueDestroy(Sh->Queue);
+    }
+    if (Sh->CodeMem) dkMemBlockDestroy(Sh->CodeMem);
+    if (Sh->Device) dkDeviceDestroy(Sh->Device);
+    delete Sh;
+    Sh = nullptr;
+}
+
+bool AcquireShared(std::string& info)
+{
+    if (Sh)
+    {
+        Sh->Users++;
+        return true;
+    }
+    Sh = new Shared();
+    Sh->Users = 1;
+    DkDeviceMaker dm;
+    dkDeviceMakerDefaults(&dm);
+    dm.cbDebug = Debug;
+    Sh->Device = dkDeviceCreate(&dm);
+    if (!Sh->Device)
+    {
+        info = "no deko3D device";
+        ReleaseShared();
+        return false;
+    }
+    Sh->CodeMem = MakeBlock(256 * 1024, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Code);
+    u32 used = 0;
+    if (!Sh->CodeMem || !LoadShader(Sh->MainVsh, wide_vsh_dksh, sizeof(wide_vsh_dksh), used) ||
+        !LoadShader(Sh->MainFsh, wide_fsh_dksh, sizeof(wide_fsh_dksh), used) ||
+        !LoadShader(Sh->FinalVsh, final_vsh_dksh, sizeof(final_vsh_dksh), used) ||
+        !LoadShader(Sh->FinalFsh, final_fsh_dksh, sizeof(final_fsh_dksh), used))
+    {
+        info = "the deko3D shaders could not be loaded";
+        ReleaseShared();
+        return false;
+    }
+    DkQueueMaker qm;
+    dkQueueMakerDefaults(&qm, Sh->Device);
+    qm.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
+    Sh->Queue = dkQueueCreate(&qm);
+    if (!Sh->Queue)
+    {
+        info = "no deko3D queue";
+        ReleaseShared();
+        return false;
+    }
+    return true;
+}
+
 class WideGpuDeko : public WideGpuBackend
 {
 public:
@@ -71,40 +166,21 @@ public:
 
     bool Init(std::string& info)
     {
-        DkDeviceMaker dm;
-        dkDeviceMakerDefaults(&dm);
-        dm.cbDebug = Debug;
-        Device = dkDeviceCreate(&dm);
-        if (!Device)
-        {
-            info = "no deko3D device";
-            return false;
-        }
+        if (!AcquireShared(info)) return false;
+        HaveShared = true;
         CmdMem = Block(CmdSize, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached);
-        CodeMem = Block(256 * 1024, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Code);
         DataMem = Block(DataSize, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached);
-        if (!CmdMem || !CodeMem || !DataMem)
+        if (!CmdMem || !DataMem)
         {
             info = "deko3D memory could not be had";
             return false;
         }
-        u32 used = 0;
-        if (!Shader(MainVsh, wide_vsh_dksh, sizeof(wide_vsh_dksh), used) || !Shader(MainFsh, wide_fsh_dksh, sizeof(wide_fsh_dksh), used) ||
-            !Shader(FinalVsh, final_vsh_dksh, sizeof(final_vsh_dksh), used) || !Shader(FinalFsh, final_fsh_dksh, sizeof(final_fsh_dksh), used))
-        {
-            info = "the deko3D shaders could not be loaded";
-            return false;
-        }
-        DkQueueMaker qm;
-        dkQueueMakerDefaults(&qm, Device);
-        qm.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
-        Queue = dkQueueCreate(&qm);
         DkCmdBufMaker cm;
-        dkCmdBufMakerDefaults(&cm, Device);
+        dkCmdBufMakerDefaults(&cm, Sh->Device);
         Cmd = dkCmdBufCreate(&cm);
-        if (!Queue || !Cmd)
+        if (!Cmd)
         {
-            info = "no deko3D queue";
+            info = "no deko3D command buffer";
             return false;
         }
         Data = (u8*)dkMemBlockGetCpuAddr(DataMem);
@@ -124,16 +200,16 @@ public:
 
     ~WideGpuDeko() override
     {
-        if (Queue) dkQueueWaitIdle(Queue);
+        if (!HaveShared) return;
+        if (Pending) dkFenceWait(&Fence, 1000000000ll);
+        dkQueueWaitIdle(Sh->Queue);
         FreeTargets();
         for (Slot& s : Slots)
             if (s.Mem) dkMemBlockDestroy(s.Mem);
         if (Cmd) dkCmdBufDestroy(Cmd);
-        if (Queue) dkQueueDestroy(Queue);
         if (DataMem) dkMemBlockDestroy(DataMem);
-        if (CodeMem) dkMemBlockDestroy(CodeMem);
         if (CmdMem) dkMemBlockDestroy(CmdMem);
-        if (Device) dkDeviceDestroy(Device);
+        ReleaseShared();
     }
 
     u32* Target(int slot, int w, int h) override
@@ -168,8 +244,13 @@ public:
 
         memcpy(Data + OffFrame, &f.Constants, sizeof(f.Constants));
         memcpy(Data + OffPolygons, f.Polygons.data(), f.Polygons.size() * sizeof(WideGpuPolygon));
-        memcpy(Data + OffTex, f.TexMem, 512 * 1024);
-        memcpy(Data + OffPal, f.PalMem, 128 * 1024);
+        // (The texture memory only when it may have changed.)
+        if (!f.TexVersion || f.TexVersion != TexVersion)
+        {
+            memcpy(Data + OffTex, f.TexMem, 512 * 1024);
+            memcpy(Data + OffPal, f.PalMem, 128 * 1024);
+            TexVersion = f.TexVersion;
+        }
         memcpy(Data + OffVertices, f.Vertices.data(), f.Vertices.size() * sizeof(WideGpuVertex));
         const double t1 = Now();
 
@@ -198,7 +279,7 @@ public:
         dkCmdBufClearColor(Cmd, 1, DkColorMask_RGBA, clearAttr);
         dkCmdBufClearDepthStencil(Cmd, true, (float)f.ClearDepth / 16777216.0f, 0xFF, f.ClearStencil);
 
-        const DkShader* main[2] = { &MainVsh, &MainFsh };
+        const DkShader* main[2] = { &Sh->MainVsh, &Sh->MainFsh };
         dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, main, 2);
         const DkBufExtents frame = { DataAddr + OffFrame, FrameSize };
         const DkBufExtents draw = { DataAddr + OffDraw, DrawSize };
@@ -268,7 +349,7 @@ public:
         dkColorStateDefaults(&plain);
         dkCmdBufBindColorState(Cmd, &plain);
         dkCmdBufBindColorWriteState(Cmd, &all);
-        const DkShader* fin[2] = { &FinalVsh, &FinalFsh };
+        const DkShader* fin[2] = { &Sh->FinalVsh, &Sh->FinalFsh };
         dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, fin, 2);
         dkCmdBufBindImageDescriptorSet(Cmd, DataAddr + OffImageDesc, 2);
         dkCmdBufBindSamplerDescriptorSet(Cmd, DataAddr + OffSamplerDesc, 1);
@@ -283,8 +364,8 @@ public:
         dkCmdBufCopyImageToBuffer(Cmd, &finalView, &rect, &dst, 0);
         dkCmdBufBarrier(Cmd, DkBarrier_Full, DkInvalidateFlags_L2Cache);
         dkCmdBufSignalFence(Cmd, &Fence, true);
-        dkQueueSubmitCommands(Queue, dkCmdBufFinishList(Cmd));
-        dkQueueFlush(Queue);
+        dkQueueSubmitCommands(Sh->Queue, dkCmdBufFinishList(Cmd));
+        dkQueueFlush(Sh->Queue);
         Pending = true;
         const double t2 = Now();
         T.Copy += t1 - t0;
@@ -324,36 +405,12 @@ public:
     }
 
 private:
-    DkMemBlock Block(u32 size, u32 flags)
-    {
-        DkMemBlockMaker m;
-        dkMemBlockMakerDefaults(&m, Device, Align(size, DK_MEMBLOCK_ALIGNMENT));
-        m.flags = flags;
-        return dkMemBlockCreate(&m);
-    }
-
-    bool Shader(DkShader& shader, const unsigned char* file, size_t size, u32& used)
-    {
-        DkshHeader h;
-        if (size < sizeof(h)) return false;
-        memcpy(&h, file, sizeof(h));
-        if (h.ControlSize + h.CodeSize > size) return false;
-        const u32 at = Align(used, DK_SHADER_CODE_ALIGNMENT);
-        if (at + h.CodeSize + DK_SHADER_CODE_UNUSABLE_SIZE > dkMemBlockGetSize(CodeMem)) return false;
-        memcpy((u8*)dkMemBlockGetCpuAddr(CodeMem) + at, file + h.ControlSize, h.CodeSize);
-        used = at + h.CodeSize;
-        DkShaderMaker m;
-        dkShaderMakerDefaults(&m, CodeMem, at);
-        m.control = file;
-        m.programId = 0;
-        dkShaderInitialize(&shader, &m);
-        return dkShaderIsValid(&shader);
-    }
+    static DkMemBlock Block(u32 size, u32 flags) { return MakeBlock(size, flags); }
 
     bool Image(DkImage& image, DkMemBlock& mem, DkImageFormat format, int w, int h, u32 flags)
     {
         DkImageLayoutMaker lm;
-        dkImageLayoutMakerDefaults(&lm, Device);
+        dkImageLayoutMakerDefaults(&lm, Sh->Device);
         lm.flags = flags;
         lm.format = format;
         lm.dimensions[0] = (u32)w;
@@ -383,7 +440,7 @@ private:
 
     bool MakeTargets(int w, int h)
     {
-        if (Queue) dkQueueWaitIdle(Queue);
+        dkQueueWaitIdle(Sh->Queue);
         FreeTargets();
         const u32 render = DkImageFlags_UsageRender;
         if (!Image(ColorImage, ColorMem, DkImageFormat_RGBA8_Unorm, w, h, render) ||
@@ -409,8 +466,9 @@ private:
         return true;
     }
 
-    DkDevice Device = nullptr;
-    DkMemBlock CmdMem = nullptr, CodeMem = nullptr, DataMem = nullptr;
+    bool HaveShared = false;
+    u64 TexVersion = 0;
+    DkMemBlock CmdMem = nullptr, DataMem = nullptr;
     DkMemBlock ColorMem = nullptr, AttrMem = nullptr, DepthMem = nullptr, FinalMem = nullptr;
     // The pictures (see Target).
     struct Slot
@@ -426,9 +484,7 @@ private:
         u32 Pictures = 0;
     };
     Times T;
-    DkQueue Queue = nullptr;
     DkCmdBuf Cmd = nullptr;
-    DkShader MainVsh, MainFsh, FinalVsh, FinalFsh;
     DkImage ColorImage, AttrImage, DepthImage, FinalImage;
     DkFence Fence;
     u8* Data = nullptr;

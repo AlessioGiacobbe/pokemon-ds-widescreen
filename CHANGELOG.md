@@ -20,7 +20,9 @@
   graphics chip through deko3D, its own graphics API, instead of the processor, into the
   same picture. On the Skyarrow Bridge at WORLD DETAIL 720 a frame went from about 34 ms
   (30 fps) to about 19 ms. Off by default for now; if the game does not get 600 frames
-  into it, it is off at the next start. On a PC the same
+  into it, it is off at the next start. With it, the DS's own 3D picture is drawn by the graphics chip
+  too (`ds3d_gpu=0` keeps that on the processor), and the texture memory is only sent to
+  the graphics chip when it has changed. On a PC the same
   drawing runs through OpenGL in headless tests (`--wide-gpu`), to compare with the
   processor's picture: they differ only along the edges of polygons.
 

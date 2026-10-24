@@ -474,6 +474,7 @@ struct Options
     bool testRun = false;        // a run from test.txt: controllers and the pause menu ignored
     bool windowShots = true;     // in a window, screenshots also read back what was shown
     int wideGpu = -1;            // the widescreen world by the graphics chip: -1 = from settings
+    int ds3dGpu = -1;            // with it, the DS-resolution 3D picture: -1 = from settings
 };
 
 static void Usage()
@@ -505,6 +506,7 @@ static void Usage()
         "  --env NAME=VALUE     set an environment variable (diagnostics such as SSR_WIDE_PROF=1)\n"
         "  --wide-gpu           the widescreen world drawn by the graphics chip (Switch: deko3D;\n"
         "                       elsewhere OpenGL, with --headless only, for tests; also SSR_WIDE_GPU=1)\n"
+        "  --no-ds3d-gpu        with --wide-gpu, the DS-resolution 3D picture still by the processor\n"
         "  --shot-dir <dir>     where screenshots go\n"
         "  --shot-at <a,b,c>    screenshot these frames\n"
         "  --shot-every <n>     screenshot every n frames\n"
@@ -595,6 +597,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
             }
         }
         else if (a == "--no-wide-gpu") o.wideGpu = 0;
+        else if (a == "--no-ds3d-gpu") o.ds3dGpu = 0;
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;
         else if (a == "--lockstep") { o.lockstep = true; o.headless = true; o.noSave = true; }
@@ -671,6 +674,36 @@ static std::string Gpu3DMarker;
 // The same for the widescreen world on the graphics chip (GPU3D_WideGpu.h).
 static std::string WideGpuMarker;
 static uint32_t WideGpuFrames = 0;
+// Whether the DS-resolution 3D picture is drawn by the graphics chip too (GPU3D_WideGpu.h's
+// WideGpuDSRenderer), which goes with the widescreen world on it.
+static bool UseDSGpu = false;
+static void ApplyDSGpu(NDS& nds, bool on)
+{
+    if (on == UseDSGpu) return;
+    melonDS::WideWait();
+    if (on)
+    {
+        std::string info;
+        auto r = melonDS::WideGpuMakeDS(info);
+        if (!r)
+        {
+            fprintf(stderr, "[widegpu] the DS-resolution picture stays with the processor (%s)\n", info.c_str());
+            return;
+        }
+        if (auto* soft = dynamic_cast<melonDS::SoftRenderer*>(&nds.GPU.GetRenderer3D())) soft->SetThreaded(false, nds.GPU);
+        nds.GPU.GPU3D.SetCurrentRenderer(std::move(r));
+        UseDSGpu = true;
+        fprintf(stderr, "[widegpu] the DS-resolution 3D picture is drawn by the graphics chip too\n");
+    }
+    else
+    {
+        nds.GPU.GPU3D.SetCurrentRenderer(std::make_unique<melonDS::SoftRenderer>());
+        UseDSGpu = false;
+        if (!getenv("SSR_NO_RENDER_THREAD"))
+            if (auto* soft = dynamic_cast<melonDS::SoftRenderer*>(&nds.GPU.GetRenderer3D())) soft->SetThreaded(true, nds.GPU);
+        fprintf(stderr, "[widegpu] the DS-resolution 3D picture is drawn by the processor\n");
+    }
+}
 static bool StartWideGpu()
 {
     if (!WideGpuMarker.empty())
@@ -1191,6 +1224,7 @@ struct Settings
     // key replaced "gpu3d", which the build that hung saved as 1.)
     bool gpu3d = false;
     bool wideGpu = false;        // the widescreen world drawn by the graphics chip (GPU3D_WideGpu.h)
+    bool ds3dGpu = true;         // with it, the DS-resolution 3D picture too
 
     void Load(const std::string& path)
     {
@@ -1233,6 +1267,7 @@ struct Settings
             else if (k == "pipeline") pipeline = v != "0";
             else if (k == "gpu3d_test") gpu3d = v == "1";
             else if (k == "wide_gpu") wideGpu = v == "1";
+            else if (k == "ds3d_gpu") ds3dGpu = v != "0";
         }
     }
 
@@ -1256,6 +1291,7 @@ struct Settings
 #ifdef SSR_GPU3D
         f << "gpu3d_test=" << (gpu3d ? 1 : 0) << "\n";
         f << "wide_gpu=" << (wideGpu ? 1 : 0) << "\n";
+        f << "ds3d_gpu=" << (ds3dGpu ? 1 : 0) << "\n";
 #endif
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
@@ -1546,7 +1582,7 @@ int main(int argc, char** argv)
                 }
             }
         }
-        if (want) StartWideGpu();
+        if (want && StartWideGpu() && cfg.ds3dGpu && opt.ds3dGpu != 0) ApplyDSGpu(*nds, true);
     }
 
     // SSR_PERF=1 prints where the time of a frame goes, averaged over 300 frames.
@@ -3882,9 +3918,11 @@ int main(int argc, char** argv)
                 if (cfg.wideGpu)
                 {
                     if (!melonDS::WideGpuCurrent && !StartWideGpu()) say("NOT AVAILABLE: SEE GAME.LOG");
+                    else if (cfg.ds3dGpu) ApplyDSGpu(*nds, true);
                 }
                 else
                 {
+                    ApplyDSGpu(*nds, false);
                     melonDS::WideGpuStop();
                     if (!WideGpuMarker.empty()) remove(WideGpuMarker.c_str());
                     fprintf(stderr, "[widegpu] off: the processor draws the widescreen world\n");
@@ -4812,6 +4850,7 @@ int main(int argc, char** argv)
     // data that is destroyed when the program ends (this crashed on exit now and then). Its
     // threads are ended here too, rather than by the program's own clean-up at the very end.
     exitStep("widescreen threads");
+    ApplyDSGpu(*nds, false);
     melonDS::WideWait();
     melonDS::WideShutdown();
     melonDS::WideGpuStop();

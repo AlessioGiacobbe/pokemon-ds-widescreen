@@ -92,10 +92,14 @@ public:
         glBufferData(GL_SHADER_STORAGE_BUFFER, std::max<size_t>(16, f.Vertices.size() * sizeof(WideGpuVertex)), f.Vertices.data(), GL_STREAM_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[1]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, std::max<size_t>(16, f.Polygons.size() * sizeof(WideGpuPolygon)), f.Polygons.data(), GL_STREAM_DRAW);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[2]);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 512 * 1024, f.TexMem);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[3]);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 128 * 1024, f.PalMem);
+        if (!f.TexVersion || f.TexVersion != TexVersion)
+        {
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[2]);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 512 * 1024, f.TexMem);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[3]);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 128 * 1024, f.PalMem);
+            TexVersion = f.TexVersion;
+        }
         for (int i = 0; i < 4; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, SSBO[i]);
 
         glBindFramebuffer(GL_FRAMEBUFFER, MainFBO);
@@ -231,6 +235,7 @@ private:
     GLuint MainFBO = 0, FinalFBO = 0, ColorTex = 0, AttrTex = 0, FinalTex = 0, DepthRB = 0;
     int W = 0, H = 0;
     std::vector<u32> Slots[3];
+    u64 TexVersion = 0;
 };
 }
 
@@ -241,7 +246,10 @@ std::unique_ptr<WideGpuBackend> WideGpuMakeGL(std::string& info)
         info = "no OpenGL context in this build";
         return nullptr;
     }
-    if (!GLThreadRenderer::CreateContext(info)) return nullptr;
+    // One context for every renderer (it stays current on this thread).
+    static bool haveContext = false;
+    if (!haveContext && !GLThreadRenderer::CreateContext(info)) return nullptr;
+    haveContext = true;
     std::unique_ptr<WideGpuGL> r(new WideGpuGL());
     if (!r->Init(info)) return nullptr;
     return r;
