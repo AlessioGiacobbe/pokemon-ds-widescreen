@@ -5142,6 +5142,9 @@ int main(int argc, char** argv)
 #endif
     exitStep("done");
     if (nds->ARM9.RecompEnable) rc_print_stats();
+#ifdef __SWITCH__
+    if (!opt.headless) SwitchPlatform::EndProgram();
+#endif
     if (opt.lockstep)
     {
         if (TraceFailed) return 1;

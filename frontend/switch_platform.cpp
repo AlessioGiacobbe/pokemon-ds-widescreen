@@ -473,6 +473,21 @@ void ForceExit()
     for (;;) {}
 }
 
+static bool g_relaunch = false; // the loader starts the .nro again when it ends (Finish)
+
+void EndProgram()
+{
+    // Once everything is saved and closed, the program ends here rather than by returning from
+    // main: what follows that (the core's and the libraries' clean-up, then the Homebrew Menu's
+    // loader taking over again) has now and then frozen the console on QUIT after a save, with
+    // game.log ending in a clean "[exit] done". The process ends, back to the HOME Menu.
+    // (Except when a test run starts the program again: that goes through the loader.)
+    if (g_relaunch) return;
+    fflush(nullptr);
+    svcExitProcess();
+    for (;;) {}
+}
+
 void Finish()
 {
     JitStarted(); // (an ordinary exit: the JIT did start)
@@ -487,6 +502,7 @@ void Finish()
             const std::string cmd = g_self.find(' ') == std::string::npos ? g_self : "\"" + g_self + "\"";
             const Result rc = envSetNextLoad(g_self.c_str(), cmd.c_str());
             fprintf(stderr, "[test] starting again for the next run: 0x%x\n", (unsigned)rc);
+            g_relaunch = R_SUCCEEDED(rc);
         }
         else fprintf(stderr, "[test] start the game again for the next run\n");
         fflush(stderr);

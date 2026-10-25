@@ -42,5 +42,8 @@ void Finish();
 
 // Ends the program at once (after Finish), for an exit that has got stuck.
 [[noreturn]] void ForceExit();
+// The end of an ordinary exit (after Finish and "[exit] done"): ends the process there, unless a
+// test run is to start again (see switch_platform.cpp).
+void EndProgram();
 }
 #endif
