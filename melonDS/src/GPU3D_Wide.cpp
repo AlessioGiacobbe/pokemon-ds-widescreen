@@ -622,24 +622,27 @@ struct WideAccess
     }
 
     // The game leaves out what its own screen cannot show, so the wide view can come to the end
-    // of a large polygon a little short of its edge where the game drew nothing further: a
-    // sky made of panels around the camera (Castelia zoomed out by the Pokemon Center: the
-    // last panel on each side ended 20-40 pixels of 1280 short, the rear plane's flat colour
-    // beyond). A polygon at least a quarter of the view wide that reaches past the DS screen's
-    // edge, ends within 5% of the view's edge, and has nothing else beside it there (no other
-    // polygon's extent reaches into the strip between its end and the edge, over more than a
-    // third of its rows) is
-    // stretched to that edge: its outermost corners moved out, the texture with them. (Only
-    // where nothing else is: stretching a polygon that has neighbours there, a shadow on the
-    // street, a floor, shifted its texture for nothing. Others ending in the same strip, the
-    // sky's other layers, do not count as neighbours.)
+    // of a polygon a little short of its edge where the game drew nothing further: a sky made
+    // of panels around the camera (Castelia zoomed out by the Pokemon Center: the last panel on
+    // each side ended 20-40 pixels of 1280 short, the rear plane's flat colour beyond), or the
+    // layers of a view from a lookout (sky, mountains, haze and a far line of trees, each ending
+    // 30-90 pixels short). A polygon at least a tenth of the view wide that reaches past the DS
+    // screen's edge, ends within a twelfth of the view's edge, and has nothing else beside it
+    // there (no other polygon's extent reaches into the strip between its end and the edge, over
+    // more than a third of its rows) is continued to that edge: its outermost corners moved out
+    // along its top and bottom edges, its texture, colours and depth carried on with them, as if
+    // the game had drawn it wider. (Only where nothing else is: continuing a polygon that has
+    // neighbours there, a shadow on the street, a floor, changed it for nothing. Others ending in
+    // the same strip, a sky's other layers, do not count as neighbours, nor does a see-through
+    // layer that reaches the edge itself: the haze over a sky, which the sky behind should fill.)
     static void ExtendToEdges(Polygon** list, u32 count, float view)
     {
         static const bool off = getenv("SSR_WIDE_NO_EXTEND") != nullptr; // (to compare)
+        static const bool log = getenv("SSR_WIDE_EXTEND_LOG") != nullptr; // (development aid)
         if (off) return;
         constexpr s32 full = 256 * 16;      // the view's width in HiresPosition's units
         const s32 dsLeft = (s32)(full / 2 - (full / 2) * 256.0f / view), dsRight = full - dsLeft;
-        const s32 gap = full / 20;
+        const s32 gap = full / 12;
         struct Box { s32 x0, x1, y0, y1; u8 side; }; // side: 1 ends in the left strip, 2 the right
         static std::vector<Box> boxes;
         boxes.assign(count, Box { 0, -1, 0, -1, 0 });
@@ -657,7 +660,7 @@ struct WideAccess
                 b.x0 = std::min(b.x0, p[0]); b.x1 = std::max(b.x1, p[0]);
                 b.y0 = std::min(b.y0, p[1]); b.y1 = std::max(b.y1, p[1]);
             }
-            if (b.x1 - b.x0 < full / 4) continue;
+            if (b.x1 - b.x0 < full / 10) continue;
             if (b.x0 > 0 && b.x0 <= gap && b.x0 < dsLeft) b.side |= 1;
             if (b.x1 < full && b.x1 >= full - gap && b.x1 > dsRight) b.side |= 2;
             any |= b.side != 0;
@@ -672,28 +675,108 @@ struct WideAccess
                 if (!(b.side & side)) continue;
                 // The strip between the polygon's end and the view's edge, over its rows.
                 const s32 sx0 = side == 1 ? 0 : b.x1, sx1 = side == 1 ? b.x0 : full;
-                bool alone = true;
-                for (u32 j = 0; j < count && alone; j++)
+                s32 blocker = -1;
+                for (u32 j = 0; j < count && blocker < 0; j++)
                 {
                     const Box& o = boxes[j];
                     if (j == i || o.x1 < o.x0 || (o.side & side)) continue;
+                    if (list[j]->Translucent && (side == 1 ? o.x0 <= 0 : o.x1 >= full)) continue;
                     // (Touching counts: a neighbour sharing the corner to be moved would be bent.
                     // One beside only a third of its rows or less does not: the sea below the
                     // sky's haze at the horizon.)
                     const s32 rows = std::min(o.y1, b.y1) - std::max(o.y0, b.y0);
-                    if (o.x0 <= sx1 && o.x1 >= sx0 && rows > 0 && rows * 3 > b.y1 - b.y0) alone = false;
+                    if (o.x0 <= sx1 && o.x1 >= sx0 && rows > 0 && rows * 3 > b.y1 - b.y0) blocker = (s32)j;
                 }
-                if (!alone) continue;
-                Polygon* poly = list[i];
-                // (The corners at its end, a slanted end's both, beside the DS screen.)
-                const s32 tol = (b.x1 - b.x0) / 6;
-                for (u32 v = 0; v < poly->NumVertices; v++)
-                {
-                    s32& x = poly->Vertices[v]->HiresPosition[0];
-                    if (side == 1 && x <= b.x0 + tol && x < dsLeft) x = 0;
-                    if (side == 2 && x >= b.x1 - tol && x > dsRight) x = full;
-                }
+                if (log)
+                    fprintf(stderr, "[extend] polygon %u (x %d-%d, y %d-%d of %d) %s on the %s\n", i, b.x0, b.x1, b.y0, b.y1, full,
+                        blocker < 0 ? "continued" : "left (something beside it)", side == 1 ? "left" : "right");
+                if (log && blocker >= 0)
+                    fprintf(stderr, "[extend]   beside it: polygon %d (x %d-%d, y %d-%d)\n", blocker, boxes[blocker].x0, boxes[blocker].x1,
+                        boxes[blocker].y0, boxes[blocker].y1);
+                if (blocker >= 0) continue;
+                Continue(list[i], side, (b.x0 + b.x1) / 2, side == 1 ? dsLeft : dsRight, side == 1 ? 0 : full);
             }
+        }
+    }
+
+    // Moves a polygon's corners at one end (in its outer half, `near` being its middle, and
+    // beyond `limit`, the DS screen's edge: a slanted end's both corners) out to x = `edge`,
+    // each along the edge of the polygon running inwards from it, with what is drawn carried
+    // on: depth and 1/W (which change linearly across the screen) and the texture coordinates
+    // and colours (linearly once divided by W, as the renderers interpolate them). Where that
+    // cannot be done, the corners are only moved, stretching the polygon: a corner without such
+    // an edge (its neighbours as far out as it is, or the edge so short it would be continued
+    // many times over), or a texture that does not repeat and would be continued past its end
+    // (its last column drawn over and over, a band of one colour: the clouds by the pier).
+    static void Continue(Polygon* poly, int side, s32 near, s32 limit, s32 edge)
+    {
+        const u32 n = poly->NumVertices;
+        struct Corner { s32 x, y, z; float invW, s, t, r, g, b; };
+        Corner c[10];
+        for (u32 v = 0; v < n; v++)
+        {
+            const Vertex* p = poly->Vertices[v];
+            const float invW = poly->FinalW[v] > 0 ? 1.0f / (float)poly->FinalW[v] : 1.0f;
+            c[v] = { p->HiresPosition[0], p->HiresPosition[1], poly->FinalZ[v], invW,
+                p->TexCoords[0] * invW, p->TexCoords[1] * invW,
+                p->FinalColor[0] * invW, p->FinalColor[1] * invW, p->FinalColor[2] * invW };
+        }
+        // The new corners, worked out first: all of them are continued, or none.
+        struct Moved { bool out; s32 y, z, w; s16 s, t; s32 r, g, b; };
+        Moved m[10];
+        const u32 tp = poly->TexParam;
+        const bool textured = (tp >> 26) & 7;
+        const float sMax = (float)((8 << ((tp >> 20) & 7)) * 16), tMax = (float)((8 << ((tp >> 23) & 7)) * 16);
+        bool carry = true;
+        for (u32 v = 0; v < n; v++)
+        {
+            const Corner& o = c[v];
+            m[v].out = side == 1 ? o.x <= near && o.x < limit : o.x >= near && o.x > limit;
+            if (!m[v].out) continue;
+            // The neighbour furthest inwards: the other end of the polygon's top or bottom edge.
+            const Corner& a = c[(v + n - 1) % n];
+            const Corner& b = c[(v + 1) % n];
+            const Corner& in = side == 1 ? (a.x > b.x ? a : b) : (a.x < b.x ? a : b);
+            const s32 dx = o.x - in.x;
+            const float t = dx != 0 ? (float)(edge - in.x) / (float)dx : 0.0f;
+            auto at = [&](float from, float to) { return from + (to - from) * t; };
+            const float invW = at(in.invW, o.invW);
+            if ((side == 1 ? dx > -16 : dx < 16) || t < 1.0f || t > 4.0f || invW <= 0)
+            {
+                carry = false;
+                break;
+            }
+            const float s = at(in.s, o.s) / invW, tt = at(in.t, o.t) / invW;
+            // (Half a texel of slack for rounding.)
+            if (textured && ((!(tp & (1 << 16)) && (s < -8 || s > sMax + 8)) || (!(tp & (1 << 17)) && (tt < -8 || tt > tMax + 8))))
+            {
+                carry = false;
+                break;
+            }
+            m[v].y = (s32)std::lround(at((float)in.y, (float)o.y));
+            m[v].z = (s32)std::clamp(at((float)in.z, (float)o.z), 0.0f, 16777215.0f);
+            m[v].w = (s32)std::clamp(1.0f / invW, 1.0f, 65535.0f);
+            m[v].s = (s16)std::clamp(s, -32768.0f, 32767.0f);
+            m[v].t = (s16)std::clamp(tt, -32768.0f, 32767.0f);
+            m[v].r = (s32)std::clamp(at(in.r, o.r) / invW, 0.0f, 511.0f);
+            m[v].g = (s32)std::clamp(at(in.g, o.g) / invW, 0.0f, 511.0f);
+            m[v].b = (s32)std::clamp(at(in.b, o.b) / invW, 0.0f, 511.0f);
+        }
+        for (u32 v = 0; v < n; v++)
+        {
+            const bool out = side == 1 ? c[v].x <= near && c[v].x < limit : c[v].x >= near && c[v].x > limit;
+            if (!out) continue;
+            Vertex* p = poly->Vertices[v];
+            p->HiresPosition[0] = edge;
+            if (!carry) continue;
+            p->HiresPosition[1] = m[v].y;
+            poly->FinalZ[v] = m[v].z;
+            poly->FinalW[v] = m[v].w;
+            p->TexCoords[0] = m[v].s;
+            p->TexCoords[1] = m[v].t;
+            p->FinalColor[0] = m[v].r;
+            p->FinalColor[1] = m[v].g;
+            p->FinalColor[2] = m[v].b;
         }
     }
 

@@ -44,9 +44,10 @@
   The graphics chip now keeps its pictures compressed and draws the world straight into
   the frame it shows, and each DS texture is decoded once (when the game changes it)
   rather than again for every pixel (that decoding was over half of its drawing time).
-- Black 2: where a large polygon (a sky made of panels around the camera, as in Castelia
-  zoomed out) ends a little short of the wide view's edge with nothing beside it, it is
-  stretched to the edge instead of leaving a strip of flat colour. The start menu's grey
+- Black 2: where a sky or a distant layer of the view (Castelia zoomed out; the sky,
+  mountains, haze and far trees from a lookout) ends a little short of the wide view's edge
+  with nothing beside it, it is continued to the edge, its picture carried on, instead of
+  leaving a strip of flat colour. The start menu's grey
   circle no longer runs on below the screen as a straight band.
 
 - Switch: quitting no longer hangs when closing the sound never returns (seen at
