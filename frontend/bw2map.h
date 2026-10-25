@@ -73,9 +73,11 @@ private:
     {
         static const Version versions[] = {
             { "IREO", 0x021ca01c, 0x0208ee68, true }, // Black 2
-            // White 2: not yet. With 8 MB (even with the game's heaps moved and nothing else
-            // changed) its overworld is not drawn again after a trainer battle, while Black 2's
-            // is; the cause is not known yet. SSR_B2_MAP=1 turns it on to test.
+            // White 2: not yet. With 8 MB its overworld is not drawn again after a trainer
+            // battle, while Black 2's is: on melonDS's JIT (with or without fast memory) even
+            // with the arena left where it was and the table unchanged, but not on the
+            // interpreter, so something in the JIT with 8 MB; not found yet. SSR_B2_MAP=1
+            // turns it on to test.
             { "IRDO", 0x021ca050, 0x0208ee94, false }, // White 2
         };
         const char* env = getenv("SSR_B2_MAP");
