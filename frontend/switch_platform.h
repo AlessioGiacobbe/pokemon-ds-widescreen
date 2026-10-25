@@ -16,6 +16,10 @@ bool Start(int& argc, char**& argv);
 // The processor's boost mode: about 1.8 GHz instead of 1 GHz, as games use while loading.
 bool SetCpuBoost(bool on);
 
+// Whether the boost also runs the graphics chip at 768 MHz, its docked speed, when it is
+// slower (460 MHz in handheld mode). Called before SetCpuBoost; on unless gpu_boost=0.
+void SetGpuBoost(bool on);
+
 // Called every frame: puts the boost speed back when the system has lowered it.
 void KeepBoost(uint32_t frame);
 

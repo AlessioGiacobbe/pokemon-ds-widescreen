@@ -12,6 +12,9 @@
   system's boost mode (which the system took away for 10-20 seconds every minute or
   so): processor 1785 MHz, memory 1600 MHz (its docked speed), checked five times a
   second, and put back to normal when it is turned off or the game ends.
+  In handheld mode CPU BOOST also runs the graphics chip at 768 MHz, its docked speed,
+  instead of 460 (`gpu_boost=0` in the settings file keeps it at 460): with the world
+  drawn by the graphics chip, it was what a battle at WORLD DETAIL 720 waited for.
   Games without recompiled code (the experimental Black 2 build) run on melonDS's
   JIT on the Switch (EMULATION in the pause menu; hold L while starting for the
   interpreter, which is also used by itself after a start where the JIT failed).
