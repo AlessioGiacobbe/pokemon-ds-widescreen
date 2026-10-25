@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Switch: one command per game.** `tools/switch/build_game.sh soulsilver|black2|black
+  your-rom.nds` does every step once the tools are installed: the function tables, the
+  build (with devkitPro's Docker image when devkitPro is not installed) and a folder laid out
+  like the SD card (see README, "Nintendo Switch").
+- **SoulSilver on the Switch's JIT:** built without the recompiled code
+  (`tools/soulsilver/tables_only.py`), it runs on melonDS's JIT, about 1.7 times as fast on
+  the Switch, and builds in minutes; its layouts learn which functions and overlays run from
+  the emulator instead. In a wide battle the bottom band shows the message box on its left
+  and the touch screen's buttons on its right.
+
 - **Nintendo Switch (experimental):** a homebrew `.nro` for consoles with custom
   firmware, built on the PC from your ROM with `tools/switch/build.sh` (see README,
   "Nintendo Switch"). The pause menu's FULLSCREEN is CPU BOOST there, the

@@ -118,38 +118,79 @@ Android** again and install the new APK over the old one.
 ### Nintendo Switch (experimental)
 
 A homebrew version for a Switch running custom firmware (Atmosphère), built on
-your PC from your ROM. It needs Linux, or Windows with WSL2 (Ubuntu 24.04).
+your PC from your ROM. Three games:
 
-1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) (its pacman),
-   then the Switch toolchain and SDL2: `sudo dkp-pacman -S switch-dev switch-sdl2`.
-   Also install what the PC build needs (CMake, Ninja, Python 3; see below). If
-   devkitPro's servers refuse the download (403), use their Docker image instead:
-   `docker run --rm -v "$PWD:$PWD" -w "$PWD" devkitpro/devkita64 bash tools/switch/build.sh`
-   (generate `gen/` first, as in step 2, since the ROM is outside the container).
-2. From this folder: `tools/switch/build.sh your-soulsilver-us.nds`. The ROM is
-   only needed the first time; the game's recompiled code in `gen/` is shared with
-   the PC build. The result is `build-switch/ssrecomp.nro`.
-3. On the SD card, make `/switch/ssrecomp/` and copy `ssrecomp.nro` and your ROM
-   into it, the ROM renamed to `rom.nds`.
-4. **Hold R while starting any game** and choose ssrecomp in the Homebrew Menu.
-   It is about 400 MB (the whole game's recompiled code), so started from the
-   album there is not enough memory to load it, and it takes a few seconds to
-   load from the SD card.
+| Game | ROM | Folder on the SD card | Save |
+|---|---|---|---|
+| Pokémon SoulSilver | US (IPGE) | `/switch/ssrecomp/` | `soulsilver.sav` |
+| Pokémon Black 2 | US (IREO) | `/switch/ssrecomp-black2/` | `black2.sav` |
+| Pokémon Black | US/Europe (IRBO) | `/switch/ssrecomp-black/` | `black.sav` |
 
-For an icon of your own in the Homebrew Menu, put a 256×256 JPEG at
-`build-switch/icon.jpg` and run `tools/switch/build.sh` again; only the `.nro` is
-repacked.
+All three run on melonDS's JIT, with the same single-screen view, widescreen
+world and pause menu. Black and Black 2 have no recompiled code: their screen
+layouts follow which of the game's functions run, listed in a `funcs.txt` made
+from a decompilation's symbol files and your ROM (`tools/bw2/funcmap.py` from
+[pokebw2](https://github.com/fuddlesworth/pokebw2), `tools/bw1/funcmap.py` from
+[aletheia](https://github.com/Project-Holon/aletheia); only their symbol files
+are downloaded).
 
-The `.nro` contains your copy of the game: never share it. The save
-(`soulsilver.sav`), settings (`ssrecomp.cfg`) and `game.log`, with the frame
-timings, are written to `/switch/ssrecomp/`.
+It needs Linux, or Windows with WSL2 (Ubuntu 24.04), with git, CMake, Ninja and
+Python 3 (`sudo apt install git cmake ninja-build python3`), and devkitPro's
+Switch toolchain: install [devkitPro](https://devkitpro.org/wiki/Getting_Started)
+(its pacman), then `sudo dkp-pacman -S switch-dev switch-sdl2`. If devkitPro's
+servers refuse the download (403), install Docker instead: the build then uses
+devkitPro's official image (`devkitpro/devkita64`, about 2 GB).
 
-The Switch's processor is several times slower than a PC's, so the first start
-draws the widescreen world at the DS's own sharpness (WORLD DETAIL 192) and
-leaves 60 FPS off; both can be raised in the pause menu (+ and − together).
-There, CPU BOOST (on by default) runs the processor at about 1.8 GHz instead of
-1 GHz, as games do while loading; it needs system version 7.0.0 or later. The
-touch screen works in handheld mode, like a mouse on a PC.
+1. From this folder, one of:
+
+       tools/switch/build_game.sh soulsilver your-soulsilver.nds
+       tools/switch/build_game.sh black2 your-black2.nds
+       tools/switch/build_game.sh black your-black.nds
+
+   The first build takes a few minutes; later ones only rebuild what changed.
+   The result is in `build-sd/switch/`, laid out like the SD card: the `.nro`,
+   and for Black and Black 2 its `funcs.txt`.
+2. Copy `build-sd/switch` to the root of the SD card, then your ROM into the
+   game's folder: as `rom.nds` for SoulSilver, as the only `.nds` file there for
+   Black and Black 2. Each game keeps its save, settings (`ssrecomp.cfg`) and
+   `game.log` in its own folder.
+3. **Hold R while starting any game** and choose the game in the Homebrew Menu
+   (started from the album there is not enough memory). **QUIT** in the pause
+   menu saves and goes back to the Homebrew Menu.
+
+For your own icon in the Homebrew Menu, add `SSR_SWITCH_ICON=icon.jpg` (a
+256×256 JPEG) in front of the command. SoulSilver can also be built with its
+recompiled code (`tools/switch/build.sh your-soulsilver.nds`: about 400 MB and
+most of an hour to build), though the JIT is about 1.7 times as fast on the
+Switch.
+
+Keep what it makes to yourself: SoulSilver's `.nro` holds parts of the game's
+code, and `funcs.txt` is made from your ROM.
+
+The pause menu opens with + and − together. On the Switch it has:
+
+- **CPU BOOST** (on): the processor at 1785 MHz and the memory at 1600 MHz, set
+  directly as sys-clk does (the system's own boost mode is taken away every
+  minute or so), and put back when the game ends.
+- **WORLD ON GPU** (on): the widescreen world drawn by the Switch's graphics chip
+  instead of its processor. With it Black 2 runs at or very near 60 fps at
+  **WORLD DETAIL** 720, in cities and battles. The first start uses 288 lines and leaves **60 FPS**
+  off; raise them there.
+- **LOWER DETAIL WHEN BUSY** (on): fewer lines for a moment where the graphics
+  chip cannot keep up. Turn it off to always keep WORLD DETAIL.
+- **BATTLE BUTTONS** (Black and Black 2): how a battle's touch-screen buttons
+  sit beside the wide view: CORNER, PANEL or, in Black, STRIP.
+- **EMULATION**: FAST JIT, JIT or INTERPRETER, from the next start. Holding L
+  while starting uses the interpreter once, and a start where the JIT failed
+  falls back to it by itself.
+
+The touch screen works in handheld mode, like a mouse on a PC. Bug reports
+should come with `game.log` from the game's folder, and a save state from the
+pause menu helps reproduce them.
+
+Not done yet: double, triple and rotation battles in Black keep the game's own
+layout; SoulSilver on the JIT and Black have had less play on the console than
+Black 2.
 
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on

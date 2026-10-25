@@ -55,6 +55,10 @@ Targets: Linux and Windows first, Android second. macOS is community-maintained.
 | `setup.sh`, `run.sh` | building from the decompilation; starting the game (writes `game.log`) |
 | `tools/package_setup.py`, `make_appimage.sh` | packaging the setup program with PyInstaller |
 | `tools/android/` | APK packing around SDL's Java code |
+| `frontend/switch_platform.cpp` | the Switch's parts (SD card folder, clocks, threads, exit); only file that sees libnx |
+| `frontend/bw1.h`, `tools/bw1/`, `tools/bw2/` | Pokémon Black and Black 2: no recompiled code; layouts follow the functions in `funcs.txt` (made by `funcmap.py` from a decompilation's symbols and the ROM), Black's own layouts on top of Black 2's |
+| `melonDS/src/GPU3D_WideGpu*.cpp`, `wide_gpu/` | the widescreen world drawn by a graphics chip: deko3D on the Switch, OpenGL on a PC for headless comparisons (keep both in step with `GPU3D_Wide.cpp`) |
+| `tools/switch/` | Switch builds: `build_game.sh` (any of the three games), `build.sh` (SoulSilver) |
 | `layouts/soulsilver-us.json` | section addresses and code/data map, so a plain ROM can be recompiled without the decompilation |
 
 ## Building
