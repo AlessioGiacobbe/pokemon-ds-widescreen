@@ -1,4 +1,4 @@
-# ssrecomp: Pokémon Black 2 and White 2 on the Nintendo Switch
+# Pokémon Black 2 and White 2 on the Nintendo Switch
 
 **Pokémon Black 2 and White 2 on your modded Switch: one screen, widescreen,
 720p, 60 fps.** No more squinting at two tiny stacked DS screens.
