@@ -16,10 +16,11 @@ u64 WideGpuTexVersion = 0;
 
 namespace
 {
-std::unique_ptr<WideGpuBackend> MakeBackend(std::string& info)
+std::unique_ptr<WideGpuBackend> MakeBackend(std::string& info, bool small)
 {
+    (void)small;
 #ifdef SSR_DEKO3D
-    return WideGpuMakeDeko(info);
+    return WideGpuMakeDeko(info, small);
 #elif defined(OGLRENDERER_ENABLED)
     return WideGpuMakeGL(info);
 #else
@@ -42,7 +43,7 @@ WideGpuDSRenderer::~WideGpuDSRenderer()
 
 std::unique_ptr<WideGpuDSRenderer> WideGpuMakeDS(std::string& info)
 {
-    auto b = MakeBackend(info);
+    auto b = MakeBackend(info, true);
     if (!b) return nullptr;
     return std::make_unique<WideGpuDSRenderer>(std::move(b));
 }
@@ -90,7 +91,7 @@ u32* WideGpuDSRenderer::GetLine(int line)
 bool WideGpuStart(std::string& info)
 {
     WideGpuStop();
-    WideGpuCurrent = MakeBackend(info);
+    WideGpuCurrent = MakeBackend(info, false);
     return WideGpuCurrent != nullptr;
 }
 

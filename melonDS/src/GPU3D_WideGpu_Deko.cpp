@@ -200,17 +200,23 @@ class WideGpuDeko : public WideGpuBackend
 public:
     const char* Name() const override { return "deko3D"; }
 
-    bool Init(std::string& info)
+    bool Init(std::string& info, bool small)
     {
         if (!AcquireShared(info)) return false;
         HaveShared = true;
         // A queue of its own (the widescreen view's and the DS-resolution picture's renderers
         // each have one): the graphics chip takes turns between queues, so that the small DS
         // picture, wanted within the frame, is not stuck behind a large widescreen picture that
-        // may be shown a frame later (GPU3D_Wide.cpp's OnRender).
+        // may be shown a frame later (GPU3D_Wide.cpp's OnRender). The turns were long: in a
+        // battle the DS picture waited 2-3 ms to start, and the emulation with it (the frame
+        // at 17-18 ms, about 52 fps). Its queue has high priority and the widescreen view's low
+        // (SSR_WIDEGPU_QUEUES=plain: both medium, as before, to compare).
         DkQueueMaker qm;
         dkQueueMakerDefaults(&qm, Sh->Device);
-        qm.flags = DkQueueFlags_Graphics | (Sh->Zcull ? DkQueueFlags_EnableZcull : DkQueueFlags_DisableZcull);
+        const char* queues = getenv("SSR_WIDEGPU_QUEUES");
+        const bool plain = queues && !strcmp(queues, "plain");
+        const u32 prio = plain ? DkQueueFlags_MediumPrio : small ? DkQueueFlags_HighPrio : DkQueueFlags_LowPrio;
+        qm.flags = DkQueueFlags_Graphics | prio | (Sh->Zcull ? DkQueueFlags_EnableZcull : DkQueueFlags_DisableZcull);
         Queue = dkQueueCreate(&qm);
         if (!Queue)
         {
@@ -635,10 +641,10 @@ private:
 };
 }
 
-std::unique_ptr<WideGpuBackend> WideGpuMakeDeko(std::string& info)
+std::unique_ptr<WideGpuBackend> WideGpuMakeDeko(std::string& info, bool small)
 {
     std::unique_ptr<WideGpuDeko> r(new WideGpuDeko());
-    if (!r->Init(info)) return nullptr;
+    if (!r->Init(info, small)) return nullptr;
     return r;
 }
 }

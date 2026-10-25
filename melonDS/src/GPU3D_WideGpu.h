@@ -163,7 +163,9 @@ bool WideGpuStart(std::string& info);
 void WideGpuStop();
 
 #ifdef SSR_DEKO3D
-std::unique_ptr<WideGpuBackend> WideGpuMakeDeko(std::string& info);
+// small: for the DS-resolution picture, wanted within the frame (its queue gets the graphics
+// chip's attention first).
+std::unique_ptr<WideGpuBackend> WideGpuMakeDeko(std::string& info, bool small);
 #endif
 #ifdef OGLRENDERER_ENABLED
 std::unique_ptr<WideGpuBackend> WideGpuMakeGL(std::string& info);

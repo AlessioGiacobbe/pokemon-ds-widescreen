@@ -1255,9 +1255,9 @@ struct Settings
 #endif
     bool ds3dGpu = true;         // with it, the DS-resolution 3D picture too
     // Black and Black 2: how a battle's buttons are shown beside the wide view (BATTLE BUTTONS):
-    // 0 CORNER, the touch screen's panel in the lower right corner; 1 STRIP, the buttons large
-    // in the message box's band; 2 PANEL, the touch screen's panel as tall as the message box
-    // (Bw1Layouts::BUTTONS_*).
+    // 0 CORNER, the touch screen's panel in the lower right corner; 1 STRIP (Black only; CORNER
+    // for Black 2), the buttons large in the message box's band; 2 PANEL, the touch screen's
+    // panel as tall as the message box (Bw1Layouts::BUTTONS_*).
     int battleButtons = 1;
 
     void Load(const std::string& path)
@@ -1974,89 +1974,6 @@ int main(int argc, char** argv)
             if (funcWatch.Ran(f, 4)) return true;
         return false;
     };
-    // Black 2's battle buttons as a strip (BATTLE BUTTONS: STRIP) in the lower right of a wide
-    // view, in the message box's band (rows 147-189 of the top screen) right of its text ("What
-    // will" and a ten-letter name end before x 152), on the box itself: FIGHT's label above BAG,
-    // RUN and POKEMON, or the four moves two by two. Each piece is the middle of its button on
-    // the touch screen (label; a move's name, type and PP), one scale for a menu, framed; the one
-    // under the game's cursor (its red brackets, 0xC31028, at the button's corners) framed in
-    // red. The D-pad moves the cursor as it looks: the pieces keep the buttons' arrangement.
-    // (As Black's, frontend/bw1.h.)
-    auto battleStripBw2 = [&](Scene& sc, float viewRight, const uint32_t* px, bool moves) {
-        struct Cell { int sx, sy, sw, sh; int hit[4]; float dx, dy, scale; }; // hit: the button's area
-        const float gap = 2, right = viewRight - 2, left0 = 152;
-        const float top = 149, bottom = 189, height = bottom - top;
-        std::vector<Cell> cells;
-        if (!moves)
-        {
-            // FIGHT's label band, then BAG, RUN, POKEMON's labels (the touch screen's x, y, w, h).
-            const int fight[4] = { 80, 84, 96, 24 }, bag[4] = { 16, 158, 52, 20 }, run[4] = { 104, 170, 48, 18 },
-                poke[4] = { 184, 158, 68, 20 };
-            const float s = std::min((right - left0 - 2 * gap) / (bag[2] + run[2] + poke[2]), (height - gap) / (fight[3] + bag[3]));
-            const float rowW = (bag[2] + run[2] + poke[2]) * s + 2 * gap, left = right - rowW;
-            const float y0 = top + (height - (fight[3] + bag[3]) * s - gap) / 2, y1 = y0 + fight[3] * s + gap;
-            cells.push_back({ fight[0], fight[1], fight[2], fight[3], { 0, 16, 256, 146 }, left + (rowW - fight[2] * s) / 2, y0, s });
-            cells.push_back({ bag[0], bag[1], bag[2], bag[3], { 0, 146, 84, 192 }, left, y1, s });
-            cells.push_back({ run[0], run[1], run[2], run[3], { 88, 160, 168, 192 }, left + bag[2] * s + gap, y1, s });
-            cells.push_back({ poke[0], poke[1], poke[2], poke[3], { 172, 146, 256, 192 }, left + (bag[2] + run[2]) * s + 2 * gap, y1, s });
-        }
-        else
-        {
-            // Each move's name, type and PP: the middle of its button (14-110 of each half, rows
-            // 40-74 and 88-122).
-            const float s = std::min((right - left0 - gap) / (2 * 96), (height - gap) / (2 * 34));
-            const float cw = 96 * s, left = right - 2 * cw - gap;
-            const float y0 = top + (height - 2 * 34 * s - gap) / 2;
-            for (int i = 0; i < 4; i++)
-            {
-                const int c = i & 1, r = i >> 1;
-                cells.push_back({ 14 + c * 128, 40 + r * 48, 96, 34, { c * 128, 32 + r * 48, c * 128 + 128, 80 + r * 48 },
-                    left + c * (cw + gap), y0 + r * (34 * s + gap), s });
-            }
-        }
-        // Which cell the cursor is on: the outline of its brackets. FIGHT's span most of the
-        // screen's height; the others' middle is nearest their button's.
-        int x0 = 256, y0 = 192, x1 = -1, y1 = -1;
-        for (int y = 16; y < 192; y++)
-            for (int x = 0; x < 256; x++)
-                if ((px[y * 256 + x] & 0xFFFFFF) == 0xC31028)
-                {
-                    x0 = std::min(x0, x); y0 = std::min(y0, y);
-                    x1 = std::max(x1, x); y1 = std::max(y1, y);
-                }
-        int best = -1;
-        if (x1 >= 0)
-        {
-            const float cx = (x0 + x1) / 2.0f, cy = (y0 + y1) / 2.0f;
-            if (!moves && y1 - y0 >= 90) best = 0;
-            else
-            {
-                float bestD = 1e9f;
-                for (size_t i = moves ? 0 : 1; i < cells.size(); i++)
-                {
-                    const int* h = cells[i].hit;
-                    const float dx = cx - (h[0] + h[2]) / 2.0f, dy = cy - (h[1] + h[3]) / 2.0f;
-                    if (dx * dx + dy * dy < bestD) { bestD = dx * dx + dy * dy; best = (int)i; }
-                }
-            }
-        }
-        for (size_t i = 0; i < cells.size(); i++)
-        {
-            const Cell& c = cells[i];
-            Element e = Crop(1, c.sx, c.sy, c.sw, c.sh);
-            e.dx = c.dx;
-            e.dy = c.dy;
-            e.scale = c.scale;
-            e.border = true;
-            e.borderRadius = 2;
-            if ((int)i == best)
-            {
-                e.borderColor = 0xE0203C;
-                e.borderWidth = 10;
-            }
-            sc.items.push_back(e);
-        }
-    };
     auto pickSceneBw2 = [&](float viewWidth, const ScreenImage* screens) {
         Scene sc;
         sc.smartEdges = true;
@@ -2167,8 +2084,10 @@ int main(int argc, char** argv)
                 sc.items.push_back(m);
             }
             const bool moves = funcWatch.Ran(bw2.battleMove, 1), command = !moves && funcWatch.Ran(bw2.battleCommand, 1);
-            // The touch screen's buttons, as BATTLE BUTTONS in the pause menu says (Black's are
-            // drawn differently: frontend/bw1.h changes the corner panel made here into its own).
+            // The touch screen's buttons, as BATTLE BUTTONS in the pause menu says: CORNER or
+            // PANEL (Black's are drawn differently: frontend/bw1.h changes the corner panel made
+            // here into its own, STRIP among them; Black 2 has no STRIP, which left out the party's
+            // balls and did not look good).
             const int style = bw1.on || !wideView || !screens ? 0 : cfg.battleButtons;
             if ((moves || command) && style == 2)
             {
@@ -2181,8 +2100,6 @@ int main(int argc, char** argv)
                 c.border = true;
                 sc.items.push_back(c);
             }
-            else if ((moves || command) && style == 1)
-                battleStripBw2(sc, viewRight, screens[1].pixels, moves);
             else if (moves)
                 cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two (49 high)
             else if (command)
@@ -3317,8 +3234,8 @@ int main(int argc, char** argv)
 #endif
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
-            // (Black and Black 2; SoulSilver has a layout of its own.)
-            { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 0 ? "CORNER" : cfg.battleButtons == 2 ? "PANEL" : "STRIP" },
+            // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
+            { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
@@ -4059,7 +3976,8 @@ int main(int argc, char** argv)
                 focus.manualFlip = false;
                 break;
             case M_BATTLEBUTTONS:
-                if (funcWatchOn) cfg.battleButtons = (cfg.battleButtons + (dir < 0 ? 2 : 1)) % 3;
+                if (funcWatchOn && bw1.on) cfg.battleButtons = (cfg.battleButtons + (dir < 0 ? 2 : 1)) % 3;
+                else if (funcWatchOn) cfg.battleButtons = cfg.battleButtons == 2 ? 0 : 2; // CORNER, PANEL
                 bw1.battleButtons = cfg.battleButtons;
                 break;
             case M_FPS60:
@@ -5114,15 +5032,20 @@ int main(int argc, char** argv)
     if (opt.audioStats && AudioSamples)
         fprintf(stderr, "[audio] %llu samples, peak %d, rms %.1f\n", (unsigned long long)AudioSamples, AudioPeak,
             sqrt(AudioSumSq / AudioSamples));
+    if (nds->ARM9.RecompEnable) rc_print_stats();
 #ifdef __SWITCH__
     // Closing the sound has now and then never returned on the Switch (the game hung at
-    // "[exit] audio", in a test run with nothing else going on); everything that matters is
-    // saved by then, so after three seconds the program ends without the rest.
+    // "[exit] audio", in a test run with nothing else going on), and QUIT after a save has
+    // frozen the console with the log ending in a clean "[exit] done", so in what the
+    // program's end does after that (the console is taken down here instead, under the
+    // watch). Everything that matters is saved by then, so if
+    // this does not finish within five seconds the program ends without the rest (back to the
+    // HOME Menu rather than the Homebrew Menu).
     std::atomic<bool> sdlClosed { false };
     std::thread exitWatch([&sdlClosed] {
-        for (int i = 0; i < 300 && !sdlClosed; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        for (int i = 0; i < 500 && !sdlClosed; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
         if (sdlClosed) return;
-        fprintf(stderr, "[exit] closing the sound or SDL did not finish within 3 seconds: ending the program without it\n");
+        fprintf(stderr, "[exit] closing down did not finish within 5 seconds: ending the program without the rest\n");
         SwitchPlatform::Finish();
         SwitchPlatform::ForceExit();
     });
@@ -5140,6 +5063,8 @@ int main(int argc, char** argv)
         SDL_Quit();
     }
 #ifdef __SWITCH__
+    exitStep("console");
+    nds.reset();
     sdlClosed = true;
     exitWatch.join();
 #endif
@@ -5148,10 +5073,6 @@ int main(int argc, char** argv)
     SwitchPlatform::Finish();
 #endif
     exitStep("done");
-    if (nds->ARM9.RecompEnable) rc_print_stats();
-#ifdef __SWITCH__
-    if (!opt.headless) SwitchPlatform::EndProgram();
-#endif
     if (opt.lockstep)
     {
         if (TraceFailed) return 1;

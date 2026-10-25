@@ -46,9 +46,9 @@
   beside the whole list, drawn on below the screen), the X menu, single battles' HP boxes, the
   Badge Case, the Pokedex registration after a catch and the save screen (as Black 2's).
 - **BATTLE BUTTONS (pause menu, Black and Black 2):** how a battle's touch-screen buttons are
-  shown beside the wide view: STRIP (the default: the buttons large in the message box's band,
-  the one the cursor is on framed in the game's colour), PANEL (the touch screen's panel as
-  tall as the message box) or CORNER (the panel in the lower right corner, as before).
+  shown beside the wide view: CORNER (the panel in the lower right corner, as before; Black 2's
+  default), PANEL (the touch screen's panel as tall as the message box) or, in Black, STRIP
+  (its default: the buttons large in the message box's band, the one the cursor is on framed).
 - Black 2: saving from the X menu has a layout of its own. The question, YES / NO and the
   messages that follow are in a message box along the bottom of the overworld, and the
   saved game's card (with the progress of the save) is a panel in the upper right corner.
