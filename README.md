@@ -117,22 +117,46 @@ Android** again and install the new APK over the old one.
 
 ### Nintendo Switch (experimental)
 
-A homebrew version for a Switch running custom firmware (Atmosphère), built on
-your PC from your ROM. Three games:
+A homebrew version for a Switch running custom firmware (Atmosphère). Four games:
 
 | Game | ROM | Folder on the SD card | Save |
 |---|---|---|---|
+| Pokémon Black 2 | English, US/Europe (IREO) | `/switch/ssrecomp-black2/` | `black2.sav` |
+| Pokémon White 2 | English, US/Europe (IRDO) | `/switch/ssrecomp-white2/` | `white2.sav` |
 | Pokémon SoulSilver | US (IPGE) | `/switch/ssrecomp/` | `soulsilver.sav` |
-| Pokémon Black 2 | US (IREO) | `/switch/ssrecomp-black2/` | `black2.sav` |
-| Pokémon Black | US/Europe (IRBO) | `/switch/ssrecomp-black/` | `black.sav` |
+| Pokémon Black | English, US/Europe (IRBO) | `/switch/ssrecomp-black/` | `black.sav` |
 
-All three run on melonDS's JIT, with the same single-screen view, widescreen
-world and pause menu. Black and Black 2 have no recompiled code: their screen
-layouts follow which of the game's functions run, listed in a `funcs.txt` made
-from a decompilation's symbol files and your ROM (`tools/bw2/funcmap.py` from
+All of them run on melonDS's JIT, with the same single-screen view, widescreen
+world and pause menu. Black, Black 2 and White 2 have no recompiled code: their
+screen layouts follow which of the game's functions run, from a table made from
+a decompilation's symbol files (`tools/bw2/funcmap.py` from
 [pokebw2](https://github.com/fuddlesworth/pokebw2), `tools/bw1/funcmap.py` from
 [aletheia](https://github.com/Project-Holon/aletheia); only their symbol files
-are downloaded).
+are downloaded) and a few bytes read from your ROM. Black 2 and White 2 also
+load more of the map around you, so the wide view does not run out of land
+(the program gives the console 8 MB of memory for it, as a DSi has).
+
+#### Black 2 and White 2: ready-made download
+
+The release's `ssrecomp-black2-white2-switch.zip` needs no building. It holds
+nothing of the games: the program reads what it needs from your ROM when it
+starts.
+
+1. Unzip it to the root of the SD card (it makes `/switch/ssrecomp-black2/` and
+   `/switch/ssrecomp-white2/`).
+2. Copy your ROM into its folder, as the only `.nds` file there. Any English
+   (US or Europe) copy works, trimmed or not, including the "NDSi Enhanced" one.
+   Other languages put the game's code elsewhere: the program says so instead
+   of starting.
+3. **Hold R while starting any game** and choose Pokemon Black 2 or Pokemon
+   White 2 in the Homebrew Menu (started from the album there is not enough
+   memory). **QUIT** in the pause menu saves and goes back to the Homebrew Menu.
+
+To use a save from an emulator or a flash cart, copy it into the folder as
+`black2.sav` or `white2.sav` (`tools/bw2/convert_save.py` turns `.dsv` and
+Action Replay saves into the raw 512 KB save).
+
+#### Building it yourself
 
 It needs Linux, or Windows with WSL2 (Ubuntu 24.04), with git, CMake, Ninja and
 Python 3 (`sudo apt install git cmake ninja-build python3`), and devkitPro's
@@ -143,16 +167,20 @@ devkitPro's official image (`devkitpro/devkita64`, about 2 GB).
 
 1. From this folder, one of:
 
-       tools/switch/build_game.sh soulsilver your-soulsilver.nds
        tools/switch/build_game.sh black2 your-black2.nds
+       tools/switch/build_game.sh white2 your-white2.nds
+       tools/switch/build_game.sh soulsilver your-soulsilver.nds
        tools/switch/build_game.sh black your-black.nds
+       tools/switch/build_game.sh bw
 
-   The first build takes a few minutes; later ones only rebuild what changed.
-   The result is in `build-sd/switch/`, laid out like the SD card: the `.nro`,
-   and for Black and Black 2 its `funcs.txt`.
+   The first build takes a few minutes; later ones only rebuild what changed
+   (White 2 after Black 2 takes seconds: it is the same program). The result is
+   in `build-sd/switch/`, laid out like the SD card: the `.nro`, and for Black,
+   Black 2 and White 2 its `funcs.txt`. `bw` needs no ROM: it makes the
+   ready-made download above (`build-sd/ssrecomp-black2-white2-switch.zip`).
 2. Copy `build-sd/switch` to the root of the SD card, then your ROM into the
    game's folder: as `rom.nds` for SoulSilver, as the only `.nds` file there for
-   Black and Black 2. Each game keeps its save, settings (`ssrecomp.cfg`) and
+   the others. Each game keeps its save, settings (`ssrecomp.cfg`) and
    `game.log` in its own folder.
 3. **Hold R while starting any game** and choose the game in the Homebrew Menu
    (started from the album there is not enough memory). **QUIT** in the pause
@@ -164,8 +192,9 @@ recompiled code (`tools/switch/build.sh your-soulsilver.nds`: about 400 MB and
 most of an hour to build), though the JIT is about 1.7 times as fast on the
 Switch.
 
-Keep what it makes to yourself: SoulSilver's `.nro` holds parts of the game's
-code, and `funcs.txt` is made from your ROM.
+Keep what it makes from a ROM to yourself: SoulSilver's `.nro` holds parts of
+the game's code, and `funcs.txt` is made from your ROM. The `bw` build holds
+neither and can be shared.
 
 The pause menu opens with + and − together. On the Switch it has:
 
@@ -178,7 +207,7 @@ The pause menu opens with + and − together. On the Switch it has:
   off; raise them there.
 - **LOWER DETAIL WHEN BUSY** (on): fewer lines for a moment where the graphics
   chip cannot keep up. Turn it off to always keep WORLD DETAIL.
-- **BATTLE BUTTONS** (Black and Black 2): how a battle's touch-screen buttons
+- **BATTLE BUTTONS** (Black, Black 2 and White 2): how a battle's touch-screen buttons
   sit beside the wide view: CORNER, PANEL or, in Black, STRIP.
 - **EMULATION**: FAST JIT, JIT or INTERPRETER, from the next start. Holding L
   while starting uses the interpreter once, and a start where the JIT failed
