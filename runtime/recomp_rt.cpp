@@ -6,11 +6,13 @@
 // opcode, so a stale chunk can never execute the wrong instruction.
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 #include "NDS.h"
 #include "ARM.h"
 #include "ARMInterpreter.h"
+#include "SsrWatch.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
 
@@ -137,6 +139,105 @@ void BailCommon(u32 section, u32 addr)
 }
 }
 
+// The watch used without the recompiled code (rc_watch_attach).
+namespace
+{
+const u32 kWatchBase = 0x01FF8000, kWatchEnd = 0x02400000; // ITCM and main RAM
+NDS* watchNds = nullptr;
+std::vector<u8> watchBitmap;                             // one bit per halfword
+// Chunk indices by start address: per watched halfword, an index + 1 into watchList, where
+// the chunks starting there follow each other, ended by ~0u (0: none).
+std::vector<u32> watchFirst, watchList;
+std::vector<u8> sectionShared;                           // other sections use its addresses
+
+void WatchAddress(u32 addr)
+{
+    if (watchBitmap.empty() || addr < kWatchBase || addr >= kWatchEnd) return;
+    const u32 bit = (addr - kWatchBase) >> 1;
+    watchBitmap[bit >> 3] |= 1 << (bit & 7);
+}
+
+// Whether the chunk's own code is in memory: many overlays are loaded at the same addresses.
+// Its first bytes are compared (up to 16; a chunk is a whole function, rarely shorter).
+bool WatchChunkPresent(u32 id)
+{
+    const RcChunk& c = rc_chunks[id];
+    const RcSection& sec = rc_sections[c.section];
+    if (!sectionShared[c.section]) return true;
+    const u32 n = c.end - c.start < 16 ? c.end - c.start : 16;
+    return memcmp(sec.image + (c.start - sec.base), GuestPtr(&watchNds->ARM9, c.start), n) == 0;
+}
+
+void WatchHit(void*, u32 addr, bool thumb)
+{
+    const u32 first = watchFirst[(addr - kWatchBase) >> 1];
+    if (!first) return;
+    for (u32 i = first - 1; watchList[i] != ~0u; i++)
+    {
+        const u32 id = watchList[i];
+        const RcChunk& c = rc_chunks[id];
+        if ((bool)c.thumb != thumb) continue;
+        // Most functions are entered many times a frame: once is enough to know.
+        if (chunkLastFrame[id] == rc_frame) return;
+        if (!WatchChunkPresent(id)) continue;
+        rc_section_last_frame[c.section] = rc_frame;
+        chunkLastFrame[id] = rc_frame;
+        if (!probeHead.empty() && addr >= kMainBase && addr < kMainEnd)
+            for (u32 p = probeHead[(addr - kMainBase) >> 1]; p; p = probes[p - 1].next)
+                if (probes[p - 1].section == c.section) probes[p - 1].lastFrame = rc_frame;
+        return;
+    }
+}
+}
+
+bool rc_watch_attach(NDS& nds)
+{
+    if (SsrWatch.Hook) return false;
+    if (retryDelay.empty()) rc_reset();
+    watchNds = &nds;
+    watchBitmap.assign(((kWatchEnd - kWatchBase) >> 1) / 8 + 1, 0);
+    sectionShared.assign(rc_num_sections, 0);
+    for (u32 a = 0; a < rc_num_sections; a++)
+        for (u32 b = 0; b < rc_num_sections; b++)
+            if (a != b && rc_sections[a].base < rc_sections[b].base + rc_sections[b].size &&
+                rc_sections[b].base < rc_sections[a].base + rc_sections[a].size)
+                sectionShared[a] = 1;
+    // Every chunk can be recognised; the overlays' chunk starts are watched, so that it is known
+    // which overlays run (the main program and the ITCM run all the time and are only watched
+    // where there are probes).
+    size_t watched = 0;
+    std::unordered_map<u32, std::vector<u32>> byStart;
+    for (u32 id = 0; id < rc_num_chunks; id++)
+        if (rc_chunks[id].start >= kWatchBase && rc_chunks[id].start < kWatchEnd)
+            byStart[rc_chunks[id].start].push_back(id);
+    watchFirst.assign((kWatchEnd - kWatchBase) >> 1, 0);
+    watchList.clear();
+    for (auto& [start, ids] : byStart)
+    {
+        watchFirst[(start - kWatchBase) >> 1] = (u32)watchList.size() + 1;
+        watchList.insert(watchList.end(), ids.begin(), ids.end());
+        watchList.push_back(~0u);
+    }
+    for (u32 id = 0; id < rc_num_chunks; id++)
+    {
+        const RcChunk& c = rc_chunks[id];
+        const char* name = rc_sections[c.section].name;
+        if (strcmp(name, "main") && strcmp(name, "ITCM") && strcmp(name, "bios9"))
+        {
+            WatchAddress(c.start);
+            watched++;
+        }
+    }
+    for (const Probe& p : probes) WatchAddress(p.addr);
+    SsrWatch.Bitmap = watchBitmap.data();
+    SsrWatch.Base = kWatchBase;
+    SsrWatch.End = kWatchEnd;
+    SsrWatch.Hook = &WatchHit;
+    SsrWatch.User = nullptr;
+    fprintf(stderr, "[recomp] without the recompiled code: watching %zu overlay functions and the probes\n", watched);
+    return true;
+}
+
 void rc_reset()
 {
     std::fill(viewMain.begin(), viewMain.end(), 0);
@@ -257,6 +358,7 @@ int rc_add_probe(const char* section, unsigned addr)
     for (u32 c = rc_sections[sec].firstChunk; c < rc_sections[sec].firstChunk + rc_sections[sec].numChunks; c++)
         if (addr >= rc_chunks[c].start && addr < rc_chunks[c].end) chunkHasProbe[c] = 1;
     head = (u32)probes.size();
+    WatchAddress(addr);
     return (int)probes.size() - 1;
 }
 

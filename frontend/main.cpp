@@ -1496,6 +1496,16 @@ int main(int argc, char** argv)
     // on the interpreter instead of recompiled-code probes.
     static FuncWatch funcWatch;
     const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs);
+    // A SoulSilver build without the recompiled code (tools/soulsilver/tables_only.py) started
+    // without --jit or --interp: the interpreter, rather than calling code that is not there.
+    if (nds->ARM9.RecompEnable && !ref && rc_num_chunks && !rc_chunks[0].fn)
+    {
+        fprintf(stderr, "[recomp] this build has no recompiled code: running on the interpreter\n");
+        nds->ARM9.RecompEnable = opt.recomp = false;
+    }
+    // SoulSilver without its recompiled code (--interp, --jit): which of its functions and
+    // overlays run, for the layouts, comes from the core's watch instead (runtime/recomp_rt.cpp).
+    if (!nds->ARM9.RecompEnable && !funcWatchOn && rc_num_chunks) rc_watch_attach(*nds);
     // (Attached once the layouts' functions are known, below.)
     if (!opt.traceFuncsAt.empty() && !funcWatchOn)
     {
@@ -2947,83 +2957,117 @@ int main(int argc, char** argv)
             };
             if (viewWidth >= 300 && (cmd || moves || frame < battleStripUntil))
             {
-                // (Neither: the strip without buttons, while the next ones slide in.)
+                // (Neither: the panel without buttons, while the next ones slide in.)
                 sc.name = cmd ? "battle-cmd" : moves ? "battle-moves" : "battle-strip";
-                // The strip: the first line of the message box ("What will X do?") as a
-                // label at the top, the buttons under it.
-                sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 55, 0x20242C));
-                sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 1, 0x5A6270));
-                {
-                    // (Only the text part: the right end holds the battle's own little indicator boxes.)
-                    Element label = { 0, 10, 149, 190, 18, L + 4.5f, 139.5f, 0.78f, 0, 255, false };
-                    label.border = true;
-                    label.borderColor = 0x101218;
-                    label.borderWidth = 6;
-                    label.borderRadius = 1.5f;
-                    sc.items.push_back(label);
-                }
-                const size_t firstButton = sc.items.size();
+                // The bottom band of the view (y 144-191, the message box's rows, below the
+                // player's HP box which the wide battle moves to the right edge and which ends
+                // at y 139) in two halves: the message box ("What will X do?") in the left half,
+                // the buttons in the right half, so that the player's Pokemon and the message
+                // stay in sight. The box is its left part (the text ends by x 146 with the
+                // longest name) closed with a mirrored copy of its left edge; the buttons keep
+                // the touch screen's arrangement: FIGHT above BAG, RUN and POKeMON; the four
+                // moves two by two.
+                const float bandY = 144, bandH = 48, viewL = 128 - viewWidth / 2, viewR = 128 + viewWidth / 2;
+                const int edgeW = 10, boxW = std::min(246, (int)(viewWidth / 2) - edgeW);
+                sc.items.push_back({ 0, 0, 144, boxW, 48, viewL, bandY, 1.0f, 0, 255, false });
+                Element boxEdge = { 0, 0, 144, edgeW, 48, viewL + boxW, bandY, 1.0f, 0, 255, false };
+                boxEdge.flipX = true;
+                sc.items.push_back(boxEdge);
+                const float panelX = viewL + boxW + edgeW, panelY = bandY, panelR = viewR, panelB = bandY + bandH;
+                // (The margins leave room for the outlines, which are drawn outside each button: the
+                // chosen one's red outline stays inside the half, clear of the scene above.)
+                const float panelW = panelR - panelX, panelH = panelB - panelY, pad = 3, gap = 4;
+                // (The band's own colour around the message box.)
+                sc.items.push_back(FillRect(panelX, panelY, (int)std::ceil(panelW) + 1, (int)panelH, 0x202020));
+                // Each button's outline is drawn around the item listed here for it (in the order
+                // of battleSel).
+                std::vector<size_t> outlined;
+                // The buttons fill the half: FIGHT, BAG and RUN from its left (after the message
+                // box) and POKeMON to the right edge of the view, their outlines on it; the
+                // moves the same width.
+                const float innerX = panelX + pad, innerW = panelW - pad - 10 / 8.0f;
+                const float rowH = (panelH - 2 * pad - gap) / 2, rowY = panelY + pad, row2Y = rowY + rowH + gap;
+                // A button cut from the touch screen (sx, sy, sw x sh) drawn dw wide and rowH
+                // high: its label (lx0..lx1, everything that is not plain) stays as it is, and
+                // the plain columns tileX..tileX+tileW (the button is one colour across there)
+                // are repeated on both sides of it to fill the width. A dark rectangle under it
+                // carries its outline.
+                struct Cut { int sx, sy, sw, sh, lx0, lx1, tileX, tileW; };
+                auto button = [&](const Cut& c, float dx, float dy, float dw, uint8_t drop) {
+                    const float scl = rowH / c.sh;
+                    // (Sized exactly, not to whole base pixels, so that the edges of buttons
+                    // above one another line up.)
+                    Element backing = FillRect(dx, dy, 1000, (int)std::lround(1000 * rowH / dw), 0x101218);
+                    backing.scale = dw / 1000;
+                    outlined.push_back(sc.items.size());
+                    sc.items.push_back(backing);
+                    auto piece = [&](int sx, int sw, float x) {
+                        put(sx, c.sy, sw, c.sh, x, dy, scl);
+                        sc.items.back().drop = drop;
+                    };
+                    if (dw <= c.sw * scl + 0.5f)
+                    {
+                        piece(c.sx, c.sw, dx + (dw - c.sw * scl) / 2);
+                        return;
+                    }
+                    // (Overlapping by half: each piece is drawn on whole output pixels, and
+                    // tiles exactly side by side could leave a column between them.)
+                    const float tile = c.tileW * scl;
+                    for (float x = dx; x < dx + dw - 0.01f; x += tile / 2)
+                        piece(c.tileX, c.tileW, std::min(x, dx + dw - tile));
+                    piece(c.sx, c.lx0 - c.sx, dx);
+                    piece(c.lx1, c.sx + c.sw - c.lx1, dx + dw - (c.sx + c.sw - c.lx1) * scl);
+                    piece(c.lx0, c.lx1 - c.lx0, dx + (dw - (c.lx1 - c.lx0) * scl) / 2);
+                };
                 if (cmd)
                 {
-                    // FIGHT, BAG, POKeMON, RUN: the coloured inside of each button with its
-                    // label, all cut to the same height and drawn at one scale, each with an
-                    // outline of its own. (The buttons' own frames differ in size, and RUN's
-                    // runs off the bottom of the touch screen, so they are not used.)
-                    struct Cut { int sx, sy, sw; };
-                    static const Cut cuts[4] = { { 68, 67, 120 }, { 6, 152, 66 }, { 182, 151, 68 }, { 94, 158, 68 } };
-                    const int ch = 34, total = 120 + 66 + 68 + 68;
-                    const float gap = 5;
-                    const float sb = std::min(33.0f / ch, (viewWidth - 8 - 3 * gap) / total);
-                    float x = 128 - (total * sb + 3 * gap) / 2;
-                    for (const Cut& c : cuts)
-                    {
-                        put(c.sx, c.sy, c.sw, ch, x, 156.5f + (33 - ch * sb) / 2, sb);
-                        x += c.sw * sb + gap;
-                    }
+                    // FIGHT above BAG and RUN, as wide as the two; the party beside it, above
+                    // POKeMON. Each button is the coloured inside of the touch screen's button
+                    // with its label, cut to the same height (the buttons are one colour across,
+                    // apart from the label).
+                    static const Cut cuts[4] = { { 30, 67, 196, 34, 86, 146, 33, 4 }, { 6, 152, 66, 34, 30, 51, 9, 4 },
+                                                 { 182, 151, 68, 34, 192, 241, 185, 4 }, { 94, 158, 68, 34, 118, 139, 97, 4 } };
+                    const float cellW = (innerW - 2 * gap) / 3;
+                    button(cuts[0], innerX, rowY, 2 * cellW + gap, 0);                           // FIGHT
+                    button(cuts[1], innerX, row2Y, cellW, 0);                                    // BAG
+                    button(cuts[2], innerX + 2 * (cellW + gap), row2Y, innerW - 2 * (cellW + gap), 0); // POKeMON
+                    button(cuts[3], innerX + cellW + gap, row2Y, cellW, 0);                      // RUN
+                    // The party: the balls on the touch screen's top row (a ball for each
+                    // Pokemon, a grey dot for an empty place; sprites, taken without their
+                    // background), three over three.
+                    const float partyX = innerX + 2 * (cellW + gap), partyW = innerW - 2 * (cellW + gap);
+                    const uint8_t drop = LAYER_BG0 | LAYER_BG1 | LAYER_BG2 | LAYER_BG3 | LAYER_BACKDROP;
+                    const float ps = std::min(partyW / 56, (rowH - 1) / 30);
+                    const float px = partyX + (partyW - 56 * ps) / 2, py = rowY + (rowH - 30 * ps) / 2;
+                    put(3, 7, 56, 15, px, py, ps);
+                    sc.items.back().drop = drop;
+                    put(61, 7, 56, 15, px, py + 15 * ps, ps);
+                    sc.items.back().drop = drop;
                 }
                 else if (moves)
                 {
-                    // The four moves in a row, each its whole button with its frame; the touch
-                    // screen's background around the rounded corners is left out so the button
-                    // stands on the strip. There is no
-                    // room for the CANCEL bar at a readable size; B cancels.
-                    const int mw = 126, mh = 54;
-                    const float gap = 5;
-                    const float sm = std::min(33.0f / mh, (viewWidth - 8 - 3 * gap) / (4 * mw));
-                    float x = 128 - (4 * mw * sm + 3 * gap) / 2;
-                    const float y = 156.5f + (33 - mh * sm) / 2;
+                    // The four moves two by two, each its button's rows 9-46 of 54 (name, type
+                    // and PP, between the frame's rounded corners), widened with the plain
+                    // columns just inside its sides. There is no room for the CANCEL bar; B
+                    // cancels.
+                    const float cellW = (innerW - gap) / 2;
                     static const int slotX[4] = { 1, 129, 1, 129 }, slotY[4] = { 25, 25, 89, 89 };
                     for (int i = 0; i < 4; i++)
                     {
-                        put(slotX[i], slotY[i], mw, mh, x, y, sm);
-                        // The background is its own layer (BG2), so it is simply left out. The
-                        // frame's rounded corners are shaded with the button's tan against that
-                        // background; on the dark strip those pixels read as stray dots, so the
-                        // tan is also left out along the rim (it is the main colour inside).
-                        Element& el = sc.items.back();
-                        el.drop = LAYER_BG2;
-                        el.keys[0] = 0xCBBAA2;
-                        el.keyRing = 5;
-                        x += mw * sm + gap;
+                        const Cut c = { slotX[i], slotY[i] + 9, 126, 38, slotX[i] + 15, slotX[i] + 109, slotX[i] + 12, 3 };
+                        button(c, innerX + (i & 1) * (cellW + gap), (i >> 1) ? row2Y : rowY, (i & 1) ? innerW - cellW - gap : cellW, LAYER_BG2);
                     }
                 }
-                // The chosen button is outlined. (The game's own cursor is not used by the
-                // strip; the keys that would bring up its red corners do not reach the game.)
-                for (size_t i = firstButton; i < sc.items.size(); i++)
+                // The chosen button is outlined in red. (The game's own cursor is not used by
+                // the panel; the keys that would bring up its red corners do not reach the game.)
+                for (size_t k = 0; k < outlined.size(); k++)
                 {
-                    Element& el = sc.items[i];
-                    // Move buttons have frames of their own; only the chosen one is outlined.
-                    el.border = cmd;
-                    el.borderColor = 0x101218;
-                    el.borderWidth = 6;
-                    if ((int)(i - firstButton) == battleSel)
-                    {
-                        el.border = true;
-                        // Around the rounded move buttons the outline is rounded to match.
-                        if (moves) el.borderRadius = 4.0f;
-                        el.borderColor = 0xF04040;
-                        el.borderWidth = 16;
-                    }
+                    Element& el = sc.items[outlined[k]];
+                    el.border = true;
+                    el.borderColor = (int)k == battleSel ? 0xF04040 : 0x101218;
+                    // (One width for all: outlines are drawn outside the buttons, and a thicker
+                    // one would stick out past the edges of the buttons above or below it.)
+                    el.borderWidth = 10;
                 }
             }
             else if (viewWidth < 300 || battleUnknown >= 20)
@@ -4365,10 +4409,10 @@ int main(int argc, char** argv)
             }
         }
 
-        // Battle strips: left and right walk along the buttons in the order they are shown,
-        // and A presses the chosen one by touching it on the touch screen. The game's own
-        // cursor moves in the touch screen's arrangement (FIGHT above the other three),
-        // which does not match a row, so the arrows and A do not reach it here.
+        // Battle buttons (the panel in the lower right; the single-screen build's strip): the
+        // arrows move the outline and A presses the chosen button by touching it on the touch
+        // screen. The game's own cursor is not used (its red corners would show on the
+        // touch screen's picture), so the arrows and A do not reach the game here.
         {
             static std::string stripKind;
             static uint32_t prevStripKeys = 0;
@@ -4393,10 +4437,29 @@ int main(int argc, char** argv)
                     uint32_t c = screenImagesPrev[(movY[i] - 14) * 256 + movX[i]];
                     return ((c >> 16) & 0xFF) > 200 && ((c >> 8) & 0xFF) > 200 && (c & 0xFF) > 200;
                 };
-                for (int dir : { (edge & (1 << KEY_RIGHT)) ? 1 : 0, (edge & (1 << KEY_LEFT)) ? -1 : 0 })
-                    if (dir)
-                        for (int i = battleSel + dir; i >= 0 && i < 4; i += dir)
-                            if (usable(i)) { battleSel = i; break; }
+                if (singleView())
+                {
+                    // (The single-screen build's strip: one row.)
+                    for (int dir : { (edge & (1 << KEY_RIGHT)) ? 1 : 0, (edge & (1 << KEY_LEFT)) ? -1 : 0 })
+                        if (dir)
+                            for (int i = battleSel + dir; i >= 0 && i < 4; i += dir)
+                                if (usable(i)) { battleSel = i; break; }
+                }
+                else
+                {
+                    // The panel's arrangement. Commands (0 FIGHT, 1 BAG, 2 POKeMON, 3 RUN): FIGHT
+                    // above BAG, RUN, POKeMON. Moves: two by two, an empty slot is not chosen.
+                    static const int8_t cmdTo[4][4] = { // left, right, up, down
+                        { 1, 2, 0, 3 }, { 1, 3, 0, 1 }, { 3, 2, 0, 2 }, { 1, 2, 0, 3 } };
+                    static const int8_t movTo[4][4] = { { 0, 1, 0, 2 }, { 0, 1, 1, 3 }, { 2, 3, 0, 2 }, { 2, 3, 1, 3 } };
+                    const int keyOf[4] = { KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN };
+                    for (int k = 0; k < 4; k++)
+                        if (edge & (1 << keyOf[k]))
+                        {
+                            const int to = (cmd ? cmdTo : movTo)[battleSel][k];
+                            if (usable(to)) battleSel = to;
+                        }
+                }
                 if (cmd)
                 {
                     if (edge & (1 << KEY_LEFT)) stripNav += 'L';
@@ -4408,8 +4471,10 @@ int main(int argc, char** argv)
                 if (edge & (1 << KEY_A))
                 {
                     stripTouch = 4;
-                    // On the command row the chosen button is the one the border shows (stripSel).
-                    const int pick = cmd ? stripSel : battleSel;
+                    // The chosen button is the one outlined: battleSel, except on the command
+                    // strip of the single-screen build, which has its own cursor (stripSel).
+                    // (Taking stripSel for the panel too pressed FIGHT whatever was chosen.)
+                    const int pick = cmd && singleView() ? stripSel : battleSel;
                     stripTouchX = cmd ? cmdX[pick] : movX[pick];
                     stripTouchY = cmd ? cmdY[pick] : movY[pick];
                 }

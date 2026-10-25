@@ -31,3 +31,12 @@ int rc_add_probe(const char* section, unsigned addr);
 unsigned rc_probe_last_frame(int probe);
 // Current value of the runtime's frame counter, for comparing with rc_probe_last_frame.
 unsigned rc_current_frame();
+
+// Without the recompiled code (melonDS's interpreter or JIT: --interp, --jit), the same probes
+// and the overlays' activity (rc_section_last_frame, rc_ran_recently) come from the core's
+// watch on chosen addresses (melonDS/src/SsrWatch.h) instead of from the dispatch into
+// recompiled chunks: every chunk start of the overlays, and every probe. The tables in gen/
+// (chunks, and each section's code image to tell overlays at the same address apart) are all
+// it needs. Returns false if the watch is taken already (a game with a function table).
+namespace melonDS { class NDS; }
+bool rc_watch_attach(melonDS::NDS& nds);

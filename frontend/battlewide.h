@@ -18,6 +18,57 @@
 class BattleWide
 {
 public:
+    struct Layer { int num, prio; bool c256; int mapH; melonDS::u32 charBase, mapBase; };
+
+    // Everything the picture is made from, as the frame left it: taken by Grab right after the
+    // frame (quick), used by Render (the slow part). With `keep`, Grab copies it all, so that
+    // Render can run while the next frame is emulated and changes the console's state (the
+    // pipeline's drawing job); without, it points at the console's state.
+    struct Capture
+    {
+        const melonDS::NDS* nds = nullptr; // set: VRAM read from the console, not the copies
+        int unitNum = 0, extend = 0;
+        float viewWidth = 0;
+        melonDS::u32 dispcnt = 0;
+        melonDS::u16 bgcnt[4] = {};
+        melonDS::u8 shown = 0;
+        Layer layers[4] = {};
+        int nLayers = 0;
+        uint8_t windowLayers = 0, layerMask = 0;
+        const uint32_t* pixels = nullptr;   // the top screen
+        const uint8_t* flags = nullptr;     // and its layer flags
+        const melonDS::u8* objPrio = nullptr;
+        const melonDS::u16 (*lineScroll)[4][2] = nullptr;
+        const melonDS::u16 (*lineBlend)[3] = nullptr;
+        const melonDS::u8* pal = nullptr;   // BG at 0, sprites at 0x200
+        const melonDS::u8* oam = nullptr;
+        WideImage world;                    // pixels null: none
+        // The copies (keep).
+        std::vector<uint32_t> pixelsCopy, worldCopy;
+        std::vector<uint8_t> flagsCopy, objPrioCopy, bgVram, objVram;
+        melonDS::u16 lineScrollCopy[192][4][2];
+        melonDS::u16 lineBlendCopy[192][3];
+        melonDS::u8 palCopy[0x400], oamCopy[0x400];
+
+        melonDS::u16 Bg16(melonDS::u32 a) const
+        {
+            if (nds) return unitNum == 0 ? nds->GPU.ReadVRAM_ABG<melonDS::u16>(a) : nds->GPU.ReadVRAM_BBG<melonDS::u16>(a);
+            melonDS::u16 v;
+            memcpy(&v, &bgVram[a & (bgVram.size() - 1) & ~1u], 2);
+            return v;
+        }
+        melonDS::u8 Bg8(melonDS::u32 a) const
+        {
+            if (nds) return unitNum == 0 ? nds->GPU.ReadVRAM_ABG<melonDS::u8>(a) : nds->GPU.ReadVRAM_BBG<melonDS::u8>(a);
+            return bgVram[a & (bgVram.size() - 1)];
+        }
+        melonDS::u8 Obj8(melonDS::u32 a) const
+        {
+            if (nds) return nds->GPU.ReadVRAM_OBJ<melonDS::u8>(a);
+            return objVram[a & (objVram.size() - 1)];
+        }
+    };
+
     // Builds the picture for a view `extend` base pixels wider than the screen on each side.
     // `world` is the widescreen 3D picture across the whole view (`viewWidth` base pixels),
     // if there is one: beside the screen the 3D parts of the battle come from it (the grass
@@ -26,7 +77,17 @@ public:
     // described above.
     bool Build(melonDS::NDS& nds, const ScreenImage& top, int extend, const WideImage* world, float viewWidth, WideImage& out, int unitNum)
     {
+        if (!Grab(nds, top, extend, world, viewWidth, unitNum, false)) return false;
+        Render(out);
+        return true;
+    }
+
+    // The two halves of Build. Grab returns false if the top screen is not a battle's (Render
+    // must then not be called); the capture stays valid until the next Grab.
+    bool Grab(melonDS::NDS& nds, const ScreenImage& top, int extend, const WideImage* world, float viewWidth, int unitNum, bool keep)
+    {
         using namespace melonDS;
+        Capture& C = Cap;
         if (extend <= 0 || !top.flags) return false;
         const GPU2D::Unit& unit = unitNum == 0 ? nds.GPU.GPU2D_A : nds.GPU.GPU2D_B;
         const u32 dispcnt = unit.DispCnt;
@@ -41,8 +102,7 @@ public:
         // the game lets through there (a move's effect is shown through a window shaped like
         // the Pokémon, with its background hidden elsewhere).
         const u8 shown = (dispcnt & 0xE000) ? unit.WinCnt[2] : 0x3F;
-        struct Layer { int num, prio; bool c256; int mapH; u32 charBase, mapBase; };
-        Layer layers[4];
+        Layer* layers = C.layers;
         int nLayers = 0;
         for (int prio = 0; prio < 4; prio++)
             for (int b = 0; b < 4; b++)
@@ -97,22 +157,107 @@ public:
         uint8_t layerMask = 0;
         for (int i = 0; i < nLayers; i++) layerMask |= 1 << layers[i].num;
         if (!nLayers) return false;                                 // nothing more to show beside the screen
-        auto vram16 = [&](u32 a) -> u16 { return unitNum == 0 ? nds.GPU.ReadVRAM_ABG<u16>(a) : nds.GPU.ReadVRAM_BBG<u16>(a); };
-        auto vram8 = [&](u32 a) -> u8 { return unitNum == 0 ? nds.GPU.ReadVRAM_ABG<u8>(a) : nds.GPU.ReadVRAM_BBG<u8>(a); };
-        // The palettes the frame was drawn with (the game changes them for the next one
-        // before this runs; with the current ones the sides of the view would be a frame
-        // ahead of the screen in a fade): BG at 0, sprites at 0x200.
-        const u8* palSnap = static_cast<GPU2D::SoftRenderer*>(&nds.GPU.GetRenderer2D())->PalSnap[unitNum];
+
+        C.unitNum = unitNum;
+        C.extend = extend;
+        C.viewWidth = viewWidth;
+        C.dispcnt = dispcnt;
+        for (int b = 0; b < 4; b++) C.bgcnt[b] = unit.BGCnt[b];
+        C.shown = shown;
+        C.nLayers = nLayers;
+        C.windowLayers = windowLayers;
+        C.layerMask = layerMask;
+        // The palettes, the scroll, the blending and the sprites the frame was drawn with
+        // (the game changes them for the next one before this runs; with the current ones the
+        // sides of the view would be a frame ahead of the screen in a fade).
+        auto renderer = static_cast<GPU2D::SoftRenderer*>(&nds.GPU.GetRenderer2D());
+        C.world = world ? *world : WideImage();
+        if (!keep)
+        {
+            C.nds = &nds;
+            C.pixels = top.pixels;
+            C.flags = top.flags;
+            C.objPrio = renderer->ObjPrio[unitNum];
+            C.lineScroll = renderer->LineScroll[unitNum];
+            C.lineBlend = renderer->LineBlend[unitNum];
+            C.pal = renderer->PalSnap[unitNum];
+            C.oam = renderer->OAMSnap[unitNum];
+            return true;
+        }
+        C.nds = nullptr;
+        C.pixelsCopy.assign(top.pixels, top.pixels + 256 * 192);
+        C.flagsCopy.assign(top.flags, top.flags + 256 * 192);
+        C.objPrioCopy.assign(renderer->ObjPrio[unitNum], renderer->ObjPrio[unitNum] + 256 * 192);
+        memcpy(C.lineScrollCopy, renderer->LineScroll[unitNum], sizeof(C.lineScrollCopy));
+        memcpy(C.lineBlendCopy, renderer->LineBlend[unitNum], sizeof(C.lineBlendCopy));
+        memcpy(C.palCopy, renderer->PalSnap[unitNum], sizeof(C.palCopy));
+        memcpy(C.oamCopy, renderer->OAMSnap[unitNum], sizeof(C.oamCopy));
+        C.pixels = C.pixelsCopy.data();
+        C.flags = C.flagsCopy.data();
+        C.objPrio = C.objPrioCopy.data();
+        C.lineScroll = C.lineScrollCopy;
+        C.lineBlend = C.lineBlendCopy;
+        C.pal = C.palCopy;
+        C.oam = C.oamCopy;
+        if (C.world.pixels && C.world.w > 0 && C.world.h > 0)
+        {
+            C.worldCopy.assign(C.world.pixels, C.world.pixels + (size_t)C.world.w * C.world.h);
+            C.world.pixels = C.worldCopy.data();
+        }
+        // VRAM: the 16 KB pages of the backgrounds' maps and tiles, and the sprites' VRAM.
+        const u32 bgSize = unitNum == 0 ? 512 * 1024 : 128 * 1024, objSize = unitNum == 0 ? 256 * 1024 : 128 * 1024;
+        C.bgVram.resize(bgSize);
+        C.objVram.resize(objSize);
+        bool page[32] = {};
+        for (int i = 0; i < nLayers; i++)
+        {
+            const Layer& l = layers[i];
+            auto mark = [&](u32 from, u32 len) {
+                for (u32 a = from & ~0x3FFFu; a < from + len; a += 0x4000) page[(a & (bgSize - 1)) >> 14] = true;
+            };
+            mark(l.charBase, (l.c256 ? 64 : 32) * 1024);
+            mark(l.mapBase, 0x800 * (l.mapH == 512 ? 4 : 2));
+        }
+        for (u32 p = 0; p < bgSize >> 14; p++)
+            if (page[p]) CopyPage(&C.bgVram[p << 14], unitNum == 0 ? nds.GPU.VRAMPtr_ABG[p] : nds.GPU.VRAMPtr_BBG[p],
+                [&](u32 a) { return unitNum == 0 ? nds.GPU.ReadVRAM_ABG<u32>(a) : nds.GPU.ReadVRAM_BBG<u32>(a); }, p << 14);
+        const u32 objBase = unitNum == 0 ? 0x06400000 : 0x06600000;
+        for (u32 p = 0; p < objSize >> 14; p++)
+            CopyPage(&C.objVram[p << 14], unitNum == 0 ? nds.GPU.VRAMPtr_AOBJ[p] : nds.GPU.VRAMPtr_BOBJ[p],
+                [&](u32 a) { return nds.GPU.ReadVRAM_OBJ<u32>(objBase + a); }, p << 14);
+        return true;
+    }
+
+    // Draws the picture from the last Grab into `out` (valid until the next Render).
+    void Render(WideImage& out)
+    {
+        using namespace melonDS;
+        const Capture& C = Cap;
+        const int unitNum = C.unitNum, extend = C.extend;
+        const float viewWidth = C.viewWidth;
+        const u32 dispcnt = C.dispcnt;
+        const u8 shown = C.shown;
+        const Layer* layers = C.layers;
+        const int nLayers = C.nLayers;
+        const uint8_t windowLayers = C.windowLayers, layerMask = C.layerMask;
+        ScreenImage top {};
+        top.pixels = C.pixels;
+        top.flags = C.flags;
+        const WideImage* world = C.world.pixels ? &C.world : nullptr;
+        auto vram16 = [&](u32 a) -> u16 { return C.Bg16(a); };
+        auto vram8 = [&](u32 a) -> u8 { return C.Bg8(a); };
+        const u8* palSnap = C.pal;
         auto palette = [&](u32 off) -> u16 { u16 v; memcpy(&v, palSnap + (off & 0x3FE), 2); return v; };
 
         // A colour with the effects the game applies to the 2D layer it is on (target: BG0-3,
         // 4 the sprites, 5 the backdrop): the brightness effect if the layer is one of its
         // targets, then the master brightness, as the 2D engine does, converted to 8 bits per
-        // channel as its output is. With the registers each line was drawn with (a fade
-        // changes them for the next frame before this runs, and the sides of the view would
-        // be a frame ahead of the screen).
-        const u16 (*lineBlend)[3] = static_cast<GPU2D::SoftRenderer*>(&nds.GPU.GetRenderer2D())->LineBlend[unitNum];
-        auto colour = [&](u16 c, int target, int y) -> uint32_t {
+        // channel as its output is. With the registers each line was drawn with.
+        const u16 (*lineBlend)[3] = C.lineBlend;
+        // The same colour on the same layer comes back pixel after pixel along a row (the sky,
+        // the ground): the last one worked out for each layer is kept.
+        struct ColourMemo { int y = -1; u16 c = 0; uint32_t out = 0; } colourMemo[6];
+        auto colourOf = [&](u16 c, int target, int y) -> uint32_t {
             const u16 blend = lineBlend[y][0];
             const int effect = (blend & (1 << target)) && (shown & 0x20) ? (blend >> 6) & 3 : 0;
             const int evy = std::min<int>(16, lineBlend[y][1]);
@@ -128,13 +273,22 @@ public:
             auto to8 = [](int v) { return (uint32_t)((v << 2) | (v >> 4)); };
             return 0xFF000000 | (to8(ch[0]) << 16) | (to8(ch[1]) << 8) | to8(ch[2]);
         };
+        auto colour = [&](u16 c, int target, int y) -> uint32_t {
+            ColourMemo& m = colourMemo[target];
+            if (m.y != y || m.c != c)
+            {
+                m.y = y;
+                m.c = c;
+                m.out = colourOf(c, target, y);
+            }
+            return m.out;
+        };
         const u16 backdropColour = palette(0);
 
         // The sprites other than the HP boxes (which are the only ones at the front, priority
         // 0): the trainer, and the platforms the Pokémon stand on as they slide in at the start
         // of a battle. They are drawn here too: beyond the edges of the screen, where the 2D
         // engine does not draw them, and under an HP box moved away from the edge.
-        auto renderer = static_cast<GPU2D::SoftRenderer*>(&nds.GPU.GetRenderer2D());
         const int outW = 256 + 2 * extend;
         Back.assign((size_t)outW * 192, 0);
         BackPrio.assign((size_t)outW * 192, 4);
@@ -148,7 +302,7 @@ public:
                 { { 16, 8 }, { 32, 8 }, { 32, 16 }, { 64, 32 } },
                 { { 8, 16 }, { 8, 32 }, { 16, 32 }, { 32, 64 } },
                 { { 8, 8 }, { 8, 8 }, { 8, 8 }, { 8, 8 } } };
-            const u16* oam = (const u16*)renderer->OAMSnap[unitNum];
+            const u16* oam = (const u16*)C.oam;
             const u32 objBase = unitNum == 0 ? 0x06400000 : 0x06600000;
             const u32 objPal = 0x200;
             for (int o = 127; o >= 0; o--)                                  // the first sprite in front
@@ -190,7 +344,7 @@ public:
                             addr = (tile & (c256 ? 0x3FE : 0x3FF)) * 32 + (ty * 32 * 32 + tx * 8 * bpp);
                         addr += ((py & 7) * 8 + (px & 7)) * bpp / 8;
                         if (unitNum == 0) addr &= 0x3FFFF; else addr &= 0x1FFFF;
-                        const u8 v = nds.GPU.ReadVRAM_OBJ<u8>(objBase + addr);
+                        const u8 v = C.Obj8(objBase + addr);
                         const int idx = c256 ? v : ((px & 1) ? v >> 4 : v & 0xF);
                         if (!idx) continue;
                         if (objPrio <= BackPrio[outIndex(x, y)])
@@ -270,6 +424,10 @@ public:
 
         // The 2D layers at a point: the colour and the priority of the frontmost (4 for the
         // backdrop), and whether it is a sprite (in front of a background of the same priority).
+        // The 8 pixels of the tile row last read on each background, as palette indices (0:
+        // clear): the pixels beside the screen are asked for one after the other along a row,
+        // so a tile's map entry and its row of pixels are read once instead of for each pixel.
+        struct TileMemo { u32 mapAddr = ~0u; int sy = -1; u8 idx[8]; } tileMemo[4];
         auto layerPixel = [&](int x, int y, int& prio, bool& obj) -> uint32_t {
             uint32_t sprite = Back[outIndex(x, y)];
             const int spritePrio = BackPrio[outIndex(x, y)];
@@ -292,23 +450,34 @@ public:
                 }
                 if (i == nLayers) break;
                 const Layer& l = layers[i];
-                const int sx = (renderer->LineScroll[unitNum][y][l.num][0] + x) & 511;
-                const int sy = (renderer->LineScroll[unitNum][y][l.num][1] + y) & (l.mapH - 1);
+                const int sx = (C.lineScroll[y][l.num][0] + x) & 511;
+                const int sy = (C.lineScroll[y][l.num][1] + y) & (l.mapH - 1);
                 const int tx = sx >> 3, ty = sy >> 3;
                 const u32 block = (tx >> 5) + ((ty >> 5) << 1);
-                const u16 e = vram16(l.mapBase + block * 0x800 + (((ty & 31) << 5) + (tx & 31)) * 2);
-                int px = sx & 7, py = sy & 7;
-                if (e & 0x400) px = 7 - px;
-                if (e & 0x800) py = 7 - py;
-                int idx;
-                if (l.c256)
-                    idx = vram8(l.charBase + (e & 0x3FF) * 64 + py * 8 + px);
-                else
+                const u32 mapAddr = l.mapBase + block * 0x800 + (((ty & 31) << 5) + (tx & 31)) * 2;
+                TileMemo& tm = tileMemo[i];
+                if (tm.mapAddr != mapAddr || tm.sy != sy)
                 {
-                    const u8 two = vram8(l.charBase + (e & 0x3FF) * 32 + py * 4 + (px >> 1));
-                    idx = (px & 1) ? two >> 4 : two & 0xF;
-                    if (idx) idx += (e >> 12) * 16;
+                    tm.mapAddr = mapAddr;
+                    tm.sy = sy;
+                    const u16 e = vram16(mapAddr);
+                    const int py = (e & 0x800) ? 7 - (sy & 7) : sy & 7;
+                    for (int p = 0; p < 8; p++)
+                    {
+                        const int px = (e & 0x400) ? 7 - p : p;
+                        int v;
+                        if (l.c256)
+                            v = vram8(l.charBase + (e & 0x3FF) * 64 + py * 8 + px);
+                        else
+                        {
+                            const u8 two = vram8(l.charBase + (e & 0x3FF) * 32 + py * 4 + (px >> 1));
+                            v = (px & 1) ? two >> 4 : two & 0xF;
+                            if (v) v += (e >> 12) * 16;
+                        }
+                        tm.idx[p] = (u8)v;
+                    }
                 }
+                const int idx = tm.idx[sx & 7];
                 if (idx)
                 {
                     prio = l.prio;
@@ -334,7 +503,7 @@ public:
             for (int side = 0; side < 2; side++)
             {
                 const uint8_t c = LayerClass(top.flags[y * 256 + (side ? 255 : 0)]);
-                if (c & 0x0F) EdgePrio[y * 2 + side] = unit.BGCnt[__builtin_ctz(c)] & 3;
+                if (c & 0x0F) EdgePrio[y * 2 + side] = C.bgcnt[__builtin_ctz(c)] & 3;
             }
         for (int y = 0; y < 192; y++)
         {
@@ -352,12 +521,12 @@ public:
             if (!same) continue;
             RowFlat[y] = 1;
             RowColour[y] = 0xFF000000 | px[0];
-            if (bg) RowPrio[y] = unit.BGCnt[__builtin_ctz(bg)] & 3;
+            if (bg) RowPrio[y] = C.bgcnt[__builtin_ctz(bg)] & 3;
         }
 
         // With the 3D layer (BG0) over them where it is in front.
         const bool use3D = world && world->pixels && !world->placed && world->w > 0 && (dispcnt & 0x100) && (dispcnt & 8) && (shown & 1);
-        const int prio3D = unit.BGCnt[0] & 3;
+        const int prio3D = C.bgcnt[0] & 3;
         const float viewLeft = 128 - viewWidth / 2;
         auto bgPixel = [&](int x, int y) -> uint32_t {
             int prio;
@@ -380,7 +549,7 @@ public:
 
         // The HP boxes: groups of their sprites' pixels that touch the left or the right edge
         // of the screen (but not both, and not most of the screen, which would be an effect).
-        const u8* objPrioAt = renderer->ObjPrio[unitNum];
+        const u8* objPrioAt = C.objPrio;
         auto hpPixel = [&](int i) { return objPrioAt[i] == 0 && LayerClass(top.flags[i]) == LAYER_OBJ; };
         Label.assign(256 * 192, 0);
         int moved[3] = {};
@@ -679,7 +848,6 @@ public:
         out.h = 192;
         out.placed = true;
         out.baseX = -extend;
-        return true;
     }
 
     // Between battles: the next one opens with the wild Pokémon in its place on the screen.
@@ -691,6 +859,24 @@ public:
     }
 
 private:
+    // Copies one 16 KB page of VRAM: straight from its bank when only one is mapped there,
+    // else through the console's own reads (which combine the banks mapped together).
+    template<typename F>
+    static void CopyPage(uint8_t* dst, const uint8_t* direct, F read32, melonDS::u32 base)
+    {
+        if (direct)
+        {
+            memcpy(dst, direct, 0x4000);
+            return;
+        }
+        for (melonDS::u32 a = 0; a < 0x4000; a += 4)
+        {
+            const melonDS::u32 v = read32(base + a);
+            memcpy(dst + a, &v, 4);
+        }
+    }
+
+    Capture Cap;
     // The rows of the wild Pokémon's side, and the stretch of plain background between the
     // two Pokémon, in screen pixels.
     static constexpr int EnemyBottom = 104, EnemyGapLeft = 100, EnemyGapRight = 126;
