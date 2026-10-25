@@ -109,6 +109,14 @@ public:
         FreeTargets();
     }
 
+    // (Drawn at once, so always finished; SSR_WIDE_GL_LATE=1 says it is not, to test what
+    // GPU3D_Wide.cpp does with a picture the graphics chip is late with.)
+    bool Done(int /*slot*/) override
+    {
+        static const bool late = getenv("SSR_WIDE_GL_LATE") != nullptr;
+        return !late;
+    }
+
     u32* Target(int slot, int w, int h) override
     {
         Slots[slot].resize((size_t)w * h);

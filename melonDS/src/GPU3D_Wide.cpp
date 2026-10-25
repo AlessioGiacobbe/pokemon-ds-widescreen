@@ -217,6 +217,7 @@ struct WideAccess
     static inline bool DrawingOnGL = false; // by the graphics chip (GPU3D_GLThread.h)
     static inline bool DrawingOnWideGpu = false; // by the graphics chip (GPU3D_WideGpu.h)
     static inline int PendingSlot = 0;
+    static inline u64 LateFrames = 0; // frames that went on without the graphics chip's picture (see OnRender)
 
     // Ends the drawing threads (at the end of the program; a new pool is made if needed).
     static void Shutdown()
@@ -621,6 +622,20 @@ struct WideAccess
     // call later.
     static void OnRender(GPU& gpu, bool showingInterp)
     {
+        // A picture the graphics chip has not finished, in a frame with nothing new to draw (a
+        // game that draws its 3D every other frame, as Black 2 in its cities): rather than the
+        // emulation waiting for it, the last picture stays on show for one more frame, and this
+        // one is shown at the next call, by when it has had two frames. (Where the graphics chip
+        // keeps up nothing changes. SSR_WIDE_NO_LATE=1 always waits.)
+        static const bool noLate = getenv("SSR_WIDE_NO_LATE") != nullptr;
+        if (!noLate && Drawing && DrawingOnWideGpu && WideGpuCurrent && !showingInterp && !Dirty && !NeedReal &&
+            Wide.FrontW == Wide.Width && Wide.FrontH == Wide.Height && !WideGpuCurrent->Done(PendingSlot))
+        {
+            if (++LateFrames % 300 == 0)
+                fprintf(stderr, "[wide] %llu frames went on with the last picture while the graphics chip finished the next\n",
+                    (unsigned long long)LateFrames);
+            return;
+        }
         Wait();
         if (PendingPublish)
         {
@@ -1300,6 +1315,10 @@ struct WideAccess
 };
 
 void WideWait() { WideAccess::Wait(); }
+void WideWaitForTextures()
+{
+    if (WideAccess::Drawing && !WideAccess::DrawingOnWideGpu) WideAccess::Wait();
+}
 void WideShutdown() { WideAccess::Shutdown(); }
 void WideReleaseGpu() { WideAccess::ReleaseGpu(); }
 void WideOnFlush(GPU3D& g) { WideAccess::OnFlush(g); }

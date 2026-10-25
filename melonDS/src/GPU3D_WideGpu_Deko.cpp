@@ -81,7 +81,6 @@ struct DkshHeader
 struct Shared
 {
     DkDevice Device = nullptr;
-    DkQueue Queue = nullptr;
     DkMemBlock CodeMem = nullptr;
     DkShader MainVsh, MainFsh, FinalVsh, FinalFsh;
     DkShader EarlyFsh;     // the fragment shader with early tests (WideGpuDraw::Early)
@@ -129,11 +128,6 @@ bool LoadShader(DkShader& shader, const unsigned char* file, size_t size, u32& u
 void ReleaseShared()
 {
     if (!Sh || --Sh->Users > 0) return;
-    if (Sh->Queue)
-    {
-        dkQueueWaitIdle(Sh->Queue);
-        dkQueueDestroy(Sh->Queue);
-    }
     if (Sh->CodeMem) dkMemBlockDestroy(Sh->CodeMem);
     if (Sh->Device) dkDeviceDestroy(Sh->Device);
     delete Sh;
@@ -198,16 +192,6 @@ bool AcquireShared(std::string& info)
         ReleaseShared();
         return false;
     }
-    DkQueueMaker qm;
-    dkQueueMakerDefaults(&qm, Sh->Device);
-    qm.flags = DkQueueFlags_Graphics | (Sh->Zcull ? DkQueueFlags_EnableZcull : DkQueueFlags_DisableZcull);
-    Sh->Queue = dkQueueCreate(&qm);
-    if (!Sh->Queue)
-    {
-        info = "no deko3D queue";
-        ReleaseShared();
-        return false;
-    }
     return true;
 }
 
@@ -220,6 +204,19 @@ public:
     {
         if (!AcquireShared(info)) return false;
         HaveShared = true;
+        // A queue of its own (the widescreen view's and the DS-resolution picture's renderers
+        // each have one): the graphics chip takes turns between queues, so that the small DS
+        // picture, wanted within the frame, is not stuck behind a large widescreen picture that
+        // may be shown a frame later (GPU3D_Wide.cpp's OnRender).
+        DkQueueMaker qm;
+        dkQueueMakerDefaults(&qm, Sh->Device);
+        qm.flags = DkQueueFlags_Graphics | (Sh->Zcull ? DkQueueFlags_EnableZcull : DkQueueFlags_DisableZcull);
+        Queue = dkQueueCreate(&qm);
+        if (!Queue)
+        {
+            info = "no deko3D queue";
+            return false;
+        }
         CmdMem = Block(CmdSize, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached);
         DataMem = Block(DataSize, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached);
         if (!CmdMem || !DataMem)
@@ -275,7 +272,11 @@ public:
     {
         if (!HaveShared) return;
         if (Pending) dkFenceWait(&Fence, 1000000000ll);
-        dkQueueWaitIdle(Sh->Queue);
+        if (Queue)
+        {
+            dkQueueWaitIdle(Queue);
+            dkQueueDestroy(Queue);
+        }
         FreeTargets();
         for (Slot& s : Slots)
             if (s.Mem) dkMemBlockDestroy(s.Mem);
@@ -473,9 +474,9 @@ public:
         report(DkCounter_Timestamp, RepCopied);
         dkCmdBufBarrier(Cmd, DkBarrier_Full, DkInvalidateFlags_L2Cache);
         dkCmdBufSignalFence(Cmd, &Fence, true);
-        dkQueueSubmitCommands(Sh->Queue, dkCmdBufFinishList(Cmd));
+        dkQueueSubmitCommands(Queue, dkCmdBufFinishList(Cmd));
         SubmitTime = dkDeviceGetCurrentTimestamp(Sh->Device);
-        dkQueueFlush(Sh->Queue);
+        dkQueueFlush(Queue);
         Pending = true;
         const double t2 = Now();
         T.Copy += t1 - t0;
@@ -483,6 +484,11 @@ public:
         T.Draws += (u32)f.Draws.size();
         T.Triangles += (u32)f.Vertices.size() / 3;
         return true;
+    }
+
+    bool Done(int slot) override
+    {
+        return !Pending || dkFenceWait(&Fence, 0) == DkResult_Success;
     }
 
     void Fetch(int slot) override
@@ -570,7 +576,7 @@ private:
 
     bool MakeTargets(int w, int h)
     {
-        dkQueueWaitIdle(Sh->Queue);
+        dkQueueWaitIdle(Queue);
         FreeTargets();
         const u32 render = DkImageFlags_UsageRender;
         if (!Image(ColorImage, ColorMem, DkImageFormat_RGBA8_Unorm, w, h, render) ||
@@ -625,6 +631,7 @@ private:
     int W = 0, H = 0;
     bool Pending = false;
     u64 SubmitTime = 0; // the graphics chip's clock at the last Submit
+    DkQueue Queue = nullptr;
 };
 }
 

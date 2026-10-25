@@ -117,6 +117,8 @@ public:
     virtual bool Submit(WideGpuFrame& frame, int slot) = 0;
     // Waits for the picture of the last Submit; Target(slot)'s memory then holds it.
     virtual void Fetch(int slot) = 0;
+    // Whether the picture of the last Submit is finished (Fetch would not wait).
+    virtual bool Done(int /*slot*/) { return true; }
 };
 
 // Works out what to draw for the polygons of a wide frame (as GPU3D_Wide.cpp's Draw sees

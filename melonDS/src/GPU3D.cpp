@@ -38,6 +38,7 @@ void WideWait();
 u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
 void WideOnFlush(GPU3D& g);
 void WideOnRender(GPU& gpu, bool showingInterp);
+void WideWaitForTextures();
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched);
 
@@ -2612,8 +2613,9 @@ void GPU3D::VBlank() noexcept
 void GPU3D::VCount215(GPU& gpu) noexcept
 {
     // ssrecomp: the widescreen picture drawn in the background reads texture memory, which
-    // rendering a frame is about to bring up to date.
-    WideWait();
+    // rendering a frame is about to bring up to date. (Not one drawn by the graphics chip
+    // through GPU3D_WideGpu.h: its data was copied when it was sent.)
+    WideWaitForTextures();
     if (InterpPending)
     {
         // ssrecomp: draw the in-between frame now; the real one follows on the next display frame.
