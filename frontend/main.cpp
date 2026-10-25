@@ -656,6 +656,29 @@ static void SetClock(NDS& nds, bool fixed)
     nds.RTC.SetDateTime(y, mo, d, h, mi, sec);
 }
 
+// SoulSilver's widened battle picture (battlewide.h) in two halves, where its BattleWide has
+// them (ssrecomp-soulsilver.patch splits Build into Grab, a quick copy right after the frame, and
+// Render, the slow part): with the pipeline, Render then runs beside the next frame's emulation
+// instead of between frames. Without them (the shared code alone), Build as before. (Overloads
+// chosen by whether the calls compile: the int one is preferred where it does.)
+template <class B> static auto BattleGrab(B& bw, melonDS::NDS& nds, const ScreenImage& top, int extend, const WideImage* world,
+    float viewWidth, int unitNum, int) -> decltype(bw.Grab(nds, top, extend, world, viewWidth, unitNum, true))
+{
+    return bw.Grab(nds, top, extend, world, viewWidth, unitNum, true); // (a copy of what it needs)
+}
+template <class B> static bool BattleGrab(B&, melonDS::NDS&, const ScreenImage&, int, const WideImage*, float, int, long)
+{
+    return false;
+}
+template <class B> static auto BattleRender(B& bw, WideImage& out, int) -> decltype(bw.Render(out), bool())
+{
+    bw.Render(out);
+    return true;
+}
+template <class B> static bool BattleRender(B&, WideImage&, long) { return false; }
+template <class B> static auto BattleSplit(B& bw, int) -> decltype(&B::Render, bool()) { return true; }
+template <class B> static bool BattleSplit(B&, long) { return false; }
+
 static bool UseJit = false;
 static int WideLinesNow = 0; // the widescreen 3D's height this frame (see where it is set)
 static bool UseFastMem = false; // the JIT's fast memory came on (MakeConsole)
@@ -3413,6 +3436,7 @@ int main(int argc, char** argv)
         ScreenImage screens[2] {};
         Scene scene;
         WideImage wide;
+        bool battleRender = false; // the widened battle picture is still to be made (BattleRender)
         std::vector<uint8_t> flags[2], edgeFlat[2];
         std::vector<uint32_t> edge[2], widePixels;
         std::vector<uint16_t> edgeBlend[2];
@@ -3486,6 +3510,13 @@ int main(int argc, char** argv)
     }
 
     auto drawFrame = [&](DrawJob& j) {
+        // (The widened battle picture, from what was grabbed after the frame: made here, beside
+        // the next frame's emulation.)
+        if (j.battleRender)
+        {
+            BattleRender(battleWide, j.wide, 0);
+            j.battleRender = false;
+        }
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         if (j.merged)
@@ -4262,8 +4293,10 @@ int main(int argc, char** argv)
         }
         // Filled in after the frame has run: the renderer hands over its picture then.
         WideImage wideImage;
+        bool battleRenderLater = false; // see BattleGrab
         auto takeWideImage = [&]() {
             wideImage = WideImage();
+            battleRenderLater = false;
             // A battle on a wide view: the screen widened (battlewide.h) instead of the bars.
             if (scene.edgeFill && cfg.wide && !opt.noWide)
             {
@@ -4278,7 +4311,17 @@ int main(int argc, char** argv)
                 const int tu = topUnitOf();
                 const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][singleView() ? 1 : 0].get(),
                     static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
-                if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage, tu))
+                const int extend = (int)std::ceil((vw - 256) / 2);
+                if (vw >= 300 && pipelined && BattleSplit(battleWide, 0))
+                {
+                    if (BattleGrab(battleWide, *nds, topImage, extend, &world, vw, tu, 0))
+                    {
+                        scene.wide = true;
+                        battleRenderLater = true;
+                        return;
+                    }
+                }
+                else if (vw >= 300 && battleWide.Build(*nds, topImage, extend, &world, vw, wideImage, tu))
                 {
                     scene.wide = true;
                     return;
@@ -4989,6 +5032,7 @@ int main(int argc, char** argv)
             job.screens[1] = screenImages[1];
             job.scene = scene;
             job.wide = wideImage;
+            job.battleRender = battleRenderLater;
             if (pipelined)
             {
                 job.Keep(speed > 1);
