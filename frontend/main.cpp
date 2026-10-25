@@ -1460,6 +1460,7 @@ int main(int argc, char** argv)
 #endif
 
     std::vector<uint8_t> rom = ReadFile(opt.rom);
+    FuncWatch::RomPath = opt.rom; // (for a function table that reads its first bytes from it)
     // Pokemon SoulSilver (US): its new game's first menu is skipped (see where keys are sent).
     const bool soulSilverRom = rom.size() > 0x10 && memcmp(&rom[0x0C], "IPGE", 4) == 0;
     if (rom.empty())
@@ -1501,7 +1502,7 @@ int main(int argc, char** argv)
     // A game that is not recompiled: which of its functions run comes from a table and a hook
     // on the interpreter instead of recompiled-code probes.
     static FuncWatch funcWatch;
-    const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs) && funcWatch.FillFirstBytes(opt.rom);
+    const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs);
     // A SoulSilver build without the recompiled code (tools/soulsilver/tables_only.py) started
     // without --jit or --interp: the interpreter, rather than calling code that is not there.
     if (nds->ARM9.RecompEnable && !ref && rc_num_chunks && !rc_chunks[0].fn)

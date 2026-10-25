@@ -73,11 +73,15 @@ public:
             ByName.emplace(Funcs[i].name, (int)i);
         }
         fprintf(stderr, "[funcwatch] %zu functions from %s\n", Funcs.size(), path.c_str());
-        return !Funcs.empty();
+        return !Funcs.empty() && FillFirstBytes(RomPath);
     }
+
+    // The ROM whose overlays FillFirstBytes reads, when Load finds a table that needs it.
+    static inline std::string RomPath;
 
     // Reads the first bytes the table left to the ROM (?) from the player's ROM: the overlay is
     // taken from the module's name (ovNNN). False when a ROM was needed and could not be read.
+    // (Load does this, from RomPath.)
     bool FillFirstBytes(const std::string& romPath)
     {
         size_t pending = 0, filled = 0;
