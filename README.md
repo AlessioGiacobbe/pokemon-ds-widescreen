@@ -19,8 +19,8 @@ screen in widescreen, at or near 60 fps.**
 | ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
 | ![Black 2: a double battle, choosing a move](docs/screenshots/black2-double-battle.jpg) | ![White 2: the same double battle, with White 2's own HP boxes](docs/screenshots/white2-double-battle.jpg) |
 
-*Pictures from the PC test build, which draws the same picture as the Switch
-(the world through the graphics chip, at 720 lines).*
+*Pictures from the PC test build, which draws the Switch's picture (only the
+edges of polygons can differ by a pixel), at 720 lines.*
 
 **Get it:** `ssrecomp-black2-white2-switch.zip` from the
 [latest release](../../releases/latest), then follow
