@@ -2026,11 +2026,11 @@ int main(int argc, char** argv)
             // more of the arena; the messages are 2D and stay where they are.
             only("battle", 0);
             sc.wide = wideView;
-            // A single battle on a wide view: the HP boxes go to the top corners of the view,
-            // out of the way of the touch-screen panel in the lower right (the player's box
-            // was under it, and ran into the edge of the screen): the player's on the left,
-            // above their Pokemon, the enemy's on the right, above theirs. Where they were, the
-            // wide arena shows. A double, triple or rotation battle keeps the game's own places.
+            // A single battle on a wide view: the HP boxes keep the game's own places but against
+            // the view's edges, as the game has them against the screen's: the enemy's in the
+            // upper left, the player's in the lower right, above the touch-screen panel. Where
+            // they were, the wide arena shows. A double, triple or rotation battle keeps the
+            // game's own places.
             int kind = 0; // 1 single, 2 another kind, 0 not seen (a snapshot loaded mid-battle)
             uint32_t seen = 0;
             const int setups[4] = { bw2.setupSingle, bw2.setupDouble, bw2.setupTriple, bw2.setupRotation };
@@ -2057,6 +2057,8 @@ int main(int argc, char** argv)
                 kind = enemyH > 0 && enemyH <= 32 && mineH > 0 && mineH <= 34 ? 1 : 2;
             }
             // (The compositor leaves the boxes where they are in any frame without the wide arena.)
+            // The player's box is lifted this much, to clear the corner panel's frame.
+            constexpr int BattleBoxLift = 4;
             if (wideView && kind == 1)
             {
                 // The enemy's box covers x 4-109, y 30-51 of the top screen, the player's x 142-255,
@@ -2066,18 +2068,18 @@ int main(int argc, char** argv)
                 const int enemy[4] = { 0, 26, 116, 56 }, mine[4] = { 138, 106, 256, 142 };
                 std::copy(enemy, enemy + 4, top.holes[0]);
                 std::copy(mine, mine + 4, top.holes[1]);
-                // (The enemy's box ends at x 110 of its piece, the player's starts at x 4 of
-                // its: each 1-2 pixels in from the edge of the view.)
+                // (The enemy's box starts 4 pixels in from the left edge of its piece, as from the
+                // screen's; the player's runs to the right edge of its piece.)
                 Element e = Crop(0, enemy[0], enemy[1], enemy[2] - enemy[0], enemy[3] - enemy[1]);
-                e.dx = viewRight - 111;
-                e.dy = -1;
+                e.dx = viewLeft;
+                e.dy = enemy[1];
                 e.drop = LAYER_3D | LAYER_BACKDROP;
                 e.crisp = true;
                 e.wideOnly = true;
                 sc.items.push_back(e);
                 Element m = Crop(0, mine[0], mine[1], mine[2] - mine[0], mine[3] - mine[1]);
-                m.dx = viewLeft - 2;
-                m.dy = -1;
+                m.dx = viewRight - (mine[2] - mine[0]);
+                m.dy = mine[1] - BattleBoxLift;
                 m.drop = LAYER_3D | LAYER_BACKDROP;
                 m.crisp = true;
                 m.wideOnly = true;

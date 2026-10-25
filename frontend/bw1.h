@@ -206,7 +206,7 @@ private:
     }
 
     // A single battle on a wide view (pickSceneBw2 has made holes for Black 2's HP boxes and
-    // put them in the top corners). Black's boxes are drawn against the screen's edges: the
+    // put them against the view's edges). Black's boxes are drawn against the screen's edges: the
     // foe's along the left edge (x 0-123, y 30-48), its bars running off it, and the player's
     // along the right edge (x 136-255, y 110-138). They stay against those edges, now the
     // view's: the foe's at its left, 4 pixels higher; the player's at its right, 10 pixels higher

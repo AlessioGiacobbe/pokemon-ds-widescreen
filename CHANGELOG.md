@@ -51,6 +51,9 @@
   layouts where its screens differ (`frontend/bw1.h`): the start menu (the saved game's card
   beside the whole list, drawn on below the screen), the X menu, single battles' HP boxes, the
   Badge Case, the Pokedex registration after a catch and the save screen (as Black 2's).
+- Black 2: in a single battle on the wide view the HP boxes are back where the game has them,
+  the opponent's in the upper left and yours in the lower right (just above the battle's
+  buttons), each against the edge of the view, instead of both along the top.
 - **BATTLE BUTTONS (pause menu, Black and Black 2):** how a battle's touch-screen buttons are
   shown beside the wide view: CORNER (the panel in the lower right corner, as before; Black 2's
   default), PANEL (the touch screen's panel as tall as the message box) or, in Black, STRIP
