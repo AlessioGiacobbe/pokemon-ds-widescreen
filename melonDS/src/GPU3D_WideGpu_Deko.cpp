@@ -43,7 +43,11 @@ constexpr u32 OffSamplerDesc = 0x400;                  // one sampler descriptor
 // texture and palette memory as buffer textures (the WIDE_TEXBUF shader, see Shared).
 enum ImageIds : u32 { ImgColor, ImgAttr, ImgTex8, ImgTex16, ImgPal16, ImageCount };
 static_assert(OffImageDesc + ImageCount * 32 <= OffSamplerDesc, "the image descriptors fit");
+// What the graphics chip reports for each picture, 16 bytes each (a count, then a time).
+enum Reports : u32 { RepStart, RepCleared, RepDrawn, RepFragments, RepSamples, RepFinal, RepCopied, ReportCount };
+constexpr u32 OffReports = 0x600;                      // the graphics chip's timings (see Reports)
 constexpr u32 OffPolygons = 0x1000;
+static_assert(OffReports + ReportCount * 16 <= OffPolygons, "the reports fit");
 constexpr u32 OffTex = OffPolygons + MaxPolygons * sizeof(WideGpuPolygon);
 constexpr u32 OffPal = OffTex + 512 * 1024;
 constexpr u32 OffVertices = OffPal + 128 * 1024;
@@ -83,7 +87,10 @@ struct Shared
     // environment, e.g. through a test run's --env): the fragment shader that reads the texture
     // and palette memory as buffer textures, through the texture cache; the graphics chip's
     // coarse depth test (Zcull), which rejects hidden pixels in blocks before they are shaded.
-    bool TexBuf = false, Zcull = false;
+    // And to find what the time goes on, with wrong pictures: SSR_WIDEGPU_PLAIN=1, no textures;
+    // SSR_WIDEGPU_NOATTR=1, the second target (depth and fog flag, for the fog) not written;
+    // SSR_WIDEGPU_DEPTH=24, a 32-bit depth buffer (24-bit fixed point) instead of 64 bits.
+    bool TexBuf = false, Zcull = false, Plain = false, NoAttr = false, Depth24 = false;
 };
 Shared* Sh = nullptr;
 
@@ -150,6 +157,16 @@ bool AcquireShared(std::string& info)
     const char* zcull = getenv("SSR_WIDEGPU_ZCULL");
     Sh->TexBuf = shader && !strcmp(shader, "texbuf");
     Sh->Zcull = zcull && !strcmp(zcull, "1");
+    auto on = [](const char* name, const char* value) {
+        const char* v = getenv(name);
+        return v && !strcmp(v, value);
+    };
+    Sh->Plain = on("SSR_WIDEGPU_PLAIN", "1");
+    Sh->NoAttr = on("SSR_WIDEGPU_NOATTR", "1");
+    Sh->Depth24 = on("SSR_WIDEGPU_DEPTH", "24");
+    if (Sh->Plain || Sh->NoAttr || Sh->Depth24)
+        fprintf(stderr, "[widegpu] deko3D, for measuring (the pictures are wrong):%s%s%s\n", Sh->Plain ? " no textures" : "",
+            Sh->NoAttr ? " no depth/fog target" : "", Sh->Depth24 ? " 32-bit depth buffer" : "");
     Sh->CodeMem = MakeBlock(256 * 1024, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Code);
     u32 used = 0;
     // (The buffer-texture variant is left empty by the build if it did not compile.)
@@ -286,6 +303,7 @@ public:
         // deko3D's rows run from the top, as in memory (see wide_vsh.glsl).
         f.Constants.Scale[2] = 1.0f;
         f.Constants.Scale[3] = 0.0f; // depth from 0 to 1
+        if (Sh->Plain) f.Constants.Fog[3] |= 4;
 
         memcpy(Data + OffFrame, &f.Constants, sizeof(f.Constants));
         memcpy(Data + OffPolygons, f.Polygons.data(), f.Polygons.size() * sizeof(WideGpuPolygon));
@@ -304,6 +322,12 @@ public:
         // What the processor wrote since the last frame is read afresh.
         dkCmdBufBarrier(Cmd, DkBarrier_None, DkInvalidateFlags_Shader | DkInvalidateFlags_Image |
             DkInvalidateFlags_Descriptors | DkInvalidateFlags_L2Cache);
+        // Where the graphics chip's time goes: times at the start and after each stage, and how
+        // many pixels were shaded and passed the depth test.
+        auto report = [&](DkCounter counter, Reports at) { dkCmdBufReportCounter(Cmd, counter, DataAddr + OffReports + at * 16); };
+        dkCmdBufResetCounter(Cmd, DkCounter_FragmentShaderInvocations);
+        dkCmdBufResetCounter(Cmd, DkCounter_SamplesPassed);
+        report(DkCounter_TimestampPipelineTop, RepStart);
 
         DkImageView colorView, attrView, depthView, finalView;
         dkImageViewDefaults(&colorView, &ColorImage);
@@ -324,6 +348,7 @@ public:
         const u32 clearAttr[4] = { f.ClearDepth, f.ClearFog, 0, 0 };
         dkCmdBufClearColor(Cmd, 1, DkColorMask_RGBA, clearAttr);
         dkCmdBufClearDepthStencil(Cmd, true, f.ClearDepthValue, 0xFF, f.ClearStencil);
+        report(DkCounter_Timestamp, RepCleared);
 
         const DkShader* main[2] = { &Sh->MainVsh, &Sh->MainFsh };
         dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, main, 2);
@@ -389,10 +414,14 @@ public:
             DkColorWriteState cw;
             dkColorWriteStateDefaults(&cw);
             dkColorWriteStateSetMask(&cw, 0, DkColorMask_RGBA);
-            dkColorWriteStateSetMask(&cw, 1, (d.WriteDepthAttr ? DkColorMask_R : 0) | (d.WriteFogAttr ? DkColorMask_G : 0));
+            dkColorWriteStateSetMask(&cw, 1, Sh->NoAttr ? 0 : (d.WriteDepthAttr ? DkColorMask_R : 0) | (d.WriteFogAttr ? DkColorMask_G : 0));
             dkCmdBufBindColorWriteState(Cmd, &cw);
             dkCmdBufDraw(Cmd, DkPrimitive_Triangles, d.Count, 1, 0, 0);
         }
+
+        report(DkCounter_Timestamp, RepDrawn);
+        report(DkCounter_FragmentShaderInvocations, RepFragments);
+        report(DkCounter_SamplesPassed, RepSamples);
 
         // The final pass reads what was drawn.
         dkCmdBufBarrier(Cmd, DkBarrier_Fragments, DkInvalidateFlags_Image);
@@ -413,15 +442,19 @@ public:
         const DkResHandle tex[2] = { dkMakeTextureHandle(ImgColor, 0), dkMakeTextureHandle(ImgAttr, 0) };
         dkCmdBufBindTextures(Cmd, DkStage_Fragment, 0, tex, 2);
         dkCmdBufDraw(Cmd, DkPrimitive_Triangles, 3, 1, 0, 0);
+        report(DkCounter_Timestamp, RepFinal);
 
         // The picture to memory the processor reads.
         dkCmdBufBarrier(Cmd, DkBarrier_Fragments, 0);
         const DkImageRect rect = { 0, 0, 0, (u32)W, (u32)H, 1 };
         const DkCopyBuf dst = { dkMemBlockGetGpuAddr(Slots[slot].Mem), (u32)W * 4, 0 };
         dkCmdBufCopyImageToBuffer(Cmd, &finalView, &rect, &dst, 0);
+        dkCmdBufBarrier(Cmd, DkBarrier_Full, 0);
+        report(DkCounter_Timestamp, RepCopied);
         dkCmdBufBarrier(Cmd, DkBarrier_Full, DkInvalidateFlags_L2Cache);
         dkCmdBufSignalFence(Cmd, &Fence, true);
         dkQueueSubmitCommands(Sh->Queue, dkCmdBufFinishList(Cmd));
+        SubmitTime = dkDeviceGetCurrentTimestamp(Sh->Device);
         dkQueueFlush(Sh->Queue);
         Pending = true;
         const double t2 = Now();
@@ -450,13 +483,33 @@ public:
         const double t2 = Now();
         T.Wait += t1 - t0;
         T.Flush += t2 - t1;
-        // Where the time goes, now and then in the log.
-        if (++T.Pictures == 600)
+        // (The reports: the data memory is not cached by the processor.)
+        u64 rep[ReportCount][2];
+        memcpy(rep, Data + OffReports, sizeof(rep));
+        auto ms = [](u64 from, u64 to) { return to > from ? (double)dkTimestampToNs(to - from) / 1e6 : 0.0; };
+        auto gpuMs = [&](Reports a, Reports b) { return ms(rep[a][1], rep[b][1]); };
+        // (From the commands' submission to the graphics chip starting on them: the time it
+        // spent on other work first, such as SDL's drawing of the last frame.)
+        T.GpuQueue += ms(SubmitTime, rep[RepStart][1]);
+        T.GpuClear += gpuMs(RepStart, RepCleared);
+        T.GpuDraw += gpuMs(RepCleared, RepDrawn);
+        T.GpuFinal += gpuMs(RepDrawn, RepFinal);
+        T.GpuCopy += gpuMs(RepFinal, RepCopied);
+        T.GpuTotal += gpuMs(RepStart, RepCopied);
+        T.Fragments += rep[RepFragments][0];
+        T.Samples += rep[RepSamples][0];
+        // Where the time goes, now and then in the log (every 240 pictures: a test run of a few
+        // hundred frames gets some).
+        if (++T.Pictures == 240)
         {
             const double n = T.Pictures;
             fprintf(stderr, "[widegpu] per picture (%dx%d, over %u): copying the data %.2f ms, making the commands %.2f ms, "
                 "waiting for the graphics chip %.2f ms, cache %.2f ms; %u triangles, %u draws\n", W, H, T.Pictures,
                 T.Copy / n, T.Record / n, T.Wait / n, T.Flush / n, (u32)(T.Triangles / n), (u32)(T.Draws / n));
+            fprintf(stderr, "[widegpu]   on the graphics chip: %.2f ms before it started, %.2f ms from starting to the picture copied: clearing %.2f, "
+                "polygons %.2f, final pass %.2f, copy %.2f ms; %.2f million pixels shaded, %.2f million passed the depth test "
+                "(the picture has %.2f million)\n", T.GpuQueue / n, T.GpuTotal / n, T.GpuClear / n, T.GpuDraw / n, T.GpuFinal / n, T.GpuCopy / n,
+                T.Fragments / n / 1e6, T.Samples / n / 1e6, (double)W * H / 1e6);
             T = Times();
         }
     }
@@ -502,7 +555,7 @@ private:
         const u32 render = DkImageFlags_UsageRender;
         if (!Image(ColorImage, ColorMem, DkImageFormat_RGBA8_Unorm, w, h, render) ||
             !Image(AttrImage, AttrMem, DkImageFormat_RG32_Uint, w, h, render) ||
-            !Image(DepthImage, DepthMem, DkImageFormat_ZF32_X24S8, w, h, render) ||
+            !Image(DepthImage, DepthMem, Sh->Depth24 ? DkImageFormat_Z24S8 : DkImageFormat_ZF32_X24S8, w, h, render) ||
             !Image(FinalImage, FinalMem, DkImageFormat_BGRA8_Unorm, w, h, DkImageFlags_UsageRender | DkImageFlags_Usage2DEngine))
         {
             fprintf(stderr, "[widegpu] deko3D images of %dx%d could not be had\n", w, h);
@@ -537,6 +590,8 @@ private:
     struct Times
     {
         double Copy = 0, Record = 0, Wait = 0, Flush = 0;
+        double GpuQueue = 0, GpuClear = 0, GpuDraw = 0, GpuFinal = 0, GpuCopy = 0, GpuTotal = 0;
+        u64 Fragments = 0, Samples = 0;
         u64 Triangles = 0, Draws = 0;
         u32 Pictures = 0;
     };
@@ -549,6 +604,7 @@ private:
     DkGpuAddr DataAddr = 0;
     int W = 0, H = 0;
     bool Pending = false;
+    u64 SubmitTime = 0; // the graphics chip's clock at the last Submit
 };
 }
 

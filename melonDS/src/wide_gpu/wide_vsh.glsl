@@ -32,7 +32,7 @@ layout (std140, binding = 0) uniform Frame
 {
     uvec4 uSize;          // width, height, DISP3DCNT, alpha test reference
     vec4 uScale;          // 2 / width, 2 / height, direction of y (+1 deko3D, -1 OpenGL), depth range (0: 0 to 1, 1: -1 to 1)
-    uvec4 uFog;           // fog colour, offset, shift, flags (bit 0 fog on, bit 1 fog colours)
+    uvec4 uFog;           // fog colour, offset, shift, flags (bit 0 fog on, bit 1 fog colours, bit 2 no textures)
     uvec4 uToon[8];       // the toon table, four to an entry
     uvec4 uFogDensity[9]; // the fog density table (34 entries), four to an entry
 };

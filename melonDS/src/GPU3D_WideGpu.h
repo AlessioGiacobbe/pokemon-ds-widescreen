@@ -56,7 +56,8 @@ struct WideGpuFrameConstants
 {
     u32 Size[4];          // width, height, DISP3DCNT, alpha test reference
     float Scale[4];       // 2 / width, 2 / height, direction of y, depth range (both the backend's)
-    u32 Fog[4];           // fog colour, offset, shift, flags (bit 0 fog on, bit 1 fog colours)
+    u32 Fog[4];           // fog colour, offset, shift, flags (bit 0 fog on, bit 1 fog colours,
+                          // bit 2 no textures: for measuring, see GPU3D_WideGpu_Deko.cpp)
     u32 Toon[32];
     u32 FogDensity[36];
 };

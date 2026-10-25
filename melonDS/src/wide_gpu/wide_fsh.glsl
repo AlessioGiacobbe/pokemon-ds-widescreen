@@ -233,7 +233,8 @@ void main()
     uint blendMode = (attr >> 4) & 3u;
     bool highlight = blendMode == 2u && (dispCnt & 2u) != 0u;
     bool toon = blendMode == 2u && !highlight;
-    bool textured = (poly.flags & 2u) != 0u;
+    // (Bit 2 of the fog flags: no textures, for measuring what they cost on the Switch.)
+    bool textured = (poly.flags & 2u) != 0u && (uFog.w & 4u) == 0u;
 
     uvec3 texel = uvec3(0u);
     uint ta = 0u;
