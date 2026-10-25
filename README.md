@@ -12,6 +12,16 @@ screen in widescreen, at or near 60 fps.**
 - Bring your own ROM: nothing of the games is in this repository or its
   downloads
 
+![Walking through Castelia City in widescreen at 60 fps](docs/screenshots/black2-castelia-60fps.gif)
+
+| | |
+|---|---|
+| ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
+| ![Black 2: a double battle, choosing a move](docs/screenshots/black2-double-battle.jpg) | ![White 2: the same double battle, with White 2's own HP boxes](docs/screenshots/white2-double-battle.jpg) |
+
+*Pictures from the PC test build, which draws the same picture as the Switch
+(the world through the graphics chip, at 720 lines).*
+
 **Get it:** `ssrecomp-black2-white2-switch.zip` from the
 [latest release](../../releases/latest), then follow
 [Black 2 and White 2: ready-made download](#black-2-and-white-2-ready-made-download).
