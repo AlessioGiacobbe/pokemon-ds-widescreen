@@ -31,7 +31,7 @@ native port**; it's the DS game, presented the way it should look on a Switch.
 | | |
 |---|---|
 | ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
-| ![Black 2: a double battle, choosing a move](docs/screenshots/black2-double-battle.jpg) | ![White 2: a triple battle in a cave, Serperior, Haxorus and Lucario against Sandslash, Unfezant and Klink](docs/screenshots/white2-triple-battle.jpg) |
+| ![Black 2: a double battle, choosing a move](docs/screenshots/black2-double-battle.jpg) | ![White 2: Serperior against a wild Scrafty, with FIGHT, BAG, RUN and POKÉMON beside the game](docs/screenshots/white2-battle.jpg) |
 
 *Pictures from the PC test build, which draws the Switch's picture (only the
 edges of polygons can differ by a pixel), at 720 lines.*
