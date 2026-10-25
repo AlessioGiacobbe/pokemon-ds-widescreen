@@ -1460,6 +1460,8 @@ int main(int argc, char** argv)
 #endif
 
     std::vector<uint8_t> rom = ReadFile(opt.rom);
+    // Pokemon SoulSilver (US): its new game's first menu is skipped (see where keys are sent).
+    const bool soulSilverRom = rom.size() > 0x10 && memcmp(&rom[0x0C], "IPGE", 4) == 0;
     if (rom.empty())
     {
         fprintf(stderr, "cannot read ROM: %s\n", opt.rom.c_str());
@@ -4584,6 +4586,35 @@ int main(int argc, char** argv)
                     }
                     cgearAsked = asking;
                     if (cgearStep < 2 && (frame & 3) < 2) keys |= 1u << (cgearStep == 0 ? KEY_B : KEY_A);
+                }
+            }
+            // SoulSilver's new game starts with a menu on the touch screen alone ("Please touch any
+            // topic you'd like to know more about on the lower screen": CONTROL INFO, ADVENTURE
+            // INFO, NO INFO NEEDED) that the single view does not show, and A alone chooses the
+            // first topic again and again. It is answered here, NO INFO NEEDED touched, as it
+            // comes up: its three buttons are in the touch screen's picture (a teal 24,186,195 at
+            // x 60 of rows 40, 96 and 152, and at x 200 of row 96) while the professor's overlay
+            // runs but his speech has not started.
+            if (soulSilverRom && !touching)
+            {
+                static unsigned skipFrames = 0;
+                const u32* b = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][singleView() ? 0 : 1].get();
+                auto teal = [&](int x, int y) {
+                    const u32 p = b[y * 256 + x];
+                    return std::abs((int)((p >> 16) & 255) - 24) < 16 && std::abs((int)((p >> 8) & 255) - 186) < 16 &&
+                        std::abs((int)(p & 255) - 195) < 16;
+                };
+                const bool menu = sectionActive("OVY_53") && !appActive("OakSpeech") && teal(60, 40) && teal(60, 96) &&
+                    teal(60, 152) && teal(200, 96);
+                skipFrames = menu ? skipFrames + 1 : 0;
+                // (Touched for 6 frames in every 30, after it has been up for 20: a touch while it
+                // is still sliding in, or held on, is not taken.)
+                if (menu && skipFrames >= 20 && skipFrames % 30 < 6)
+                {
+                    touching = true;
+                    touchX = 132;
+                    touchY = 152;
+                    if (skipFrames % 30 == 0) fprintf(stderr, "[ss] frame %u: NO INFO NEEDED chosen on the new game's first menu\n", frame);
                 }
             }
             nds->SetKeyMask(~keys & 0xFFF);

@@ -44,6 +44,9 @@
   The graphics chip now keeps its pictures compressed and draws the world straight into
   the frame it shows, and each DS texture is decoded once (when the game changes it)
   rather than again for every pixel (that decoding was over half of its drawing time).
+- SoulSilver: a new game's first menu, which is on the touch screen alone ("Please touch any
+  topic you'd like to know more about"), is answered NO INFO NEEDED by itself as it comes up;
+  pressing A had chosen the controls explanation again and again.
 - Black 2 battles: the level-up window (the list of stats) moves with your HP box instead of
   being cut through by it; in double, triple and rotation battles the buttons sit in the
   message box's band (as BATTLE BUTTONS' PANEL), below all your HP boxes instead of over the
