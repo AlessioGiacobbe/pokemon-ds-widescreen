@@ -3,6 +3,10 @@ function list (layout/function_addrs.tsv) and your own ROM, in the same form as 
 (tools/bw2/funcmap.py), so the same frontend and layouts can use it.
 
     python3 tools/bw1/funcmap.py <aletheia>/layout/function_addrs.tsv <rom.nds> out/funcs.txt
+    python3 tools/bw1/funcmap.py <aletheia>/layout/function_addrs.tsv - out/IRBO.txt
+
+With - for the ROM the overlay functions' first bytes are left as ?, for the program to read
+from the player's ROM (see tools/bw2/funcmap.py).
 
 Each line: <address> <a|t> <module> <first bytes|-> <name>, as for Black 2. Names are
 aletheia's, except for the functions listed in tools/bw1/aliases.txt: those get the Black 2
@@ -33,10 +37,13 @@ def load_aliases(path):
 
 def main():
     tsv, rom_path, out_path = sys.argv[1:4]
-    rom = open(rom_path, "rb").read()
-    if rom[0x0C:0x10] != b"IRBO":
-        print("warning: %s is not Pokemon Black (US/Europe): game code %r" % (rom_path, rom[0x0C:0x10]))
-    ovs = overlays(rom)
+    if rom_path == "-":
+        rom, ovs = None, {}
+    else:
+        rom = open(rom_path, "rb").read()
+        if rom[0x0C:0x10] != b"IRBO":
+            print("warning: %s is not Pokemon Black (US/Europe): game code %r" % (rom_path, rom[0x0C:0x10]))
+        ovs = overlays(rom)
     aliases = load_aliases(os.path.join(HERE, "aliases.txt"))
     found = set()
     rows = []
@@ -54,7 +61,7 @@ def main():
             if not m:
                 continue  # the DSi-only code (twl) and overlay 230's second half (ov230d)
             module, check = region, ovs.get(int(m.group(1)))
-        first = "-"
+        first = "?" if rom is None and module.startswith("ov") else "-"
         if check:
             base, data = check
             off = addr - base

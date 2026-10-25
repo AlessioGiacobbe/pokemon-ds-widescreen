@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Pokemon White 2 (US/Europe, English):** plays like Black 2, with the same layouts, wide
+  view, wider map and battle screens (its function table comes from the pokebw2
+  decompilation's White 2 symbols).
+- **Switch, Black 2 and White 2 without building:** the program can carry the function tables
+  for Black 2, White 2 and Black itself and read the few bytes it needs from your ROM when
+  the game starts, so one ready-made `.nro` plays any English copy of those games
+  (`tools/switch/build_game.sh bw`). A ROM it doesn't know (another language) gets a message
+  saying which versions it plays.
 - **Switch: one command per game.** `tools/switch/build_game.sh soulsilver|black2|black
   your-rom.nds` does every step once the tools are installed: the function tables, the
   build (with devkitPro's Docker image when devkitPro is not installed) and a folder laid out

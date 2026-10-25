@@ -5,9 +5,12 @@
 // bitmap of function starts (melonDS/src/SsrWatch.h).
 //
 // Many overlays are loaded at the same addresses, so a function in an overlay counts as entered
-// only when the first bytes in memory are its own.
+// only when the first bytes in memory are its own. A table made without a ROM (the one built
+// into the Switch's program) has ? for them, and they are read from the player's ROM
+// (FillFirstBytes).
 #pragma once
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -15,6 +18,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "ndsoverlays.h"
 
 #include "ARM.h"
 #include "NDS.h"
@@ -28,6 +33,7 @@ public:
         uint32_t addr;
         bool thumb;
         bool check;      // compare the first bytes (overlay functions)
+        bool pending;    // those bytes still to be read from the ROM (? in the table)
         uint32_t first;  // those bytes, as a little-endian word
         std::string module;
         std::string name;
@@ -46,8 +52,9 @@ public:
             fn.addr = (uint32_t)strtoul(addr.c_str(), nullptr, 16);
             fn.thumb = kind == "t";
             fn.check = first != "-";
+            fn.pending = first == "?";
             fn.first = 0;
-            if (fn.check)
+            if (fn.check && !fn.pending)
                 for (int i = 0; i < 4; i++)
                     fn.first |= (uint32_t)strtoul(first.substr(i * 2, 2).c_str(), nullptr, 16) << (i * 8);
             fn.module = module;
@@ -67,6 +74,39 @@ public:
         }
         fprintf(stderr, "[funcwatch] %zu functions from %s\n", Funcs.size(), path.c_str());
         return !Funcs.empty();
+    }
+
+    // Reads the first bytes the table left to the ROM (?) from the player's ROM: the overlay is
+    // taken from the module's name (ovNNN). False when a ROM was needed and could not be read.
+    bool FillFirstBytes(const std::string& romPath)
+    {
+        size_t pending = 0, filled = 0;
+        for (const Func& fn : Funcs) pending += fn.pending;
+        if (!pending) return true;
+        NdsOverlays rom;
+        if (!rom.Open(romPath))
+        {
+            fprintf(stderr, "[funcwatch] could not read the overlays of %s\n", romPath.c_str());
+            return false;
+        }
+        for (Func& fn : Funcs)
+        {
+            if (!fn.pending) continue;
+            fn.pending = false;
+            // (A function the ROM's overlay does not reach is not checked, as funcmap.py writes -.)
+            fn.check = false;
+            if (fn.module.size() < 3 || fn.module.compare(0, 2, "ov") != 0) continue;
+            char* end = nullptr;
+            const unsigned long id = strtoul(fn.module.c_str() + 2, &end, 10);
+            if (!end || *end) continue;
+            const NdsOverlays::Overlay* ov = rom.Get((uint32_t)id);
+            if (!ov || fn.addr < ov->ram || fn.addr - ov->ram + 4 > ov->data.size()) continue;
+            memcpy(&fn.first, &ov->data[fn.addr - ov->ram], 4);
+            fn.check = true;
+            filled++;
+        }
+        fprintf(stderr, "[funcwatch] first bytes of %zu of %zu overlay functions from %s\n", filled, pending, romPath.c_str());
+        return true;
     }
 
     // Watches the functions named; with no names, every function in the table (for

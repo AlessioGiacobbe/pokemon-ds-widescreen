@@ -65,7 +65,7 @@
 #include "switch_platform.h"
 #include "funcwatch.h"
 #include "bw1.h" // Pokemon Black's own layouts (Black 1 only)
-#include "bw2map.h" // Black 2: more of the map loaded beside the player
+#include "bw2map.h" // Black 2 and White 2: more of the map loaded beside the player
 #if defined(__SWITCH__) && defined(SSR_DEKO3D)
 #include "dekoprobe.h"
 #endif
@@ -817,7 +817,7 @@ static void ApplyRenderer3D(NDS& nds, bool gpu)
 
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
-    // Black 2 (US) gets 8 MB of main RAM, for its wider map (frontend/bw2map.h).
+    // Black 2 and White 2 (US) get 8 MB of main RAM, for their wider map (frontend/bw2map.h).
     const bool largeMainRAM = Bw2Map::WantsLargeRAM(rom);
     NDSCart::NDSCartArgs cartArgs;
     if (!sav.empty())
@@ -1501,7 +1501,7 @@ int main(int argc, char** argv)
     // A game that is not recompiled: which of its functions run comes from a table and a hook
     // on the interpreter instead of recompiled-code probes.
     static FuncWatch funcWatch;
-    const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs);
+    const bool funcWatchOn = !opt.funcs.empty() && funcWatch.Load(opt.funcs) && funcWatch.FillFirstBytes(opt.rom);
     // A SoulSilver build without the recompiled code (tools/soulsilver/tables_only.py) started
     // without --jit or --interp: the interpreter, rather than calling code that is not there.
     if (nds->ARM9.RecompEnable && !ref && rc_num_chunks && !rc_chunks[0].fn)

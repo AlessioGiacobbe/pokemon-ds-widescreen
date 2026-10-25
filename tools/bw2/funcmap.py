@@ -2,6 +2,12 @@
 symbol files (ds-decomp configs) and your own ROM.
 
     python3 tools/bw2/funcmap.py <pokebw2>/config/b2_us/arm9 <rom.nds> out/b2_funcs.txt
+    python3 tools/bw2/funcmap.py <pokebw2>/config/w2_us/arm9 <rom.nds> out/w2_funcs.txt
+    python3 tools/bw2/funcmap.py <pokebw2>/config/b2_us/arm9 - out/IREO.txt
+
+With - for the ROM, the overlay functions' first bytes are left as ?: the program reads them
+from the player's ROM when it starts (frontend/funcwatch.h), so the table can go in a program
+that is shared (the Switch's, tools/switch/build_game.sh bw).
 
 Each line: <address> <a|t> <module> <first bytes|-> <name>
   address  where the function starts in the DS's memory (hex)
@@ -75,8 +81,18 @@ def overlays(rom):
 
 def main():
     cfg, rom_path, out_path = sys.argv[1:4]
-    rom = open(rom_path, "rb").read()
-    ovs = overlays(rom)
+    if rom_path == "-":
+        rom, ovs = None, {}
+    else:
+        rom = open(rom_path, "rb").read()
+        # (Each version's functions are at its own addresses: the other version's table would
+        # point into the middle of functions.)
+        want = {"b2_us": b"IREO", "w2_us": b"IRDO"}
+        version = os.path.basename(os.path.dirname(os.path.normpath(cfg)))
+        if version in want and rom[0x0C:0x10] != want[version]:
+            sys.exit(f"this ROM is {rom[0x0C:0x10].decode('ascii', 'replace')}, but {version} is for "
+                     f"{want[version].decode()} ({'Black 2' if version == 'b2_us' else 'White 2'}, US)")
+        ovs = overlays(rom)
     rows = []
 
     def read(path, module, check):
@@ -87,7 +103,7 @@ def main():
             if not m:
                 continue
             name, kind, addr = m.group(1), m.group(2), int(m.group(3), 16)
-            first = "-"
+            first = "?" if rom is None and module.startswith("ov") else "-"
             if check:
                 base, data = check
                 off = addr - base

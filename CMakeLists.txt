@@ -221,6 +221,9 @@ elseif(SSR_SWITCH)
     # no rebuild. The icon is icon.jpg in the build folder when there is one (your own, a
     # 256x256 JPEG; kept out of the source), otherwise libnx's default.
     set(SSR_NRO_TITLE "ssrecomp" CACHE STRING "Title shown in the Homebrew Menu")
+    # Files put in the .nro's romfs (for the Black games' shared build, their function tables
+    # made without a ROM: tools/switch/build_game.sh bw). Empty: none.
+    set(SSR_SWITCH_ROMFS "" CACHE PATH "Folder whose files go in the .nro's romfs")
     add_custom_target(ssrecomp_nro ALL
         COMMAND "${CMAKE_COMMAND}"
             "-DNACPTOOL=${SSR_NACPTOOL}" "-DELF2NRO=${SSR_ELF2NRO}"
@@ -228,6 +231,7 @@ elseif(SSR_SWITCH)
             "-DNACP=${CMAKE_CURRENT_BINARY_DIR}/ssrecomp.nacp"
             "-DTITLE=${SSR_NRO_TITLE}" "-DVERSION=${SSR_NRO_VERSION}"
             "-DICON=${CMAKE_CURRENT_BINARY_DIR}/icon.jpg" "-DDEFAULT_ICON=${DEVKITPRO}/libnx/default_icon.jpg"
+            "-DROMFS=${SSR_SWITCH_ROMFS}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/switch/make_nro.cmake"
         DEPENDS ssrecomp
         COMMENT "Making ssrecomp.nro"
