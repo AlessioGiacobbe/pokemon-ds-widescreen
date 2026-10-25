@@ -706,12 +706,13 @@ struct WideAccess
     // and colours (linearly once divided by W, as the renderers interpolate them). Where that
     // cannot be done, the corners are only moved, stretching the polygon: a corner without such
     // an edge (its neighbours as far out as it is, or the edge so short it would be continued
-    // many times over), or a texture that does not repeat and would be continued past its end
-    // (its last column drawn over and over, a band of one colour: the clouds by the pier).
+    // many times over), a texture that does not repeat and would be continued past its end
+    // (its last column drawn over and over, a band of one colour: the clouds by the pier), or
+    // one that ends exactly at the corner (below).
     static void Continue(Polygon* poly, int side, s32 near, s32 limit, s32 edge)
     {
         const u32 n = poly->NumVertices;
-        struct Corner { s32 x, y, z; float invW, s, t, r, g, b; };
+        struct Corner { s32 x, y, z; float invW, s, t, r, g, b; s32 rs, rt; };
         Corner c[10];
         for (u32 v = 0; v < n; v++)
         {
@@ -719,7 +720,8 @@ struct WideAccess
             const float invW = poly->FinalW[v] > 0 ? 1.0f / (float)poly->FinalW[v] : 1.0f;
             c[v] = { p->HiresPosition[0], p->HiresPosition[1], poly->FinalZ[v], invW,
                 p->TexCoords[0] * invW, p->TexCoords[1] * invW,
-                p->FinalColor[0] * invW, p->FinalColor[1] * invW, p->FinalColor[2] * invW };
+                p->FinalColor[0] * invW, p->FinalColor[1] * invW, p->FinalColor[2] * invW,
+                p->TexCoords[0], p->TexCoords[1] };
         }
         // The new corners, worked out first: all of them are continued, or none.
         struct Moved { bool out; s32 y, z, w; s16 s, t; s32 r, g, b; };
@@ -727,8 +729,9 @@ struct WideAccess
         const u32 tp = poly->TexParam;
         const bool textured = (tp >> 26) & 7;
         const float sMax = (float)((8 << ((tp >> 20) & 7)) * 16), tMax = (float)((8 << ((tp >> 23) & 7)) * 16);
-        bool carry = true;
-        for (u32 v = 0; v < n; v++)
+        static const bool stretchOnly = getenv("SSR_WIDE_EXTEND_STRETCH") != nullptr; // (to compare)
+        bool carry = !stretchOnly;
+        for (u32 v = 0; v < n && carry; v++)
         {
             const Corner& o = c[v];
             m[v].out = side == 1 ? o.x <= near && o.x < limit : o.x >= near && o.x > limit;
@@ -745,6 +748,21 @@ struct WideAccess
             {
                 carry = false;
                 break;
+            }
+            // A texture that ends exactly at the corner, at a whole number of its repeats (Castelia's
+            // sky: each panel one repeat of its own picture), goes on in the panel beside it,
+            // which the game left out and which may show another picture: carried on, it starts
+            // again with a seam where the polygon ended. Stretched, it has none.
+            if (textured)
+            {
+                const bool alongS = std::abs(o.rs - in.rs) >= std::abs(o.rt - in.rt);
+                const s32 size = alongS ? (s32)sMax : (s32)tMax, at0 = alongS ? o.rs : o.rt;
+                const s32 phase = ((at0 % size) + size) % size;
+                if (phase < 16 || phase > size - 16)
+                {
+                    carry = false;
+                    break;
+                }
             }
             const float s = at(in.s, o.s) / invW, tt = at(in.t, o.t) / invW;
             // (Half a texel of slack for rounding.)
