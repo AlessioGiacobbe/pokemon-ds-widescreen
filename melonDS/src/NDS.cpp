@@ -456,7 +456,7 @@ void NDS::Reset()
     else
     {
         ARM9ClockShift = 1;
-        MainRAMMask = 0x3FFFFF;
+        MainRAMMask = LargeMainRAM ? 0x7FFFFF : 0x3FFFFF;
     }
     // has to be called before InitTimings
     // otherwise some PU settings are completely
@@ -470,6 +470,8 @@ void NDS::Reset()
     InitTimings();
 
     memset(MainRAM, 0, MainRAMMask + 1);
+    // (Past the 8 MB, where the DS never looks; it goes into save states with the rest.)
+    if (ConsoleType == 0) memcpy(&MainRAM[LargeMainRAMMark], LargeMainRAM ? "SSR8MB\0\0" : "\0\0\0\0\0\0\0\0", 8);
     memset(SharedWRAM, 0, 0x8000);
     memset(ARM7WRAM, 0, 0x10000);
 
@@ -759,6 +761,8 @@ bool NDS::DoSavestate(Savestate* file)
 
     if (!file->Saving)
     {
+        if (ConsoleType == 0)
+            MainRAMMask = memcmp(&MainRAM[LargeMainRAMMark], "SSR8MB", 6) == 0 ? 0x7FFFFF : 0x3FFFFF;
         GPU.SetPowerCnt(PowerControl9);
 
         SPU.SetPowerCnt(PowerControl7 & 0x0001);

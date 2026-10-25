@@ -44,6 +44,12 @@
   The graphics chip now keeps its pictures compressed and draws the world straight into
   the frame it shows, and each DS texture is decoded once (when the game changes it)
   rather than again for every pixel (that decoding was over half of its drawing time).
+- Black 2: with the widescreen world on, the game loads more of its map beside you (3 of its
+  32-tile chunks across instead of 2), so the wide view no longer comes to the end of the
+  land where the DS's own screen could not see (beside the cliff at Aspertia's lookout). The
+  DS has no room for that in its 4 MB, so Black 2 now gets 8 MB, as the DS's development units
+  have, with the game's memory moved into the upper half (as it is given more on a DSi). Save
+  states made before keep the game's own map until the game is next started.
 - Black 2: where a sky or a distant layer of the view (Castelia zoomed out; the sky,
   mountains, haze and far trees from a lookout) ends a little short of the wide view's edge
   with nothing beside it, it is continued to the edge, its picture carried on, instead of

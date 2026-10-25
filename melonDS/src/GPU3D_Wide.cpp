@@ -643,22 +643,26 @@ struct WideAccess
         constexpr s32 full = 256 * 16;      // the view's width in HiresPosition's units
         const s32 dsLeft = (s32)(full / 2 - (full / 2) * 256.0f / view), dsRight = full - dsLeft;
         const s32 gap = full / 12;
-        struct Box { s32 x0, x1, y0, y1; u8 side; }; // side: 1 ends in the left strip, 2 the right
+        // side: 1 ends in the left strip, 2 the right; w0, w1: its nearest and furthest W (clip
+        // space, comparable between polygons, unlike the W normalised for each polygon)
+        struct Box { s32 x0, x1, y0, y1, w0, w1; u8 side; };
         static std::vector<Box> boxes;
-        boxes.assign(count, Box { 0, -1, 0, -1, 0 });
+        boxes.assign(count, Box { 0, -1, 0, -1, 0, 0, 0 });
         bool any = false;
         for (u32 i = 0; i < count; i++)
         {
             const Polygon* poly = list[i];
             if (!poly || poly->Degenerate || poly->Type != 0 || poly->NumVertices < 3) continue;
             Box& b = boxes[i];
-            b.x0 = b.y0 = INT32_MAX;
-            b.x1 = b.y1 = INT32_MIN;
+            b.x0 = b.y0 = b.w0 = INT32_MAX;
+            b.x1 = b.y1 = b.w1 = INT32_MIN;
             for (u32 v = 0; v < poly->NumVertices; v++)
             {
                 const s32* p = poly->Vertices[v]->HiresPosition;
                 b.x0 = std::min(b.x0, p[0]); b.x1 = std::max(b.x1, p[0]);
                 b.y0 = std::min(b.y0, p[1]); b.y1 = std::max(b.y1, p[1]);
+                const s32 w = poly->Vertices[v]->Position[3];
+                b.w0 = std::min(b.w0, w); b.w1 = std::max(b.w1, w);
             }
             if (b.x1 - b.x0 < full / 10) continue;
             if (b.x0 > 0 && b.x0 <= gap && b.x0 < dsLeft) b.side |= 1;
@@ -666,10 +670,15 @@ struct WideAccess
             any |= b.side != 0;
         }
         if (!any) return;
+        // The furthest W in the picture: a sky's layers are about as far as anything.
+        s32 farW = 0;
+        for (const Box& b : boxes)
+            if (b.x1 >= b.x0) farW = std::max(farW, b.w1);
         for (u32 i = 0; i < count; i++)
         {
             const Box b = boxes[i];
             if (!b.side) continue;
+            const bool far = (s64)b.w1 * 10 >= (s64)farW * 9;
             for (int side = 1; side <= 2; side++)
             {
                 if (!(b.side & side)) continue;
@@ -681,6 +690,13 @@ struct WideAccess
                     const Box& o = boxes[j];
                     if (j == i || o.x1 < o.x0 || (o.side & side)) continue;
                     if (list[j]->Translucent && (side == 1 ? o.x0 <= 0 : o.x1 >= full)) continue;
+                    // (For a layer of the distance, as far as anything in the picture, a sky's
+                    // mountains: nor, if it hangs from the top of the view, what stands below its
+                    // top, the land in front of it;
+                    if (far && b.y0 <= 0 && o.y0 > 0) continue;
+                    // nor anything wholly nearer, by more than a twentieth: the land in front of
+                    // it once Black 2 draws more of its map, frontend/bw2map.h.)
+                    if (far && (s64)o.w1 * 21 < (s64)b.w0 * 20) continue;
                     // (Touching counts: a neighbour sharing the corner to be moved would be bent.
                     // One beside only a third of its rows or less does not: the sea below the
                     // sky's haze at the horizon.)
@@ -688,11 +704,11 @@ struct WideAccess
                     if (o.x0 <= sx1 && o.x1 >= sx0 && rows > 0 && rows * 3 > b.y1 - b.y0) blocker = (s32)j;
                 }
                 if (log)
-                    fprintf(stderr, "[extend] polygon %u (x %d-%d, y %d-%d of %d) %s on the %s\n", i, b.x0, b.x1, b.y0, b.y1, full,
+                    fprintf(stderr, "[extend] polygon %u (x %d-%d, y %d-%d of %d, w %d-%d) %s on the %s\n", i, b.x0, b.x1, b.y0, b.y1, full, b.w0, b.w1,
                         blocker < 0 ? "continued" : "left (something beside it)", side == 1 ? "left" : "right");
                 if (log && blocker >= 0)
-                    fprintf(stderr, "[extend]   beside it: polygon %d (x %d-%d, y %d-%d)\n", blocker, boxes[blocker].x0, boxes[blocker].x1,
-                        boxes[blocker].y0, boxes[blocker].y1);
+                    fprintf(stderr, "[extend]   beside it: polygon %d (x %d-%d, y %d-%d, w %d-%d)\n", blocker, boxes[blocker].x0, boxes[blocker].x1,
+                        boxes[blocker].y0, boxes[blocker].y1, boxes[blocker].w0, boxes[blocker].w1);
                 if (blocker >= 0) continue;
                 Continue(list[i], side, (b.x0 + b.x1) / 2, side == 1 ? dsLeft : dsRight, side == 1 ? 0 : full);
             }

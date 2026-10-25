@@ -65,6 +65,7 @@
 #include "switch_platform.h"
 #include "funcwatch.h"
 #include "bw1.h" // Pokemon Black's own layouts (Black 1 only)
+#include "bw2map.h" // Black 2: more of the map loaded beside the player
 #if defined(__SWITCH__) && defined(SSR_DEKO3D)
 #include "dekoprobe.h"
 #endif
@@ -816,6 +817,8 @@ static void ApplyRenderer3D(NDS& nds, bool gpu)
 
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
+    // Black 2 (US) gets 8 MB of main RAM, for its wider map (frontend/bw2map.h).
+    const bool largeMainRAM = Bw2Map::WantsLargeRAM(rom);
     NDSCart::NDSCartArgs cartArgs;
     if (!sav.empty())
     {
@@ -844,6 +847,7 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
     UseFastMem = UseJit && nds->JIT.FastMemoryEnabled();
 #endif
     nds->SetNDSCart(std::move(cart));
+    nds->LargeMainRAM = largeMainRAM;
     nds->Reset();
     nds->SetupDirectBoot("game.nds");
     SetClock(*nds, fixedClock);
@@ -1928,6 +1932,7 @@ int main(int argc, char** argv)
     bool cgearAsked = false;  // its YES / NO was up in the last frame
     bool cgearHidden = false; // the question is being answered unseen this frame
     Bw1Layouts bw1; // Pokemon Black's own layouts (frontend/bw1.h; nothing for other games)
+    Bw2Map bw2map;  // Black 2: more of the map loaded beside the player (frontend/bw2map.h)
     if (funcWatchOn)
     {
         std::vector<std::string> bw2Names;
@@ -1973,6 +1978,15 @@ int main(int argc, char** argv)
                 bw2.weatherObj.push_back(bw2Find((std::string(w) + phase).c_str()));
         bw1.Init(opt.rom, funcWatch, bw2Names, opt.config); // Pokemon Black: its own functions too
         bw1.battleButtons = cfg.battleButtons;
+        {
+            char code[5] = {};
+            if (FILE* rf = fopen(opt.rom.c_str(), "rb"))
+            {
+                if (fseek(rf, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, rf) != 4) code[0] = 0;
+                fclose(rf);
+            }
+            bw2map.Init(code, funcWatch, bw2Names, *nds, cfg.wide);
+        }
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);

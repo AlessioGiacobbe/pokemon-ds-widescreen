@@ -295,6 +295,11 @@ public: // TODO: Encapsulate the rest of these members
 
     u8* MainRAM;
     u32 MainRAMMask;
+    // ssrecomp: 8 MB of main RAM in DS mode, as the DS's development units have, set before
+    // Reset (Pokemon Black 2's wider map, frontend/bw2map.h). A save state remembers which it was
+    // made with (LargeMainRAMMark), so states made with 4 MB still load as they were.
+    bool LargeMainRAM = false;
+    static constexpr u32 LargeMainRAMMark = 0xFFFFF0;
 
     const u32 MainRAMMaxSize = 0x1000000;
 

@@ -146,8 +146,23 @@ private:
                 if (mem != fn.first) continue;
             }
             Last[i] = Frame;
+            for (const Enter& e : Enters)
+                if (e.func == i) e.fn(e.user);
         }
     }
+
+public:
+    // `fn` is called at once, from the emulated processor, whenever function `f` is entered,
+    // before its first instruction (what Black 2's wider map needs, frontend/bw2map.h). The
+    // function must also be among those watched.
+    void AddOnEnter(int f, void (*fn)(void*), void* user)
+    {
+        if (f >= 0) Enters.push_back({ f, fn, user });
+    }
+
+private:
+    struct Enter { int func; void (*fn)(void*); void* user; };
+    std::vector<Enter> Enters;
 
     std::vector<Func> Funcs;
     std::vector<uint32_t> Last;
