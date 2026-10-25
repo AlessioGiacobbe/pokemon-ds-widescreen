@@ -200,22 +200,52 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
     };
     auto frontFirst = [](const Polygon* poly) { return !poly->Translucent && !(poly->Attr & (1 << 14)); };
 
-    // The opaque polygons, in one draw.
-    for (u32 i = 0; i < count; i++)
-        if (drawable(list[i]) && frontFirst(list[i])) add(list[i]);
-    if (!f.Vertices.empty())
+    // Whether the shader can discard any of a polygon's pixels (drawn with all its pixels): not
+    // when it is opaque (alpha 31, or 0, wireframe, drawn as 31) and so is every texel: no
+    // texture, or one of 4, 16 or 256 colours whose colour 0 is not transparent. (Alpha 31 then
+    // passes any alpha test but one with reference 31.)
+    auto neverDiscards = [&](const Polygon* poly) {
+        const u32 polyAlpha = (poly->Attr >> 16) & 31;
+        if ((polyAlpha != 31 && polyAlpha != 0) || g.RenderAlphaRef >= 31) return false;
+        const u32 format = texturing ? (poly->TexParam >> 26) & 7 : 0;
+        return format == 0 || ((format == 2 || format == 3 || format == 4) && !(poly->TexParam & (1u << 29)));
+    };
+
+    // The opaque polygons, in the game's order, in as few draws as runs of them alike: those
+    // whose pixels are never discarded tested early (see WideGpuDraw::Early).
     {
-        WideGpuDraw d {};
-        d.First = 0;
-        d.Count = (u32)f.Vertices.size();
-        d.Pixels = 0;
-        d.DepthWrite = true;
-        d.StencilTest = WideGpuStencil::Always;
-        d.StencilRef = 0x80;
-        d.StencilMask = 0xFF;
-        d.WriteDepthAttr = d.WriteFogAttr = true;
-        f.Draws.push_back(d);
+        bool runEarly = false;
+        u32 runFirst = 0;
+        auto closeRun = [&]() {
+            const u32 n = (u32)f.Vertices.size() - runFirst;
+            if (!n) return;
+            WideGpuDraw d {};
+            d.First = runFirst;
+            d.Count = n;
+            d.Pixels = 0;
+            d.DepthWrite = true;
+            d.StencilTest = WideGpuStencil::Always;
+            d.StencilRef = 0x80;
+            d.StencilMask = 0xFF;
+            d.WriteDepthAttr = d.WriteFogAttr = true;
+            d.Early = runEarly;
+            f.Draws.push_back(d);
+            runFirst = (u32)f.Vertices.size();
+        };
+        for (u32 i = 0; i < count; i++)
+            if (drawable(list[i]) && frontFirst(list[i]))
+            {
+                const bool early = neverDiscards(list[i]);
+                if (early != runEarly)
+                {
+                    closeRun();
+                    runEarly = early;
+                }
+                add(list[i]);
+            }
+        closeRun();
     }
+    const size_t opaqueDraws = f.Draws.size();
 
     // The others, in order. Consecutive polygons that are drawn alike share their draws: all
     // opaque ones (decals), or all translucent ones of one polygon ID; a polygon with pixels
@@ -257,17 +287,25 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         if (group.Translucent)
         {
             d.Pixels = 2;
+            // (For measuring on the Switch, SSR_WIDEGPU_EARLYTRANS=1: translucent polygons that do
+            // not write depth tested early too. Not exact: their discarded pixels, transparent
+            // texels, would still mark the stencil with their polygon ID.)
+            static const bool earlyTrans = getenv("SSR_WIDEGPU_EARLYTRANS") && !strcmp(getenv("SSR_WIDEGPU_EARLYTRANS"), "1");
+            d.Early = earlyTrans && !group.WriteDepth;
             d.DepthWrite = group.WriteDepth;
             d.WriteDepthAttr = group.WriteDepth;
             d.WriteFogAttr = false;
             d.StencilRef = (u8)(0x80 | group.Id);
             if (blendEnabled)
             {
-                // Where the picture has no alpha yet: drawn as they are.
+                // Where the picture has no alpha yet: drawn as they are. (Nowhere, when the rear
+                // plane has alpha: every pixel's stencil has 0x80 from the start. The pass is then
+                // left out, rather than having the graphics chip shade all its pixels, which it
+                // does before testing them, for nothing.)
                 d.StencilTest = WideGpuStencil::NotEqual;
                 d.StencilMask = 0x80;
                 d.Blend = false;
-                f.Draws.push_back(d);
+                if (!(f.ClearStencil & 0x80)) f.Draws.push_back(d);
                 // Elsewhere, blended, except over their own ID.
                 d.StencilMask = 0xFF;
                 d.Blend = true;
@@ -313,6 +351,64 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
     static const bool stats = getenv("SSR_WIDE_GPU_STATS") != nullptr;
     if (stats && W > 256)
     {
+        // And how many pixels each kind of draw covers (as the graphics chip shades them all
+        // when its shader may discard): triangles clipped to the picture.
+        auto area = [&](const WideGpuVertex* t) {
+            float px[16], py[16], qx[16], qy[16];
+            int n = 3;
+            for (int i = 0; i < 3; i++) { px[i] = t[i].X; py[i] = t[i].Y; }
+            for (int edge = 0; edge < 4; edge++)
+            {
+                int m = 0;
+                auto inside = [&](float x, float y) {
+                    return edge == 0 ? x >= 0 : edge == 1 ? x <= W : edge == 2 ? y >= 0 : y <= H;
+                };
+                for (int i = 0; i < n; i++)
+                {
+                    const int j = (i + 1) % n;
+                    const bool a = inside(px[i], py[i]), b = inside(px[j], py[j]);
+                    if (a) { qx[m] = px[i]; qy[m] = py[i]; m++; }
+                    if (a != b)
+                    {
+                        const float bound = edge == 0 ? 0 : edge == 1 ? W : edge == 2 ? 0 : H;
+                        const float tt = edge < 2 ? (bound - px[i]) / (px[j] - px[i]) : (bound - py[i]) / (py[j] - py[i]);
+                        qx[m] = px[i] + (px[j] - px[i]) * tt;
+                        qy[m] = py[i] + (py[j] - py[i]) * tt;
+                        m++;
+                    }
+                }
+                n = m;
+                std::copy(qx, qx + m, px);
+                std::copy(qy, qy + m, py);
+            }
+            double sum = 0;
+            for (int i = 0; i < n; i++) sum += (double)px[i] * py[(i + 1) % n] - (double)px[(i + 1) % n] * py[i];
+            return std::abs(sum) / 2;
+        };
+        static double cover[5] = {}; // opaque that cannot discard, opaque that may, other opaque, translucent, frames
+        for (size_t di = 0; di < f.Draws.size(); di++)
+        {
+            const WideGpuDraw& d = f.Draws[di];
+            for (u32 v = d.First; v + 2 < d.First + d.Count + 0; v += 3)
+            {
+                const WideGpuPolygon& p = f.Polygons[f.Vertices[v].Poly];
+                const double a = area(&f.Vertices[v]);
+                int kind;
+                (void)p;
+                if (d.Early) kind = 0;
+                else if (di < opaqueDraws) kind = 1;
+                else kind = d.Pixels == 2 ? 3 : 2;
+                cover[kind] += a;
+            }
+        }
+        if (++cover[4] >= 120)
+        {
+            const double n = cover[4] * 1e6;
+            fprintf(stderr, "[widegpu] million pixels a picture: opaque without discards %.2f, opaque that may discard %.2f, "
+                "other opaque %.2f, translucent passes %.2f (rear plane alpha %u, blending %d)\n", cover[0] / n, cover[1] / n, cover[2] / n, cover[3] / n,
+                clearAlpha, blendEnabled ? 1 : 0);
+            std::fill(cover, cover + 5, 0.0);
+        }
         static u64 frames = 0, polys = 0, wpolys = 0;
         frames++;
         for (const WideGpuPolygon& p : f.Polygons)

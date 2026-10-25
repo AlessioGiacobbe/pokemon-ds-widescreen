@@ -62,6 +62,8 @@ public:
         }
         if (!OpenGL::CompileVertexFragmentProgram(MainProgram, Source(wide_vsh_text, sizeof(wide_vsh_text)),
                 fsh, "WideMain", {}, {}) ||
+            !OpenGL::CompileVertexFragmentProgram(EarlyProgram, Source(wide_vsh_text, sizeof(wide_vsh_text)),
+                Variant(fsh, "WIDE_EARLY"), "WideEarly", {}, {}) ||
             !OpenGL::CompileVertexFragmentProgram(FinalProgram, Source(final_vsh_text, sizeof(final_vsh_text)),
                 Source(final_fsh_text, sizeof(final_fsh_text)), "WideFinal", {}, {}))
         {
@@ -96,6 +98,7 @@ public:
     ~WideGpuGL() override
     {
         glDeleteProgram(MainProgram);
+        glDeleteProgram(EarlyProgram);
         glDeleteProgram(FinalProgram);
         glDeleteBuffers(1, &FrameUBO);
         glDeleteBuffers(1, &DrawUBO);
@@ -169,8 +172,14 @@ public:
         glEnable(GL_STENCIL_TEST);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
         glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+        bool earlyBound = false;
         for (const WideGpuDraw& d : f.Draws)
         {
+            if (d.Early != earlyBound)
+            {
+                glUseProgram(d.Early ? EarlyProgram : MainProgram);
+                earlyBound = d.Early;
+            }
             const u32 params[4] = { d.First, d.Pixels, (u32)d.DepthBias, f.WDepth ? 1u : 0u };
             glBindBuffer(GL_UNIFORM_BUFFER, DrawUBO);
             glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(params), params);
@@ -276,7 +285,7 @@ private:
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
 
-    GLuint MainProgram = 0, FinalProgram = 0;
+    GLuint MainProgram = 0, EarlyProgram = 0, FinalProgram = 0;
     GLuint FrameUBO = 0, DrawUBO = 0, SSBO[4] {}, ReadPBO = 0, EmptyVAO = 0;
     GLuint BufTex[3] {};   // the texture memory as bytes and 16-bit texels, the palette memory (WIDE_TEXBUF)
     bool TexBuf = false;

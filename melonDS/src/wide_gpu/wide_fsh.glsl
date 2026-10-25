@@ -14,6 +14,12 @@ struct WidePolygon
     uint attr, texParam, texPalette, flags; // flags: bit 0 W-buffer, bit 1 textured
 };
 
+#ifdef WIDE_EARLY
+// A variant for draws whose pixels are never discarded (WideGpuDraw::Early): depth and stencil
+// tested before shading.
+layout (early_fragment_tests) in;
+#endif
+
 #ifdef WIDE_TEXBUF
 // A variant for the Switch (deko3D): the texture and palette memory read as buffer textures,
 // through the texture cache, rather than as storage buffers, which the Switch's graphics chip

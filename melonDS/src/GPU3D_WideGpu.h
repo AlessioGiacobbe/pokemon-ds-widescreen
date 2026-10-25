@@ -76,6 +76,11 @@ struct WideGpuDraw
     bool Blend;
     bool WriteDepthAttr, WriteFogAttr; // the second target's two channels
     s32 DepthBias;        // subtracted from the depth tested and stored
+    // Depth and stencil tested (and written) before the pixel is shaded, not after: the graphics
+    // chip then shades only what is in front. For polygons whose pixels the shader never
+    // discards (opaque ones with opaque textures), where that changes nothing; the shader
+    // with a discard in it would otherwise have its pixels tested after shading.
+    bool Early = false;
 };
 
 struct WideGpuFrame

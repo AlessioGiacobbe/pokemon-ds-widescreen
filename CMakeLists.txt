@@ -151,12 +151,14 @@ elseif(SSR_SWITCH)
         set(SSR_DEKO_OUT "${CMAKE_CURRENT_BINARY_DIR}/deko_shaders")
         file(MAKE_DIRECTORY "${SSR_DEKO_OUT}")
         set(SSR_DEKO_HEADERS)
-        # folder:shader:stage:header[:DEFINE] (the header deko_shaders/<header>.h holds the array
+        # folder:shader:stage:header[:DEFINE[,DEFINE]] (the header deko_shaders/<header>.h holds the array
         # <header>; with a DEFINE, the shader is compiled with it defined, as a variant: uam has
         # no option for that, so a copy with the #define after its first line is compiled)
         foreach(shader frontend/deko:probe_vsh:vert:probe_vsh frontend/deko:probe_fsh:frag:probe_fsh
                 melonDS/src/wide_gpu:wide_vsh:vert:wide_vsh_dksh melonDS/src/wide_gpu:wide_fsh:frag:wide_fsh_dksh
                 melonDS/src/wide_gpu:wide_fsh:frag:wide_fsh_texbuf_dksh:WIDE_TEXBUF
+                melonDS/src/wide_gpu:wide_fsh:frag:wide_fsh_early_dksh:WIDE_EARLY
+                melonDS/src/wide_gpu:wide_fsh:frag:wide_fsh_texbuf_early_dksh:WIDE_TEXBUF,WIDE_EARLY
                 melonDS/src/wide_gpu:final_vsh:vert:final_vsh_dksh melonDS/src/wide_gpu:final_fsh:frag:final_fsh_dksh)
             string(REPLACE ":" ";" parts "${shader}")
             list(GET parts 0 folder)

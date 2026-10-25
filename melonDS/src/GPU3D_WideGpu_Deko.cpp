@@ -21,6 +21,8 @@
 #include "deko_shaders/wide_vsh_dksh.h"
 #include "deko_shaders/wide_fsh_dksh.h"
 #include "deko_shaders/wide_fsh_texbuf_dksh.h"
+#include "deko_shaders/wide_fsh_early_dksh.h"
+#include "deko_shaders/wide_fsh_texbuf_early_dksh.h"
 #include "deko_shaders/final_vsh_dksh.h"
 #include "deko_shaders/final_fsh_dksh.h"
 
@@ -82,11 +84,15 @@ struct Shared
     DkQueue Queue = nullptr;
     DkMemBlock CodeMem = nullptr;
     DkShader MainVsh, MainFsh, FinalVsh, FinalFsh;
+    DkShader EarlyFsh;     // the fragment shader with early tests (WideGpuDraw::Early)
+    bool HaveEarly = false;
     int Users = 0;
-    // For measuring on the Switch (SSR_WIDEGPU_SHADER=texbuf, SSR_WIDEGPU_ZCULL=1 in the
-    // environment, e.g. through a test run's --env): the fragment shader that reads the texture
-    // and palette memory as buffer textures, through the texture cache; the graphics chip's
-    // coarse depth test (Zcull), which rejects hidden pixels in blocks before they are shaded.
+    // The fragment shader reads the texture and palette memory as buffer textures, through the
+    // texture cache (measured in the city: 0.4 ms less a picture than storage buffers, the same
+    // picture); SSR_WIDEGPU_SHADER=ssbo in the environment goes back to storage buffers.
+    // For measuring on the Switch (in the environment, e.g. through a test run's --env):
+    // SSR_WIDEGPU_ZCULL=1, the graphics chip's coarse depth test (Zcull), which rejects hidden
+    // pixels in blocks before they are shaded (no gain measured in the city).
     // And to find what the time goes on, with wrong pictures: SSR_WIDEGPU_PLAIN=1, no textures;
     // SSR_WIDEGPU_NOATTR=1, the second target (depth and fog flag, for the fog) not written;
     // SSR_WIDEGPU_DEPTH=24, a 32-bit depth buffer (24-bit fixed point) instead of 64 bits.
@@ -155,7 +161,7 @@ bool AcquireShared(std::string& info)
     }
     const char* shader = getenv("SSR_WIDEGPU_SHADER");
     const char* zcull = getenv("SSR_WIDEGPU_ZCULL");
-    Sh->TexBuf = shader && !strcmp(shader, "texbuf");
+    Sh->TexBuf = !(shader && !strcmp(shader, "ssbo"));
     Sh->Zcull = zcull && !strcmp(zcull, "1");
     auto on = [](const char* name, const char* value) {
         const char* v = getenv(name);
@@ -175,6 +181,12 @@ bool AcquireShared(std::string& info)
         fprintf(stderr, "[widegpu] deko3D: the buffer-texture fragment shader is not in this build\n");
         Sh->TexBuf = false;
     }
+    // (Without the early-test variant, the draws marked early are drawn with the usual shader:
+    // the same picture, only slower.)
+    if (Sh->CodeMem)
+        Sh->HaveEarly = Sh->TexBuf ? LoadShader(Sh->EarlyFsh, wide_fsh_texbuf_early_dksh, sizeof(wide_fsh_texbuf_early_dksh), used)
+                                   : LoadShader(Sh->EarlyFsh, wide_fsh_early_dksh, sizeof(wide_fsh_early_dksh), used);
+    if (!Sh->HaveEarly) fprintf(stderr, "[widegpu] deko3D: the early-test fragment shader is not in this build\n");
     fprintf(stderr, "[widegpu] deko3D: %s fragment shader, Zcull %s\n", Sh->TexBuf ? "buffer-texture" : "storage-buffer",
         Sh->Zcull ? "on" : "off");
     if (!Sh->CodeMem || !LoadShader(Sh->MainVsh, wide_vsh_dksh, sizeof(wide_vsh_dksh), used) ||
@@ -351,7 +363,9 @@ public:
         report(DkCounter_Timestamp, RepCleared);
 
         const DkShader* main[2] = { &Sh->MainVsh, &Sh->MainFsh };
+        const DkShader* early[2] = { &Sh->MainVsh, &Sh->EarlyFsh };
         dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, main, 2);
+        bool earlyBound = false;
         const DkBufExtents frame = { DataAddr + OffFrame, FrameSize };
         const DkBufExtents draw = { DataAddr + OffDraw, DrawSize };
         const DkBufExtents ubos[2] = { frame, draw };
@@ -390,6 +404,12 @@ public:
 
         for (const WideGpuDraw& d : f.Draws)
         {
+            const bool wantEarly = d.Early && Sh->HaveEarly;
+            if (wantEarly != earlyBound)
+            {
+                dkCmdBufBindShaders(Cmd, DkStageFlag_GraphicsMask, wantEarly ? early : main, 2);
+                earlyBound = wantEarly;
+            }
             const u32 params[4] = { d.First, d.Pixels, (u32)d.DepthBias, f.WDepth ? 1u : 0u };
             dkCmdBufPushConstants(Cmd, draw.addr, draw.size, 0, sizeof(params), params);
             DkDepthStencilState ds;
