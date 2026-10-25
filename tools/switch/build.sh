@@ -10,13 +10,26 @@
 # is shared with the PC build.
 #
 # The result, build-switch/ssrecomp.nro, holds your game's code: keep it to yourself.
+#
+# SSR_SWITCH_JIT=1: a build with melonDS's JIT (EMULATION in the pause menu), from the folder
+# of generated tables given in SSR_SWITCH_GEN (e.g. gen-tables, made by
+# tools/soulsilver/tables_only.py: everything but the recompiled code, so the build takes a
+# couple of minutes and the .nro is small), into build-switch-jit unless SSR_SWITCH_BUILD says
+# otherwise.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$HERE"
 DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
 export DEVKITPRO
-BUILD="${SSR_SWITCH_BUILD:-build-switch}"
+JIT="${SSR_SWITCH_JIT:-0}"
+if [ "$JIT" = 1 ]; then
+    BUILD="${SSR_SWITCH_BUILD:-build-switch-jit}"
+    GEN="${SSR_SWITCH_GEN:-$HERE/gen}"
+else
+    BUILD="${SSR_SWITCH_BUILD:-build-switch}"
+    GEN="$HERE/gen"
+fi
 
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
@@ -52,7 +65,15 @@ if [ -z "$JOBS" ]; then
 fi
 
 say "Configuring ($BUILD)"
-if [ ! -f "$BUILD/build.ninja" ]; then
+if [ "$JIT" = 1 ]; then
+    # (Configured every time, so that an older build folder picks up new options.)
+    [ -f "$GEN/sources.cmake" ] || fail "no generated tables in $GEN"
+    cmake -S . -B "$BUILD" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Switch.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DSSR_GENERATED_DIR="$GEN" \
+        -DSSR_JIT=ON
+elif [ ! -f "$BUILD/build.ninja" ]; then
     cmake -S . -B "$BUILD" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Switch.cmake" \
         -DCMAKE_BUILD_TYPE=Release \

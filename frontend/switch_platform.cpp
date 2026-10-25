@@ -146,14 +146,23 @@ bool Start(int& argc, char**& argv)
     else if (!strcmp(code, "IRBO")) saveName = "black.sav";
     fprintf(stderr, "[switch] game code %s, save %s\n", code[0] ? code : "?", saveName.c_str());
     g_args = { argc > 0 && argv[0] ? argv[0] : "ssrecomp", rom, "--save", dir + "/" + saveName, "--fullscreen" };
-    // A game that is not recompiled (Black 2) comes with its function table, made on the PC
-    // by tools/bw2/funcmap.py; its layouts follow the functions that run.
+    // A game that is not recompiled (Black, Black 2) comes with its function table, made on the
+    // PC by tools/bw2/funcmap.py or tools/bw1/funcmap.py; its layouts follow the functions that
+    // run. SoulSilver needs none (its layouts come from its own tables, built into the program)
+    // and must not be given one: a function table switches to the Black games' layouts.
     struct stat st;
-    if (stat((dir + "/funcs.txt").c_str(), &st) == 0)
+    const bool funcs = stat((dir + "/funcs.txt").c_str(), &st) == 0 && strcmp(code, "IPGE") != 0;
+    if (funcs)
     {
         g_args.push_back("--funcs");
         g_args.push_back(dir + "/funcs.txt");
+    }
+    // Black and Black 2 run on melonDS's JIT or its interpreter; so does SoulSilver in a build
+    // with the JIT (tools/switch/build.sh with SSR_JIT=ON: about 1.7 times as fast as its
+    // recompiled code; a build without the JIT runs the recompiled code, given neither option).
 #ifdef JIT_ENABLED
+    if (funcs || !strcmp(code, "IPGE"))
+    {
         // melonDS's JIT (code translated for the Switch's processor as it runs), unless the
         // settings say otherwise (EMULATION in the pause menu, "jit=0" in ssrecomp.cfg), L is
         // held while the game starts, or the last start with the JIT never got going (a file
@@ -221,10 +230,10 @@ bool Start(int& argc, char**& argv)
         // (Read by the core, melonDS/src/ARMJIT_Memory.cpp, and by MakeConsole.)
         if (!fastMem) setenv("SSR_JIT_NOFASTMEM", "1", 1);
         g_args.push_back(jit ? "--jit" : "--interp");
-#else
-        g_args.push_back("--interp");
-#endif
     }
+#else
+    if (funcs) g_args.push_back("--interp");
+#endif
     if (testRun)
     {
         g_args.insert(g_args.end(), testArgs.begin(), testArgs.end());
