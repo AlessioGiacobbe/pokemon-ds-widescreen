@@ -287,13 +287,13 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         if (group.Translucent)
         {
             d.Pixels = 2;
-            // Translucent polygons that do not write depth are tested early too: hidden behind
-            // what is drawn, they are not shaded (in Castelia, 1.2 million pixels fewer and 1.5 ms
-            // less a 720-line picture, the same picture). Not exact in general: a pixel they
-            // discard (a transparent texel) still marks the stencil with their polygon ID, which
-            // keeps a later translucent polygon of the same ID from blending there.
-            // SSR_WIDEGPU_EARLYTRANS=0 tests them after shading, exactly.
-            static const bool earlyTrans = !(getenv("SSR_WIDEGPU_EARLYTRANS") && !strcmp(getenv("SSR_WIDEGPU_EARLYTRANS"), "0"));
+            // (SSR_WIDEGPU_EARLYTRANS=1: translucent polygons that do not write depth tested early
+            // too, before shading. In Castelia 1.2 million pixels fewer and 1.5 ms less a 720-line
+            // picture, the same picture; but not exact in general: a pixel they discard, a
+            // transparent texel, still marks the stencil with their polygon ID, which keeps a
+            // later translucent polygon of the same ID from blending there. A battle's grass
+            // tufts at the platform's edge came out wrong, so it is off.)
+            static const bool earlyTrans = getenv("SSR_WIDEGPU_EARLYTRANS") && !strcmp(getenv("SSR_WIDEGPU_EARLYTRANS"), "1");
             d.Early = earlyTrans && !group.WriteDepth;
             d.DepthWrite = group.WriteDepth;
             d.WriteDepthAttr = group.WriteDepth;

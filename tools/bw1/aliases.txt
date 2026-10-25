@@ -1,0 +1,71 @@
+# Pokemon Black (IRBO): Black 2 (pokebw2) names for the functions of Black's that the shared
+# Black 2 layouts watch (frontend/main.cpp, pickSceneBw2). tools/bw1/funcmap.py gives these
+# functions the Black 2 name in Black's funcs.txt, so the shared code finds them unchanged.
+#
+#   <pokebw2 name>  <aletheia name>  <module> <address>  <how it was matched>
+#
+# Matched by tools/bw1/match_bw2.py (pokebw2 753b3fd, aletheia 0d05b6cc, both ROMs): "exact" =
+# the same instructions with addresses masked; "alignN" = the same place between exact matches
+# in the corresponding overlay, N = instruction similarity; "position" = by hand, see below.
+# Every one also has the matching source file name in aletheia (btl_main.c, itemmenu.c, ...).
+# ConfirmDialog_Update: Black's BMP_MENU_ProcessYesNo (bmp_menu.c), the one after
+# BMP_MENU_CreateYesNo just as ConfirmDialog_Update follows ShopUI_CreateConfirmDialog (Black 2
+# rewrote its body). BChoiceMain_Task: Black 2's choice screen (its overlay 289 is new in Black
+# 2); its part, a YES / NO question on the touch screen in a battle ("Use next Pokemon?", "Give
+# a nickname?"), is Black's BTLV_SCD choice screen, polled by BTLV_CORE_PollYesNoMenu every frame
+# while it is up (Black 2's BtlvCore_PollYesNo): matched by role, "role".
+# StartMenu_Continue is Black's STARTMENU_StateConnectPrompt: the same C-Gear question as Black
+# 2's (message, YES / NO; B gives a second "is that OK?" YES / NO whose YES leaves the C-Gear
+# off; skipped at once when the C-Gear has not been obtained), so the shared code answers it
+# the same way (B, then A) and the player never sees it.
+FieldmapProc_Update          FIELDMAP_ProcMain                    ov021  02187fd0  exact
+EventFieldMenu_Callback      EVENT_FIELD_MENU_Main                ov010  0215fd0c  align0.84
+ItemMenuProc_Main            ITEMMENU_Main                        ov070  021b8904  align0.84
+BtlMain_ProcMain             BTL_MAIN_ProcMain                    ov093  021b6434  align0.89
+BtlvCore_WaitCommandSelect   BTLV_CORE_PollActionMenu             ov093  021e97a4  exact
+BtlvCore_WaitMoveSelect      BTLV_CORE_PollMoveMenu               ov093  021e98b4  align1.00
+PokeListProc_Main            POKELIST_Main                        ov091  021b65b8  align0.85
+TrainerCard_Main             VIEWER_MAIN_Main                     ov111  021c3f54  align0.72
+TownMap_ProcMain             TOWNMAP_Update                       ov072  021b98f8  exact
+ConfigPanel_Main             OPTION_MENU_Main                     ov068  021b980c  align0.96
+PStatus_ProcMain             P_STATUS_ProcMain                    ov131  021d65bc  exact
+ZknListSeq_Main              ZUKAN_LIST_RunState                  ov209  021bcc58  align0.88
+ZukanDetail_Main             ZUKAN_DETAIL_MAIN_Main               ov208  021bcbb4  align0.74
+Box2Proc_Main                BOX2_MAIN_Main                       ov170  021dc900  align0.93
+StartMenu_Continue           STARTMENU_StateConnectPrompt         ov088  021ba540  align0.80
+StartMenu_Main               STARTMENU_MenuMain                   ov088  021b9fe4  align0.68
+IntroProc_Main               INTRO_GRAPHIC_Main                   ov204  021bdb30  exact
+NameEntry_ProcMain           NAMEIN_GRAPHIC_Main                  ov194  021f1744  align0.88
+ConfirmDialog_Update         BMP_MENU_ProcessYesNo                main   0201febc  position
+BPlistMain_Task              B_PLIST_MAIN_Task                    ov198  0220f478  align0.98
+BBagMain_Task                B_BAG_MAIN_Main                      ov197  0220c914  align0.98
+BChoiceMain_Task             BTLV_CORE_PollYesNoMenu              ov093  021eac54  role
+BtlvInput_YesNoTask          BTLV_INPUT_MessageScreenOpenTask     ov094  02203d40  align0.94
+BtlMain_SetupAloneSingle     BTL_MAIN_TaskSetupSingle             ov093  021b6aac  exact
+BtlMain_SetupAloneDouble     BTL_MAIN_TaskSetupDouble             ov093  021b6c5c  exact
+BtlMain_SetupAloneTriple     BTL_MAIN_TaskSetupTriple             ov093  021b7050  exact
+BtlMain_SetupAloneRotation   BTL_MAIN_TaskSetupRotation           ov093  021b71d4  exact
+Flake_Main                   WEATHER_SNOW_Run                     ov025  021ee888  exact
+Flake_FadeIn                 WEATHER_SNOW_BeginParticles          ov025  021ee798  align0.98
+Flake_FadeOut                WEATHER_SNOW_EndFade                 ov025  021ee8ec  exact
+Blizzard_Main                WEATHER_BLIZZARD_Run                 ov025  021eec64  exact
+Blizzard_FadeIn              WEATHER_BLIZZARD_BeginParticles      ov025  021eeb74  align0.98
+Blizzard_FadeOut             WEATHER_BLIZZARD_EndFade             ov025  021eecec  exact
+Flutter_Main                 WEATHER_DOWNPOUR_Run                 ov025  021ef0d0  align1.00
+Flutter_FadeIn               WEATHER_DOWNPOUR_BeginParticles      ov025  021eeff0  align0.98
+Flutter_FadeOut              WEATHER_DOWNPOUR_EndFade             ov025  021ef12c  exact
+Speck_Main                   WEATHER_DIAMOND_DUST_Run             ov025  021ef4e4  align1.00
+Speck_FadeIn                 WEATHER_DIAMOND_DUST_BeginParticles  ov025  021ef404  align0.98
+Speck_FadeOut                WEATHER_DIAMOND_DUST_EndFade         ov025  021ef538  exact
+Rain_Main                    WEATHER_RAIN_Run                     ov026  021ee888  align1.00
+Rain_FadeIn                  WEATHER_RAIN_BeginParticles          ov026  021ee790  align0.98
+Rain_FadeOut                 WEATHER_RAIN_EndFade                 ov026  021ee8e4  exact
+Thunder_Main                 WEATHER_THUNDERSTORM_Run             ov026  021eecd8  exact
+Thunder_FadeIn               WEATHER_THUNDERSTORM_BeginParticles  ov026  021eeb44  align0.99
+Thunder_FadeOut              WEATHER_THUNDERSTORM_EndFade         ov026  021eed44  exact
+GustyRain_Main               WEATHER_STORM_Run                    ov026  021ef104  exact
+GustyRain_FadeIn             WEATHER_STORM_BeginParticles         ov026  021eefa8  align0.99
+GustyRain_FadeOut            WEATHER_STORM_EndFade                ov026  021ef180  exact
+Sandstorm_Main               WEATHER_SANDSTORM_Run                ov027  021ee888  exact
+Sandstorm_FadeIn             WEATHER_SANDSTORM_BeginParticles     ov027  021ee7a4  align0.98
+Sandstorm_FadeOut            WEATHER_SANDSTORM_EndFade            ov027  021ee908  exact

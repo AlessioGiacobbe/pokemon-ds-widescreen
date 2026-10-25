@@ -321,6 +321,42 @@ inline Element Crop(int screen, int sx, int sy, int sw, int sh)
 }
 
 // Arranges crops as one column (or one row), scaled together to fill the view.
+// Black and Black 2's save screen (SAVE in the X menu): the question, YES / NO, the card of the
+// saved game and the progress of the save are all on the touch screen, laid out alike in both
+// games. Added to a scene of the overworld: the touch screen's message box (y 2-45) at full size
+// along the bottom of the view, where the games' other messages are, and the rest of the touch
+// screen (y 46-191: the card, YES / NO over its upper right corner, then when the game was last
+// saved or the progress of the save) as a panel in the upper right corner. Each only while it is
+// there: the card once its white row of Pokemon is drawn (not over the black of the screen
+// before it), the box while it is white inside at its left and right ends, where no text goes
+// (at the start and between the question and the save the games have a heading there instead).
+inline void SaveScreenPieces(Scene& sc, bool wideView, float viewRight, const ScreenImage* screens)
+{
+    if (!screens || !screens[1].pixels) return;
+    auto lum = [&](int x, int y) {
+        const uint32_t c = screens[1].pixels[y * 256 + x];
+        return (((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF)) / 3;
+    };
+    if (lum(20, 108) > 200)
+    {
+        const float scale = 0.6f, pad = 2;
+        Element panel = Crop(1, 0, 46, 256, 146);
+        panel.scale = scale;
+        panel.dx = (wideView ? viewRight : 256.0f) - 256 * scale - pad - 2;
+        panel.dy = pad + 2;
+        panel.border = true;
+        panel.crisp = true;
+        sc.items.push_back(panel);
+    }
+    if (lum(5, 24) > 230 && lum(250, 24) > 230)
+    {
+        Element box = Crop(1, 0, 2, 256, 44);
+        box.dy = 192 - 44;
+        box.crisp = true;
+        sc.items.push_back(box);
+    }
+}
+
 inline Scene Stack(const char* name, std::vector<Element> crops, bool horizontal, float viewWidth)
 {
     float w = 0, h = 0;
