@@ -684,11 +684,9 @@ static bool UseJit = false;
 static int WideLinesNow = 0; // the widescreen 3D's height this frame (see where it is set)
 static bool UseFastMem = false; // the JIT's fast memory came on (MakeConsole)
 // The pause menu's EMULATION row: on the Switch, in builds with melonDS's JIT (Black 2).
-#if defined(__SWITCH__) && defined(JIT_ENABLED)
-#define SSR_MENU_EMULATION 1
-#else
+// (Not any more: FAST JIT is always used, with its automatic fallback for a start that fails
+// and the interpreter when L is held. Set to 1 to bring the row back for testing.)
 #define SSR_MENU_EMULATION 0
-#endif
 
 // Whether the 3D scene is drawn by the graphics chip (melonDS/src/GPU3D_GLThread.h) rather than
 // by melonDS's software renderer on a thread of its own.
@@ -1586,7 +1584,11 @@ int main(int argc, char** argv)
     for (const std::string& kv : opt.sets) cfg.Apply(kv);
     if (!opt.sets.empty() || opt.keepSettings) cfg.readOnly = true;
 #ifdef __SWITCH__
-    if (!opt.headless) SwitchPlatform::SetCpuBoost(cfg.cpuBoost);
+    // (No CPU BOOST any more: the system kept taking its boost mode away and the game dropped
+    // frames. sys-clk sets the clocks; see README. A boost a saved setting asks for is ignored.)
+    // One wide screen always: a layout or large screen saved by an older version is ignored.
+    if (!opt.layoutGiven) cfg.layout = "merged";
+    cfg.focusMode = 0;
 #endif
     if (opt.layoutGiven || opt.headless) cfg.layout = opt.layout;
     if (opt.fullscreen) cfg.fullscreen = true;
@@ -3289,14 +3291,26 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_RESUME,
+#ifndef __SWITCH__
+        M_LAYOUT, M_LARGE,
+#endif
+        M_FPS60,
+#ifndef __SWITCH__
+        M_FULLSCREEN,
+#endif
+        M_SMOOTH, M_WIDE, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
 #if defined(SSR_GPU3D) && !defined(__SWITCH__)
         M_GPU3D,
 #endif
-        M_SHOWFPS, M_BUTTONS, M_PADTOUCH,
+        M_SHOWFPS,
+#ifndef __SWITCH__
+        M_BUTTONS,
+#endif
+        M_PADTOUCH,
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
@@ -3312,16 +3326,20 @@ int main(int argc, char** argv)
         return i;
     };
     auto buildMenu = [&]() {
+#ifndef __SWITCH__
         static const char* large[] = { "AUTO", "TOP", "BOTTOM" };
+#endif
         menu.items = {
             { "RESUME", "" },
+#ifndef __SWITCH__
+            // (The Switch always shows the one wide screen these layouts are built around.)
             { "SCREEN LAYOUT", LayoutName(layout.mode) },
             { "LARGE SCREEN", large[focus.mode] },
+#endif
             { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
-#ifdef __SWITCH__
-            // Always full screen there; the same place in the menu holds the processor's speed.
-            { "CPU BOOST", cfg.cpuBoost ? "ON" : "OFF" },
-#else
+#ifndef __SWITCH__
+            // (Always full screen on the Switch. CPU BOOST was here: the system kept taking
+            // its boost mode away, so the game dropped frames; sys-clk sets the clocks there.)
             { "FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
 #endif
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
@@ -3344,9 +3362,8 @@ int main(int argc, char** argv)
             { "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF" },
 #endif
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
-#ifdef __SWITCH__
-            { "BUTTONS", "AS LABELLED" },
-#else
+#ifndef __SWITCH__
+            // (Nothing to choose on the Switch: its labels are the DS's positions.)
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
 #endif
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
@@ -4060,6 +4077,7 @@ int main(int argc, char** argv)
                 menu.open = false;
                 swallowMenuButtons = true;
                 break;
+#ifndef __SWITCH__
             case M_LAYOUT:
                 layout.mode = (LayoutMode)(((int)layout.mode + (dir < 0 ? 5 : 1)) % 6);
                 break;
@@ -4067,6 +4085,7 @@ int main(int argc, char** argv)
                 focus.mode = (focus.mode + (dir < 0 ? 2 : 1)) % 3;
                 focus.manualFlip = false;
                 break;
+#endif
             case M_BATTLEBUTTONS:
                 if (funcWatchOn && bw1.on) cfg.battleButtons = (cfg.battleButtons + (dir < 0 ? 2 : 1)) % 3;
                 else if (funcWatchOn) cfg.battleButtons = cfg.battleButtons == 2 ? 0 : 2; // CORNER, PANEL
@@ -4076,19 +4095,16 @@ int main(int argc, char** argv)
                 cfg.fps60 = !cfg.fps60;
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
                 break;
+#ifndef __SWITCH__
             case M_FULLSCREEN:
-#ifdef __SWITCH__
-                cfg.cpuBoost = !cfg.cpuBoost;
-                if (!SwitchPlatform::SetCpuBoost(cfg.cpuBoost) && cfg.cpuBoost) say("CPU BOOST NEEDS SYSTEM 7.0.0+");
-#else
                 cfg.fullscreen = !cfg.fullscreen;
                 if (window)
                 {
                     SDL_SetWindowFullscreen(window, cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                     SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
                 }
-#endif
                 break;
+#endif
             case M_SMOOTH:
                 cfg.smooth = !cfg.smooth;
                 applySmooth();
@@ -4132,12 +4148,11 @@ int main(int argc, char** argv)
             case M_SHOWFPS:
                 cfg.showFps = !cfg.showFps;
                 break;
-            case M_BUTTONS:
 #ifndef __SWITCH__
-                // (On the Switch there is nothing to choose: its labels are the DS's positions.)
+            case M_BUTTONS:
                 cfg.byLabel = !cfg.byLabel;
-#endif
                 break;
+#endif
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;

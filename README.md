@@ -58,8 +58,8 @@ Action Replay saves into the raw 512 KB save).
 
 ## Recommended settings
 
-**sys-clk** (optional; in its overlay, for the game you start the Homebrew
-Menu from, or as the global profile), handheld:
+**sys-clk** (recommended for full speed; in its overlay, for the game you start
+the Homebrew Menu from, or as the global profile), handheld:
 
 | | |
 |---|---|
@@ -67,26 +67,23 @@ Menu from, or as the global profile), handheld:
 | GPU | 460 MHz (the highest of the console's own handheld speeds; no need to go higher) |
 | Memory | 1600 MHz |
 
-With sys-clk setting the clocks, turn **CPU BOOST** off in the pause menu so
-the two do not fight. Without sys-clk, leave CPU BOOST on: it sets the same
-processor and memory speeds itself (the graphics chip stays at the system's
-speed).
+Without sys-clk the game runs at the console's normal speeds and drops frames
+in busy places. (Earlier versions had a CPU BOOST option for this, but the
+system kept taking its boost away, so it is gone: sys-clk does it properly.)
 
 **Pause menu** (+ and − together). The first start already uses what is
-recommended, except CPU BOOST with sys-clk:
+recommended, and the game always uses the one wide screen:
 
 | Setting | Recommended | What it does |
 |---|---|---|
 | 60 FPS | ON | in-between frames: the game draws its 3D at 30 fps |
-| CPU BOOST | ON, or OFF with sys-clk | processor 1785 MHz, memory 1600 MHz |
 | BATTLE BUTTONS | CORNER or PANEL | where a battle's touch-screen buttons go |
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
 | LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
 | WORLD ON GPU | ON | the world drawn by the graphics chip |
-| EMULATION | FAST JIT | from the next start; FAST JIT, JIT or INTERPRETER |
 
-If a start ever fails with FAST JIT, the next one falls back by itself (hold L
-while starting for the interpreter). QUIT in the pause menu saves first.
+The game always runs on melonDS's FAST JIT. If a start ever fails with it, the
+next one falls back by itself (hold L while starting for the interpreter). QUIT in the pause menu saves first.
 
 ## Under the hood
 
@@ -100,8 +97,9 @@ land. The full list is in [CHANGELOG.md](CHANGELOG.md).
 ## Known limits
 
 - White 2 doesn't load the extra map around you yet (with it, its overworld
-  didn't come back after a trainer battle), so the land can stop at the edges
-  of the wide view in places.
+  didn't come back after a trainer battle). A minor issue: it only shows as
+  far-off background land missing at the very edges of the wide view, and
+  gameplay isn't affected.
 - English (US/Europe) versions only: the program says so for other languages.
 - Switch only for now. Bug reports: attach `game.log` from the game's folder,
   and a save state from the pause menu if you can.

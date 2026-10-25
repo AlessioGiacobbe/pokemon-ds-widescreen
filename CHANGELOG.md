@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Switch: a shorter pause menu.** The game always shows the one wide screen, so SCREEN LAYOUT
+  and LARGE SCREEN are gone (an older saved layout is ignored). CPU BOOST is gone: the system
+  kept taking its boost mode away and the game dropped frames; sys-clk sets the clocks
+  instead (see README). EMULATION is gone: FAST JIT always, still falling back by itself for
+  one start if a start with it fails, and the interpreter while L is held. BUTTONS, which
+  had nothing to choose on the Switch, is gone too.
 - **Pokemon White 2 (US/Europe, English):** plays like Black 2, with the same layouts, wide
   view and battle screens (its function table comes from the pokebw2 decompilation's White 2
   symbols). Not yet the wider map: with it White 2's overworld did not come back after a

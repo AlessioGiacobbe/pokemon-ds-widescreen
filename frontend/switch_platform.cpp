@@ -189,12 +189,11 @@ bool Start(int& argc, char**& argv)
     if (funcs || !strcmp(code, "IPGE"))
     {
         // melonDS's JIT (code translated for the Switch's processor as it runs), unless the
-        // settings say otherwise (EMULATION in the pause menu, "jit=0" in ssrecomp.cfg), L is
-        // held while the game starts, or the last start with the JIT never got going (a file
-        // made before the start and removed a few seconds into the game says so).
+        // L is held while the game starts, or the last start with the JIT never got going (a
+        // file made before the start and removed a few seconds into the game says so).
         // Fast memory (the DS's memory mapped where the JIT's code reads it directly, see
-        // melonDS/src/ARMJIT_Memory.cpp) likewise, from "fastmem=0"; and if a start with it did
-        // not get going, it is turned off in the settings (it can go back on in the menu).
+        // melonDS/src/ARMJIT_Memory.cpp) likewise: if a start with it did not get going, the
+        // next start goes without it, and the one after tries it again.
         bool jit = true, fastMem = true;
         const std::string cfgPath = dir + "/ssrecomp.cfg";
         if (FILE* f = fopen(cfgPath.c_str(), "r"))
@@ -202,8 +201,8 @@ bool Start(int& argc, char**& argv)
             char line[128];
             while (fgets(line, sizeof(line), f))
             {
-                if (!strncmp(line, "jit=", 4)) jit = line[4] != '0';
-                if (!strncmp(line, "fastmem=", 8)) fastMem = line[8] != '0';
+                // (FAST JIT always: "jit=" and "fastmem=" from older versions' EMULATION
+                // menu are not read any more, so no one is left on the slower choices.)
                 // The widescreen drawing threads on core 0 too (melonDS/src/SsrThreads.h).
                 if (!strncmp(line, "wide_core0=", 11) && line[11] == '0') setenv("SSR_WIDE_CORE0", "0", 1);
             }
@@ -227,13 +226,8 @@ bool Start(int& argc, char**& argv)
             if (jit && fastMem)
             {
                 fastMem = false;
-                if (FILE* f = fopen(cfgPath.c_str(), "a"))
-                {
-                    fputs("fastmem=0\n", f);
-                    fclose(f);
-                }
-                fprintf(stderr, "[switch] the last start with fast memory did not get going: turned off "
-                    "(EMULATION in the pause menu turns it back on)\n");
+                fprintf(stderr, "[switch] the last start with fast memory did not get going: "
+                    "the JIT without it this time\n");
             }
         }
         if (jit && stat(marker.c_str(), &st) == 0)
