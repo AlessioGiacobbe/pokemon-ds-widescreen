@@ -31,6 +31,9 @@
   Where the game draws its world every other frame (Black 2's cities) and the graphics
   chip has not finished a picture in time, the last one stays on show for a frame instead
   of the game waiting for it; and the graphics chip shades fewer hidden pixels.
+  The graphics chip now keeps its pictures compressed and draws the world straight into
+  the frame it shows, and each DS texture is decoded once (when the game changes it)
+  rather than again for every pixel (that decoding was over half of its drawing time).
 - Black 2: where a large polygon (a sky made of panels around the camera, as in Castelia
   zoomed out) ends a little short of the wide view's edge with nothing beside it, it is
   stretched to the edge instead of leaving a strip of flat colour. The start menu's grey

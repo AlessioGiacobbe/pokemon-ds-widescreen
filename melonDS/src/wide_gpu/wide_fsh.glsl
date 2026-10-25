@@ -27,6 +27,9 @@ layout (early_fragment_tests) in;
 layout (binding = 0) uniform usamplerBuffer uTex8;  // the texture memory, a byte a texel
 layout (binding = 1) uniform usamplerBuffer uTex16; // the same, 16 bits a texel
 layout (binding = 2) uniform usamplerBuffer uPal16; // the palette memory, 16 bits a texel
+// Textures decoded beforehand (GPU3D_WideGpu.h, WideGpuAtlas): colour (15 bits) | alpha << 16
+// a texel, a polygon's texture from the texel its texPalette names (flags bit 2).
+layout (binding = 3) uniform usamplerBuffer uAtlas;
 #else
 layout (std430, binding = 1) readonly buffer Polygons
 {
@@ -254,6 +257,15 @@ void main()
         s = Wrap(s, width, (texParam & (1u << 16)) != 0u, (texParam & (1u << 18)) != 0u);
         t = Wrap(t, height, (texParam & (1u << 17)) != 0u, (texParam & (1u << 19)) != 0u);
         uint tcolor;
+#ifdef WIDE_TEXBUF
+        if ((poly.flags & 4u) != 0u)
+        {
+            uint v = texelFetch(uAtlas, int(poly.texPalette + uint(t * width + s))).r;
+            tcolor = v & 0x7FFFu;
+            ta = v >> 16;
+        }
+        else
+#endif
         Lookup(texParam, poly.texPalette, s, t, tcolor, ta);
         texel = Widen(tcolor);
     }

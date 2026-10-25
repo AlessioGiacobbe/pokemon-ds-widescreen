@@ -27,6 +27,7 @@
 #pragma once
 #include <atomic>
 #include <memory>
+#include <unordered_map>
 #include <string>
 #include <vector>
 #include "types.h"
@@ -49,7 +50,32 @@ static_assert(sizeof(WideGpuVertex) == 48, "matches wide_vsh.glsl");
 
 struct WideGpuPolygon
 {
-    u32 Attr, TexParam, TexPalette, Flags; // Flags: bit 0 W-buffer, bit 1 textured
+    // Flags: bit 0 W-buffer, bit 1 textured, bit 2 its texture is decoded in the atlas
+    // (WideGpuAtlas), at the texel TexPalette holds then.
+    u32 Attr, TexParam, TexPalette, Flags;
+};
+
+// Textures decoded once (colour, 15 bits, and alpha, 5 bits from bit 16, a texel), for the
+// graphics chip to read with one fetch a pixel instead of decoding the DS's formats every time
+// (that was over half its time). Kept from frame to frame; a texture is decoded again when the
+// texture or palette memory it comes from has changed (the DS-resolution renderer's record of
+// what changed, WideGpuNoteChanges). Each renderer has its own, as each has its own memory on
+// the graphics chip.
+struct WideGpuAtlas
+{
+    static constexpr u32 Capacity = 2 * 1024 * 1024; // texels (8 MB)
+    struct Entry
+    {
+        u32 Offset, Size;          // texels
+        u32 Tex0, Tex1, Pal0, Pal1; // the bytes it was decoded from (texture, palette memory)
+        bool Valid;
+    };
+    std::vector<u32> Texels;
+    std::unordered_map<u64, Entry> Entries; // by texture parameters and palette
+    u32 Used = 0;
+    u64 SeenVersion = 0;
+    bool Full = false;
+    std::vector<std::pair<u32, u32>> Uploads; // (first texel, count) decoded this frame
 };
 
 // The shaders' uniform buffer 0 (std140).
@@ -102,6 +128,8 @@ struct WideGpuFrame
     const u8* TexMem = nullptr; // 512 KB, read during Submit
     const u8* PalMem = nullptr; // 128 KB
     u64 TexVersion = 0;         // the same (not 0) as last time: the texture memory has not changed
+    bool AtlasOn = false;       // textures from the atlas (when the backend takes it, see Build)
+    WideGpuAtlas Atlas;
 };
 
 class WideGpuBackend
@@ -118,13 +146,19 @@ public:
     virtual bool Submit(WideGpuFrame& frame, int slot) = 0;
     // Waits for the picture of the last Submit; Target(slot)'s memory then holds it.
     virtual void Fetch(int slot) = 0;
+    // Whether it reads textures from WideGpuFrame::Atlas (its shader can).
+    virtual bool TakesAtlas() const { return false; }
     // Whether the picture of the last Submit is finished (Fetch would not wait).
     virtual bool Done(int /*slot*/) { return true; }
 };
 
 // Works out what to draw for the polygons of a wide frame (as GPU3D_Wide.cpp's Draw sees
 // them), at w x h.
-void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int w, int h, WideGpuFrame& out);
+void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int w, int h, WideGpuFrame& out, bool atlas = false);
+
+// The DS-resolution renderer's record of the texture and palette memory that changed with each
+// new version of it (WideGpuTexVersion): 512-byte blocks.
+void WideGpuNoteChanges(u64 version, const u64* tex /* 16 words */, const u64* pal /* 4 words */);
 
 // The DS-resolution 3D picture (the one melonDS's 2D renderer builds the screens from) drawn by
 // the graphics chip too, in place of the software renderer, with the same rules as the

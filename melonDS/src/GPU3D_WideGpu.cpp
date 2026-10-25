@@ -1,4 +1,5 @@
 // ssrecomp: the widescreen view's polygons drawn by the graphics chip. See GPU3D_WideGpu.h.
+#include <chrono>
 #include "GPU3D_WideGpu.h"
 
 #include <algorithm>
@@ -56,12 +57,16 @@ void WideGpuDSRenderer::RenderFrame(GPU& gpu)
     auto texPalDirty = gpu.VRAMDirty_TexPal.DeriveState(gpu.VRAMMap_TexPal, gpu);
     const bool textureChanged = gpu.MakeVRAMFlat_TextureCoherent(textureDirty);
     const bool texPalChanged = gpu.MakeVRAMFlat_TexPalCoherent(texPalDirty);
-    if (textureChanged || texPalChanged || !Version) Version++;
+    if (textureChanged || texPalChanged || !Version)
+    {
+        Version++;
+        WideGpuNoteChanges(Version, textureDirty.Data, texPalDirty.Data);
+    }
     WideGpuTexVersion = Version;
 
     if (Pending) Backend->Fetch(0); // (an earlier picture nobody asked for)
     Pixels = Backend->Target(0, 256, 192);
-    WideGpuBuild(gpu, gpu.GPU3D.RenderPolygonRAM.data(), gpu.GPU3D.RenderNumPolygons, 256, 192, Frame);
+    WideGpuBuild(gpu, gpu.GPU3D.RenderPolygonRAM.data(), gpu.GPU3D.RenderNumPolygons, 256, 192, Frame, Backend->TakesAtlas());
     Frame.TexVersion = Version;
     Pending = Pixels && Backend->Submit(Frame, 0);
     Fetched = false;
@@ -105,7 +110,186 @@ void WideGpuStop()
     WideGpuCurrent.reset();
 }
 
-void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H, WideGpuFrame& f)
+namespace
+{
+// What changed with each of the last versions of the texture memory (WideGpuNoteChanges).
+struct ChangeLog
+{
+    static constexpr int Size = 64;
+    u64 Version[Size] {};
+    u64 Tex[Size][16] {};
+    u64 Pal[Size][4] {};
+};
+ChangeLog Changes;
+
+// One texture decoded as wide_fsh.glsl's Lookup (and SoftRenderer::TextureLookup) reads it:
+// colour (15 bits) | alpha (0-31) << 16 a texel, rows of `width`.
+void DecodeTexture(const u8* texMem, const u8* palMem, u32 texParam, u32 texPal, u32* out)
+{
+    auto tex8 = [&](u32 a) -> u32 { return texMem[a & 0x7FFFF]; };
+    auto tex16 = [&](u32 a) -> u32 { a &= 0x7FFFE; return texMem[a] | (texMem[a + 1] << 8); };
+    auto pal16 = [&](u32 a) -> u32 { a &= 0x1FFFE; return palMem[a] | (palMem[a + 1] << 8); };
+    const u32 vramaddr = (texParam & 0xFFFF) << 3;
+    const int width = 8 << ((texParam >> 20) & 7), height = 8 << ((texParam >> 23) & 7);
+    const u32 alpha0 = (texParam & (1u << 29)) ? 0 : 31;
+    const u32 format = (texParam >> 26) & 7;
+    for (int t = 0; t < height; t++)
+        for (int s = 0; s < width; s++)
+        {
+            const u32 pos = (u32)(t * width + s);
+            u32 color = 0, alpha = 31;
+            switch (format)
+            {
+            case 1: // A3I5
+            {
+                const u32 pixel = tex8(vramaddr + pos);
+                color = pal16((texPal << 4) + ((pixel & 0x1F) << 1));
+                alpha = ((pixel >> 3) & 0x1C) + (pixel >> 6);
+                break;
+            }
+            case 2: // 4 colours
+            {
+                const u32 pixel = (tex8(vramaddr + (pos >> 2)) >> ((s & 3) << 1)) & 3;
+                color = pal16((texPal << 3) + (pixel << 1));
+                alpha = pixel == 0 ? alpha0 : 31;
+                break;
+            }
+            case 3: // 16 colours
+            {
+                u32 pixel = tex8(vramaddr + (pos >> 1));
+                pixel = (s & 1) ? pixel >> 4 : pixel & 0xF;
+                color = pal16((texPal << 4) + (pixel << 1));
+                alpha = pixel == 0 ? alpha0 : 31;
+                break;
+            }
+            case 4: // 256 colours
+            {
+                const u32 pixel = tex8(vramaddr + pos);
+                color = pal16((texPal << 4) + (pixel << 1));
+                alpha = pixel == 0 ? alpha0 : 31;
+                break;
+            }
+            case 5: // compressed
+            {
+                u32 addr = vramaddr + (u32)(t & 0x3FC) * (u32)(width >> 2) + (u32)(s & 0x3FC) + (u32)(t & 3);
+                addr &= 0x7FFFF;
+                u32 slot1addr = 0x20000 + ((addr & 0x1FFFC) >> 1);
+                if (addr >= 0x40000) slot1addr += 0x10000;
+                const u32 val = (addr >= 0x20000 && addr < 0x40000) ? 0 : (tex8(addr) >> (2 * (s & 3)));
+                const u32 palinfo = tex16(slot1addr);
+                const u32 paloffset = (palinfo & 0x3FFF) << 2;
+                const u32 base = texPal << 4;
+                const u32 mode = palinfo >> 14;
+                const u32 c0 = pal16(base + paloffset), c1 = pal16(base + paloffset + 2);
+                switch (val & 3)
+                {
+                case 0: color = c0; break;
+                case 1: color = c1; break;
+                case 2:
+                    if (mode == 1)
+                        color = (((c0 & 0x1F) + (c1 & 0x1F)) >> 1) | ((((c0 & 0x3E0) + (c1 & 0x3E0)) >> 1) & 0x3E0) |
+                            ((((c0 & 0x7C00) + (c1 & 0x7C00)) >> 1) & 0x7C00);
+                    else if (mode == 3)
+                        color = (((c0 & 0x1F) * 5 + (c1 & 0x1F) * 3) >> 3) | ((((c0 & 0x3E0) * 5 + (c1 & 0x3E0) * 3) >> 3) & 0x3E0) |
+                            ((((c0 & 0x7C00) * 5 + (c1 & 0x7C00) * 3) >> 3) & 0x7C00);
+                    else
+                        color = pal16(base + paloffset + 4);
+                    break;
+                default:
+                    if (mode == 2)
+                        color = pal16(base + paloffset + 6);
+                    else if (mode == 3)
+                        color = (((c0 & 0x1F) * 3 + (c1 & 0x1F) * 5) >> 3) | ((((c0 & 0x3E0) * 3 + (c1 & 0x3E0) * 5) >> 3) & 0x3E0) |
+                            ((((c0 & 0x7C00) * 3 + (c1 & 0x7C00) * 5) >> 3) & 0x7C00);
+                    else
+                    {
+                        color = 0;
+                        alpha = 0;
+                    }
+                    break;
+                }
+                break;
+            }
+            case 6: // A5I3
+            {
+                const u32 pixel = tex8(vramaddr + pos);
+                color = pal16((texPal << 4) + ((pixel & 7) << 1));
+                alpha = pixel >> 3;
+                break;
+            }
+            case 7: // direct colour
+                color = tex16(vramaddr + (pos << 1));
+                alpha = (color & 0x8000) ? 31 : 0;
+                break;
+            default:
+                break;
+            }
+            out[pos] = (color & 0x7FFF) | (alpha << 16);
+        }
+}
+
+// The memory a texture is decoded from: its texels, and its palette entries (all of the palette
+// memory for a compressed texture, whose palette offsets come from its texels; and its texels'
+// second part, in texture slot 1, too).
+void SourceRanges(u32 texParam, u32 texPal, u32& tex0, u32& tex1, u32& pal0, u32& pal1)
+{
+    const u32 vramaddr = (texParam & 0xFFFF) << 3;
+    const u32 texels = (8u << ((texParam >> 20) & 7)) * (8u << ((texParam >> 23) & 7));
+    switch ((texParam >> 26) & 7)
+    {
+    case 1: tex0 = vramaddr; tex1 = vramaddr + texels; pal0 = texPal << 4; pal1 = pal0 + 64; break;
+    case 2: tex0 = vramaddr; tex1 = vramaddr + texels / 4; pal0 = texPal << 3; pal1 = pal0 + 8; break;
+    case 3: tex0 = vramaddr; tex1 = vramaddr + texels / 2; pal0 = texPal << 4; pal1 = pal0 + 32; break;
+    case 4: tex0 = vramaddr; tex1 = vramaddr + texels; pal0 = texPal << 4; pal1 = pal0 + 512; break;
+    case 6: tex0 = vramaddr; tex1 = vramaddr + texels; pal0 = texPal << 4; pal1 = pal0 + 16; break;
+    case 7: tex0 = vramaddr; tex1 = vramaddr + texels * 2; pal0 = pal1 = 0; break;
+    default: tex0 = 0; tex1 = 512 * 1024; pal0 = 0; pal1 = 128 * 1024; break; // compressed: everything
+    }
+}
+
+// Whether any 512-byte block of [from, to) (masked to the memory's size) is set in `blocks`.
+bool AnyChanged(const u64* blocks, u32 words, u32 from, u32 to)
+{
+    if (to <= from) return false;
+    const u32 mask = words * 64 * 512 - 1;
+    if (to - from > mask) return true;
+    for (u32 a = from & ~511u; a < to; a += 512)
+    {
+        const u32 b = (a & mask) / 512;
+        if (blocks[b >> 6] & (1ull << (b & 63))) return true;
+    }
+    return false;
+}
+
+// Brings the atlas up to date with the texture memory's version: textures whose memory changed
+// since it was last seen are decoded again when next used (everything, if that is too long ago).
+void SeeVersion(WideGpuAtlas& a, u64 version)
+{
+    if (a.SeenVersion == version) return;
+    bool all = a.SeenVersion == 0 || version < a.SeenVersion || version - a.SeenVersion >= (u64)ChangeLog::Size;
+    u64 tex[16] {}, pal[4] {};
+    for (u64 v = a.SeenVersion + 1; !all && v <= version; v++)
+    {
+        const int i = (int)(v % ChangeLog::Size);
+        if (Changes.Version[i] != v) { all = true; break; }
+        for (int w = 0; w < 16; w++) tex[w] |= Changes.Tex[i][w];
+        for (int w = 0; w < 4; w++) pal[w] |= Changes.Pal[i][w];
+    }
+    for (auto& [key, e] : a.Entries)
+        if (all || AnyChanged(tex, 16, e.Tex0, e.Tex1) || AnyChanged(pal, 4, e.Pal0, e.Pal1)) e.Valid = false;
+    a.SeenVersion = version;
+}
+}
+
+void WideGpuNoteChanges(u64 version, const u64* tex, const u64* pal)
+{
+    const int i = (int)(version % ChangeLog::Size);
+    Changes.Version[i] = version;
+    memcpy(Changes.Tex[i], tex, sizeof(Changes.Tex[i]));
+    memcpy(Changes.Pal[i], pal, sizeof(Changes.Pal[i]));
+}
+
+void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H, WideGpuFrame& f, bool atlas)
 {
     const GPU3D& g = gpu.GPU3D;
     f.W = W;
@@ -164,6 +348,57 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
     const bool blendEnabled = dispCnt & (1 << 3);
     const float sx = W / (256.0f * 16), sy = H / (192.0f * 16);
 
+    // Decoded textures (see WideGpuAtlas): only with the texture memory's versions to tell what
+    // changed (the DS-resolution picture on the graphics chip keeps them).
+    static const bool stats = getenv("SSR_WIDE_GPU_STATS") != nullptr;
+    WideGpuAtlas& at = f.Atlas;
+    f.AtlasOn = atlas && f.TexVersion != 0;
+    u64 decoded = 0, decodeNs = 0;
+    at.Uploads.clear();
+    if (f.AtlasOn)
+    {
+        if (at.Texels.empty()) at.Texels.resize(WideGpuAtlas::Capacity);
+        if (at.Full)
+        {
+            // (Filled up last frame: started again, so that what is used fits.)
+            at.Entries.clear();
+            at.Used = 0;
+            at.Full = false;
+        }
+        SeeVersion(at, f.TexVersion);
+    }
+    // The atlas's place for a polygon's texture, decoded now if needed; ~0u if it has no room.
+    auto atlasOffset = [&](u32 texParam, u32 texPal) -> u32 {
+        const u32 format = (texParam >> 26) & 7;
+        const u64 key = (u64)(texParam & 0x3FF0FFFF) | ((u64)(format == 7 ? 0 : texPal) << 32);
+        auto it = at.Entries.find(key);
+        if (it != at.Entries.end() && it->second.Valid) return it->second.Offset;
+        const u32 size = (8u << ((texParam >> 20) & 7)) * (8u << ((texParam >> 23) & 7));
+        WideGpuAtlas::Entry* e;
+        if (it != at.Entries.end())
+            e = &it->second; // decoded again in its own place
+        else
+        {
+            if (at.Used + size > WideGpuAtlas::Capacity)
+            {
+                at.Full = true;
+                return ~0u;
+            }
+            e = &at.Entries[key];
+            e->Offset = at.Used;
+            e->Size = size;
+            at.Used += size;
+        }
+        SourceRanges(texParam, texPal, e->Tex0, e->Tex1, e->Pal0, e->Pal1);
+        const auto t0 = stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
+        DecodeTexture(gpu.VRAMFlat_Texture, gpu.VRAMFlat_TexPal, texParam, texPal, at.Texels.data() + e->Offset);
+        if (stats) decodeNs += (u64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        decoded += e->Size;
+        e->Valid = true;
+        at.Uploads.push_back({ e->Offset, e->Size });
+        return e->Offset;
+    };
+
     // A polygon's triangles (a fan), appended to the vertices.
     auto add = [&](const Polygon* poly) {
         const u32 index = (u32)f.Polygons.size();
@@ -172,6 +407,15 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         p.TexParam = poly->TexParam;
         p.TexPalette = poly->TexPalette;
         p.Flags = (poly->WBuffer ? 1 : 0) | (texturing && ((poly->TexParam >> 26) & 0x7) ? 2 : 0);
+        if (f.AtlasOn && (p.Flags & 2))
+        {
+            const u32 offset = atlasOffset(poly->TexParam, poly->TexPalette);
+            if (offset != ~0u)
+            {
+                p.TexPalette = offset;
+                p.Flags |= 4;
+            }
+        }
         f.Polygons.push_back(p);
         WideGpuVertex v[10];
         for (u32 i = 0; i < poly->NumVertices; i++)
@@ -353,7 +597,22 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
     }
     close();
     // Development aid: how many polygons use W-buffering (SSR_WIDE_GPU_STATS=1).
-    static const bool stats = getenv("SSR_WIDE_GPU_STATS") != nullptr;
+    if (stats && f.AtlasOn)
+    {
+        // And what keeping decoded textures costs the processor.
+        static u64 pictures = 0, texels = 0, ns = 0, worstNs = 0;
+        pictures++;
+        texels += decoded;
+        ns += decodeNs;
+        worstNs = std::max(worstNs, decodeNs);
+        if (pictures % 240 == 0)
+        {
+            fprintf(stderr, "[widegpu] atlas: %zu textures, %u of %u texels used, %.0f texels decoded a picture, "
+                "%.3f ms a picture (worst %.3f)\n", at.Entries.size(), at.Used, WideGpuAtlas::Capacity,
+                (double)texels / 240, ns / 240 / 1e6, worstNs / 1e6);
+            texels = ns = worstNs = 0;
+        }
+    }
     if (stats && W > 256)
     {
         // And how many pixels each kind of draw covers (as the graphics chip shades them all

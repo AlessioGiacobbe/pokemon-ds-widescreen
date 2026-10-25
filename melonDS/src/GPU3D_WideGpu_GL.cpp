@@ -79,12 +79,15 @@ public:
         glBufferData(GL_SHADER_STORAGE_BUFFER, 512 * 1024, nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO[3]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, 128 * 1024, nullptr, GL_DYNAMIC_DRAW);
-        glGenTextures(3, BufTex);
-        const GLenum formats[3] = { GL_R8UI, GL_R16UI, GL_R16UI };
-        for (int i = 0; i < 3; i++)
+        glGenTextures(4, BufTex);
+        glGenBuffers(1, &AtlasBuf);
+        glBindBuffer(GL_TEXTURE_BUFFER, AtlasBuf);
+        glBufferData(GL_TEXTURE_BUFFER, WideGpuAtlas::Capacity * 4, nullptr, GL_DYNAMIC_DRAW);
+        const GLenum formats[4] = { GL_R8UI, GL_R16UI, GL_R16UI, GL_R32UI };
+        for (int i = 0; i < 4; i++)
         {
             glBindTexture(GL_TEXTURE_BUFFER, BufTex[i]);
-            glTexBuffer(GL_TEXTURE_BUFFER, formats[i], SSBO[i < 2 ? 2 : 3]);
+            glTexBuffer(GL_TEXTURE_BUFFER, formats[i], i == 3 ? AtlasBuf : SSBO[i < 2 ? 2 : 3]);
         }
         glBindTexture(GL_TEXTURE_BUFFER, 0);
         glBindBuffer(GL_UNIFORM_BUFFER, FrameUBO);
@@ -102,7 +105,8 @@ public:
         glDeleteProgram(FinalProgram);
         glDeleteBuffers(1, &FrameUBO);
         glDeleteBuffers(1, &DrawUBO);
-        glDeleteTextures(3, BufTex);
+        glDeleteTextures(4, BufTex);
+        glDeleteBuffers(1, &AtlasBuf);
         glDeleteBuffers(4, SSBO);
         glDeleteBuffers(1, &ReadPBO);
         glDeleteVertexArrays(1, &EmptyVAO);
@@ -111,6 +115,12 @@ public:
 
     // (Drawn at once, so always finished; SSR_WIDE_GL_LATE=1 says it is not, to test what
     // GPU3D_Wide.cpp does with a picture the graphics chip is late with.)
+    bool TakesAtlas() const override
+    {
+        static const bool off = getenv("SSR_WIDEGPU_ATLAS") && !strcmp(getenv("SSR_WIDEGPU_ATLAS"), "0");
+        return TexBuf && !off;
+    }
+
     bool Done(int /*slot*/) override
     {
         static const bool late = getenv("SSR_WIDE_GL_LATE") != nullptr;
@@ -150,8 +160,21 @@ public:
             TexVersion = f.TexVersion;
         }
         for (int i = 0; i < 4; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, SSBO[i]);
+        if (f.AtlasOn)
+        {
+            const WideGpuAtlas& a = f.Atlas;
+            glBindBuffer(GL_TEXTURE_BUFFER, AtlasBuf);
+            if (!AtlasSynced)
+            {
+                glBufferSubData(GL_TEXTURE_BUFFER, 0, (GLsizeiptr)a.Used * 4, a.Texels.data());
+                AtlasSynced = true;
+            }
+            else
+                for (const auto& [first, n] : a.Uploads)
+                    glBufferSubData(GL_TEXTURE_BUFFER, (GLintptr)first * 4, (GLsizeiptr)n * 4, a.Texels.data() + first);
+        }
         if (TexBuf)
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 4; i++)
             {
                 glActiveTexture(GL_TEXTURE0 + i);
                 glBindTexture(GL_TEXTURE_BUFFER, BufTex[i]);
@@ -295,8 +318,9 @@ private:
 
     GLuint MainProgram = 0, EarlyProgram = 0, FinalProgram = 0;
     GLuint FrameUBO = 0, DrawUBO = 0, SSBO[4] {}, ReadPBO = 0, EmptyVAO = 0;
-    GLuint BufTex[3] {};   // the texture memory as bytes and 16-bit texels, the palette memory (WIDE_TEXBUF)
-    bool TexBuf = false;
+    GLuint BufTex[4] {};   // the texture memory as bytes and 16-bit texels, the palette memory, the atlas (WIDE_TEXBUF)
+    GLuint AtlasBuf = 0;
+    bool TexBuf = false, AtlasSynced = false;
     GLuint MainFBO = 0, FinalFBO = 0, ColorTex = 0, AttrTex = 0, FinalTex = 0, DepthRB = 0;
     int W = 0, H = 0;
     ClipControlFn ClipControl = nullptr;

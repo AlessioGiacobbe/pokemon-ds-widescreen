@@ -761,7 +761,7 @@ struct WideAccess
             static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
             const auto t0 = std::chrono::steady_clock::now();
             BackFor(W, H, true);
-            WideGpuBuild(gpu, list, npolys, W, H, frame);
+            WideGpuBuild(gpu, list, npolys, W, H, frame, WideGpuCurrent->TakesAtlas());
             if (WideGpuCurrent->Submit(frame, Next))
             {
                 Drawing = true;

@@ -43,7 +43,7 @@ constexpr u32 OffImageDesc = 0x300;                    // image descriptors (see
 constexpr u32 OffSamplerDesc = 0x400;                  // one sampler descriptor
 // The images in the descriptor set: the final pass's two textures (what was drawn), and the
 // texture and palette memory as buffer textures (the WIDE_TEXBUF shader, see Shared).
-enum ImageIds : u32 { ImgColor, ImgAttr, ImgTex8, ImgTex16, ImgPal16, ImageCount };
+enum ImageIds : u32 { ImgColor, ImgAttr, ImgTex8, ImgTex16, ImgPal16, ImgAtlas, ImageCount };
 static_assert(OffImageDesc + ImageCount * 32 <= OffSamplerDesc, "the image descriptors fit");
 // What the graphics chip reports for each picture, 16 bytes each (a count, then a time).
 enum Reports : u32 { RepStart, RepCleared, RepDrawn, RepFragments, RepSamples, RepFinal, RepCopied, ReportCount };
@@ -53,10 +53,11 @@ static_assert(OffReports + ReportCount * 16 <= OffPolygons, "the reports fit");
 constexpr u32 OffTex = OffPolygons + MaxPolygons * sizeof(WideGpuPolygon);
 constexpr u32 OffPal = OffTex + 512 * 1024;
 constexpr u32 OffVertices = OffPal + 128 * 1024;
-constexpr u32 DataSize = OffVertices + MaxVertices * sizeof(WideGpuVertex);
+constexpr u32 OffAtlas = (OffVertices + MaxVertices * sizeof(WideGpuVertex) + 0xFFF) & ~0xFFFu;
+constexpr u32 DataSize = OffAtlas + WideGpuAtlas::Capacity * 4;
 static_assert(sizeof(WideGpuFrameConstants) <= FrameSize, "the frame constants fit");
 
-u32 Align(u32 v, u32 a)
+constexpr u32 Align(u32 v, u32 a)
 {
     return (v + a - 1) & ~(a - 1);
 }
@@ -102,6 +103,9 @@ struct Shared
     // 720-line picture every frame: 12.7 ms instead of 15.2, frames on time 79% instead of 53%,
     // the same picture. (SSR_WIDEGPU_COMPRESS=0, SSR_WIDEGPU_DIRECT=0: without them.)
     bool Compress = true, Direct = true;
+    // The textures decoded beforehand (WideGpuAtlas); SSR_WIDEGPU_ATLAS=0: decoded a pixel at a
+    // time, as before.
+    bool NoAtlas = false;
 };
 Shared* Sh = nullptr;
 
@@ -172,6 +176,8 @@ bool AcquireShared(std::string& info)
     Sh->Depth24 = on("SSR_WIDEGPU_DEPTH", "24");
     Sh->Compress = !on("SSR_WIDEGPU_COMPRESS", "0");
     Sh->Direct = !on("SSR_WIDEGPU_DIRECT", "0");
+    Sh->NoAtlas = on("SSR_WIDEGPU_ATLAS", "0");
+    if (Sh->NoAtlas) fprintf(stderr, "[widegpu] deko3D: textures decoded a pixel at a time\n");
     if (!Sh->Compress || !Sh->Direct)
         fprintf(stderr, "[widegpu] deko3D:%s%s\n", Sh->Compress ? "" : " targets not compressed", Sh->Direct ? "" : " the picture copied out");
     if (Sh->Plain || Sh->NoAttr || Sh->Depth24)
@@ -282,6 +288,7 @@ public:
         buffer(Tex8Image, DkImageFormat_R8_Uint, OffTex, 512 * 1024, ImgTex8);
         buffer(Tex16Image, DkImageFormat_R16_Uint, OffTex, 256 * 1024, ImgTex16);
         buffer(Pal16Image, DkImageFormat_R16_Uint, OffPal, 64 * 1024, ImgPal16);
+        buffer(AtlasImage, DkImageFormat_R32_Uint, OffAtlas, WideGpuAtlas::Capacity, ImgAtlas);
         return true;
     }
 
@@ -346,6 +353,23 @@ public:
             TexVersion = f.TexVersion;
         }
         memcpy(Data + OffVertices, f.Vertices.data(), f.Vertices.size() * sizeof(WideGpuVertex));
+        // The textures decoded this frame (all of them, the first time this renderer sees the
+        // atlas).
+        if (f.AtlasOn)
+        {
+            const WideGpuAtlas& a = f.Atlas;
+            if (!AtlasSynced)
+            {
+                memcpy(Data + OffAtlas, a.Texels.data(), (size_t)a.Used * 4);
+                AtlasSynced = true;
+            }
+            else
+                for (const auto& [first, n] : a.Uploads)
+                {
+                    memcpy(Data + OffAtlas + (size_t)first * 4, a.Texels.data() + first, (size_t)n * 4);
+                    T.Decoded += n;
+                }
+        }
         const double t1 = Now();
 
         dkCmdBufClear(Cmd);
@@ -402,8 +426,9 @@ public:
         dkCmdBufBindSamplerDescriptorSet(Cmd, DataAddr + OffSamplerDesc, 1);
         if (Sh->TexBuf)
         {
-            const DkResHandle mem[3] = { dkMakeTextureHandle(ImgTex8, 0), dkMakeTextureHandle(ImgTex16, 0), dkMakeTextureHandle(ImgPal16, 0) };
-            dkCmdBufBindTextures(Cmd, DkStage_Fragment, 0, mem, 3);
+            const DkResHandle mem[4] = { dkMakeTextureHandle(ImgTex8, 0), dkMakeTextureHandle(ImgTex16, 0),
+                dkMakeTextureHandle(ImgPal16, 0), dkMakeTextureHandle(ImgAtlas, 0) };
+            dkCmdBufBindTextures(Cmd, DkStage_Fragment, 0, mem, 4);
         }
         else
         {
@@ -511,6 +536,8 @@ public:
         return true;
     }
 
+    bool TakesAtlas() const override { return Sh->TexBuf && !Sh->NoAtlas; }
+
     bool Done(int slot) override
     {
         return !Pending || dkFenceWait(&Fence, 0) == DkResult_Success;
@@ -556,8 +583,8 @@ public:
         {
             const double n = T.Pictures;
             fprintf(stderr, "[widegpu] per picture (%dx%d, over %u): copying the data %.2f ms, making the commands %.2f ms, "
-                "waiting for the graphics chip %.2f ms, cache %.2f ms; %u triangles, %u draws\n", W, H, T.Pictures,
-                T.Copy / n, T.Record / n, T.Wait / n, T.Flush / n, (u32)(T.Triangles / n), (u32)(T.Draws / n));
+                "waiting for the graphics chip %.2f ms, cache %.2f ms; %u triangles, %u draws; %u texels decoded\n", W, H, T.Pictures,
+                T.Copy / n, T.Record / n, T.Wait / n, T.Flush / n, (u32)(T.Triangles / n), (u32)(T.Draws / n), (u32)(T.Decoded / n));
             fprintf(stderr, "[widegpu]   on the graphics chip: %.2f ms before it started, %.2f ms from starting to the picture copied: clearing %.2f, "
                 "polygons %.2f, final pass %.2f, copy %.2f ms; %.2f million pixels shaded, %.2f million passed the depth test "
                 "(the picture has %.2f million)\n", T.GpuQueue / n, T.GpuTotal / n, T.GpuClear / n, T.GpuDraw / n, T.GpuFinal / n, T.GpuCopy / n,
@@ -666,14 +693,15 @@ private:
     {
         double Copy = 0, Record = 0, Wait = 0, Flush = 0;
         double GpuQueue = 0, GpuClear = 0, GpuDraw = 0, GpuFinal = 0, GpuCopy = 0, GpuTotal = 0;
-        u64 Fragments = 0, Samples = 0;
+        u64 Fragments = 0, Samples = 0, Decoded = 0;
         u64 Triangles = 0, Draws = 0;
         u32 Pictures = 0;
     };
     Times T;
     DkCmdBuf Cmd = nullptr;
     DkImage ColorImage, AttrImage, DepthImage, FinalImage;
-    DkImage Tex8Image, Tex16Image, Pal16Image;
+    DkImage Tex8Image, Tex16Image, Pal16Image, AtlasImage;
+    bool AtlasSynced = false; // the atlas in memory matches the frame's (see Submit)
     DkFence Fence;
     u8* Data = nullptr;
     DkGpuAddr DataAddr = 0;
