@@ -6,6 +6,9 @@
   view and battle screens (its function table comes from the pokebw2 decompilation's White 2
   symbols). Not yet the wider map: with it White 2's overworld did not come back after a
   trainer battle.
+- **Switch, Black, Black 2 and White 2 start at WORLD DETAIL 720 with 60 FPS on** (with WORLD
+  ON GPU, about 16 ms a frame), instead of 288 lines and 60 FPS off, which suited the world
+  drawn by the processor. Settings you have already changed are kept.
 - **Switch, Black 2 and White 2 without building:** the program can carry the function tables
   for Black 2, White 2 and Black itself and read the few bytes it needs from your ROM when
   the game starts, so one ready-made `.nro` plays any English copy of those games

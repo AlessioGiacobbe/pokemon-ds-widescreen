@@ -1570,6 +1570,17 @@ int main(int argc, char** argv)
     // changed in the pause menu, and are remembered.
     cfg.wideLines = 288;
     cfg.fps60 = false;
+#ifdef SSR_DEKO3D
+    // Black, Black 2 and White 2 (a function table) with the world drawn by the graphics chip
+    // (WORLD ON GPU, on by default): measured at about 16 ms a frame at 720 lines with the
+    // in-between frames on, so they start like that. (If the graphics chip cannot be used,
+    // LOWER DETAIL WHEN BUSY brings the lines down where needed.)
+    if (!opt.funcs.empty())
+    {
+        cfg.wideLines = 720;
+        cfg.fps60 = true;
+    }
+#endif
 #endif
     if (!opt.headless) cfg.Load(opt.config);
     for (const std::string& kv : opt.sets) cfg.Apply(kv);
