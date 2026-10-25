@@ -100,6 +100,8 @@ land. The full list is in [CHANGELOG.md](CHANGELOG.md).
   didn't come back after a trainer battle). A minor issue: it only shows as
   far-off background land missing at the very edges of the wide view, and
   gameplay isn't affected.
+- In triple battles the background can flicker black for a few seconds after a
+  Pokémon faints. It happens in the emulator core itself; being looked into.
 - English (US/Europe) versions only: the program says so for other languages.
 - Switch only for now. Bug reports: attach `game.log` from the game's folder,
   and a save state from the pause menu if you can.
