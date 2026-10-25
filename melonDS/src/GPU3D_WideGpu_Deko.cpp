@@ -96,6 +96,12 @@ struct Shared
     // SSR_WIDEGPU_NOATTR=1, the second target (depth and fog flag, for the fog) not written;
     // SSR_WIDEGPU_DEPTH=24, a 32-bit depth buffer (24-bit fixed point) instead of 64 bits.
     bool TexBuf = false, Zcull = false, Plain = false, NoAttr = false, Depth24 = false;
+    // And two that keep the picture right, to measure: SSR_WIDEGPU_COMPRESS=1, the graphics
+    // chip's own compression of the targets (less memory traffic, nearly free clears);
+    // SSR_WIDEGPU_DIRECT=1, the final pass written straight into the memory the processor
+    // reads (a pitch-linear target over the slot), without the copy after it (2.4 ms a
+    // 720-line picture in a battle).
+    bool Compress = false, Direct = false;
 };
 Shared* Sh = nullptr;
 
@@ -164,6 +170,10 @@ bool AcquireShared(std::string& info)
     Sh->Plain = on("SSR_WIDEGPU_PLAIN", "1");
     Sh->NoAttr = on("SSR_WIDEGPU_NOATTR", "1");
     Sh->Depth24 = on("SSR_WIDEGPU_DEPTH", "24");
+    Sh->Compress = on("SSR_WIDEGPU_COMPRESS", "1");
+    Sh->Direct = on("SSR_WIDEGPU_DIRECT", "1");
+    if (Sh->Compress || Sh->Direct)
+        fprintf(stderr, "[widegpu] deko3D:%s%s\n", Sh->Compress ? " compressed targets" : "", Sh->Direct ? " final pass into the slot" : "");
     if (Sh->Plain || Sh->NoAttr || Sh->Depth24)
         fprintf(stderr, "[widegpu] deko3D, for measuring (the pictures are wrong):%s%s%s\n", Sh->Plain ? " no textures" : "",
             Sh->NoAttr ? " no depth/fog target" : "", Sh->Depth24 ? " 32-bit depth buffer" : "");
@@ -307,6 +317,7 @@ public:
         {
             s.Mem = Block(size, DkMemBlockFlags_CpuCached | DkMemBlockFlags_GpuCached);
             s.Size = s.Mem ? size : 0;
+            s.ImageW = s.ImageH = 0;
         }
         return s.Mem ? (u32*)dkMemBlockGetCpuAddr(s.Mem) : nullptr;
     }
@@ -353,7 +364,11 @@ public:
         dkImageViewDefaults(&colorView, &ColorImage);
         dkImageViewDefaults(&attrView, &AttrImage);
         dkImageViewDefaults(&depthView, &DepthImage);
-        dkImageViewDefaults(&finalView, &FinalImage);
+        // (The final pass's target: the slot's own memory as a pitch-linear image, or an image
+        // of its own whose picture is copied there after. A pitch-linear target needs rows a
+        // multiple of 32 bytes.)
+        const bool direct = Sh->Direct && ((u32)W * 4) % DK_IMAGE_LINEAR_STRIDE_ALIGNMENT == 0 && SlotImage(slot);
+        dkImageViewDefaults(&finalView, direct ? &Slots[slot].Image : &FinalImage);
         const DkImageView* targets[2] = { &colorView, &attrView };
         dkCmdBufBindRenderTargets(Cmd, targets, 2, &depthView);
         const DkViewport vp = { 0, 0, (float)W, (float)H, 0, 1 };
@@ -474,9 +489,12 @@ public:
 
         // The picture to memory the processor reads.
         dkCmdBufBarrier(Cmd, DkBarrier_Fragments, 0);
-        const DkImageRect rect = { 0, 0, 0, (u32)W, (u32)H, 1 };
-        const DkCopyBuf dst = { dkMemBlockGetGpuAddr(Slots[slot].Mem), (u32)W * 4, 0 };
-        dkCmdBufCopyImageToBuffer(Cmd, &finalView, &rect, &dst, 0);
+        if (!direct)
+        {
+            const DkImageRect rect = { 0, 0, 0, (u32)W, (u32)H, 1 };
+            const DkCopyBuf dst = { dkMemBlockGetGpuAddr(Slots[slot].Mem), (u32)W * 4, 0 };
+            dkCmdBufCopyImageToBuffer(Cmd, &finalView, &rect, &dst, 0);
+        }
         dkCmdBufBarrier(Cmd, DkBarrier_Full, 0);
         report(DkCounter_Timestamp, RepCopied);
         dkCmdBufBarrier(Cmd, DkBarrier_Full, DkInvalidateFlags_L2Cache);
@@ -586,7 +604,7 @@ private:
     {
         dkQueueWaitIdle(Queue);
         FreeTargets();
-        const u32 render = DkImageFlags_UsageRender;
+        const u32 render = DkImageFlags_UsageRender | (Sh->Compress ? DkImageFlags_HwCompression : 0);
         if (!Image(ColorImage, ColorMem, DkImageFormat_RGBA8_Unorm, w, h, render) ||
             !Image(AttrImage, AttrMem, DkImageFormat_RG32_Uint, w, h, render) ||
             !Image(DepthImage, DepthMem, Sh->Depth24 ? DkImageFormat_Z24S8 : DkImageFormat_ZF32_X24S8, w, h, render) ||
@@ -619,7 +637,30 @@ private:
     {
         DkMemBlock Mem = nullptr;
         u32 Size = 0;
+        DkImage Image;            // its memory as a pitch-linear render target (SSR_WIDEGPU_DIRECT)
+        int ImageW = 0, ImageH = 0;
     };
+    // Sets up slot's memory as a pitch-linear BGRA8 render target of the current size.
+    bool SlotImage(int slot)
+    {
+        Slot& s = Slots[slot];
+        if (!s.Mem || s.Size != (u32)W * H * 4) return false;
+        if (s.ImageW == W && s.ImageH == H) return true;
+        DkImageLayoutMaker lm;
+        dkImageLayoutMakerDefaults(&lm, Sh->Device);
+        lm.flags = DkImageFlags_PitchLinear | DkImageFlags_UsageRender;
+        lm.format = DkImageFormat_BGRA8_Unorm;
+        lm.dimensions[0] = (u32)W;
+        lm.dimensions[1] = (u32)H;
+        lm.pitchStride = (u32)W * 4;
+        DkImageLayout layout;
+        dkImageLayoutInitialize(&layout, &lm);
+        if (dkImageLayoutGetSize(&layout) > s.Size) return false;
+        dkImageInitialize(&s.Image, &layout, s.Mem, 0);
+        s.ImageW = W;
+        s.ImageH = H;
+        return true;
+    }
     Slot Slots[3];
     struct Times
     {
