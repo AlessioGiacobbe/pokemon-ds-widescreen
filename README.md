@@ -774,3 +774,7 @@ changes to existing melonDS files are listed in `melonDS-ssrecomp.patch`.
 (`org.libsdl.app`, zlib license, copyright Sam Lantinga and contributors),
 compiled by `tools/android/make_skeleton.sh`. The Android build also downloads
 and builds SDL2 and uses Google's Android NDK under their own licenses.
+
+---
+
+Built with the help of [Claude](https://claude.ai), Anthropic's AI.
