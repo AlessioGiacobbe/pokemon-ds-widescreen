@@ -1,18 +1,25 @@
 # ssrecomp: Pokémon Black 2 and White 2 on the Nintendo Switch
 
-**Pokémon Black 2 and White 2 on a Switch with custom firmware, played on one
-screen in widescreen, at or near 60 fps.**
-
-- Both DS screens merged into one 16:9 picture, the 3D world drawn across all
-  of it by the Switch's graphics chip at up to 720 lines
-- Skies and distant scenery carried on to the edges, and in Black 2 more of the
-  map loaded around you, so the wide view does not run out of land
-- Battles laid out for the wide screen, with the touch screen's buttons beside
-  the game; double, triple and rotation battles included
-- Bring your own ROM: nothing of the games is in this repository or its
-  downloads
+**Pokémon Black 2 and White 2 on your modded Switch: one screen, widescreen,
+720p, 60 fps.** No more squinting at two tiny stacked DS screens.
 
 ![Walking through Castelia City in widescreen at 60 fps](docs/screenshots/black2-castelia-60fps.gif)
+
+### What is it?
+
+A Switch homebrew app that runs the game on the melonDS emulator core, plus a
+layer that knows what the game is doing (which screen, which menu, which
+battle) and rearranges it into one proper widescreen picture. It is **not a
+native port** (that's coming soon); it's the DS game, presented the way it
+should look on a Switch.
+
+### Why not just play it in melonDS?
+
+| | melonDS | this |
+|---|---|---|
+| Screens | two 256×192 DS screens, stacked or side by side | one 16:9 picture, the touch screen's buttons tucked beside the action |
+| 3D world | 4:3 at DS resolution | 16:9 at 720p, drawn by the Switch's graphics chip, skies and scenery carried to the edges |
+| Frame rate | the game's own 30 fps 3D | 60 fps, with in-between frames |
 
 | | |
 |---|---|
@@ -25,8 +32,7 @@ edges of polygons can differ by a pixel), at 720 lines.*
 **Get it:** `ssrecomp-black2-white2-switch.zip` from the
 [latest release](../../releases/latest), then follow
 [Black 2 and White 2: ready-made download](#black-2-and-white-2-ready-made-download).
-See also [what this fork adds](#what-this-fork-adds-for-black-2-and-white-2) and
-the [recommended settings](#recommended-settings).
+Then check the [recommended settings](#recommended-settings).
 
 **Enjoying it?** Tips are welcome but never expected:
 [buy me a coffee](https://buymeacoffee.com/mamesj) or
@@ -196,47 +202,14 @@ To use a save from an emulator or a flash cart, copy it into the folder as
 `black2.sav` or `white2.sav` (`tools/bw2/convert_save.py` turns `.dsv` and
 Action Replay saves into the raw 512 KB save).
 
-#### What this fork adds for Black 2 and White 2
+#### Under the hood
 
-**Speed** (Black 2 at or very near 60 fps at 720 lines on a Switch OLED in
-handheld mode, in towns and battles; measured on the console):
-
-- The widescreen world is drawn by the Switch's graphics chip (deko3D, its own
-  graphics API) instead of its processor: about 34 ms a frame on the Skyarrow
-  Bridge at 720 lines became about 16 ms. The DS-resolution 3D picture is drawn
-  there too.
-- Each DS texture is decoded once, when the game changes it, instead of again
-  for every pixel (that was over half the graphics chip's time); textures are
-  only sent to the graphics chip when they change; pictures are kept compressed
-  and drawn straight into the frame on screen; fewer hidden pixels are shaded.
-- Where the game draws its world every other frame (Black 2's cities) and a
-  picture is late, the last one stays up for a frame instead of the game
-  waiting for it.
-- melonDS's JIT with fast memory on the Switch (FAST JIT), the 3D work spread
-  over the console's cores, and each frame shown while the next one is
-  emulated.
-- CPU BOOST sets the clocks directly, as sys-clk does, so the system can no
-  longer take its boost mode away every minute or so.
-- LOWER DETAIL WHEN BUSY drops the lines for a moment where a move's animation
-  is too heavy, instead of slowing the game down.
-
-**Widescreen fixes:**
-
-- Skies, clouds and distant layers (Castelia zoomed out, the lookouts'
-  mountains, haze and far trees) are continued to the edges of the wide view
-  instead of stopping short with a strip of flat colour.
-- Black 2 loads more of the map around you (3 of the game's 32-tile chunks
-  across instead of 2, with 8 MB of memory as on a DSi), so the land no longer
-  ends where the DS's own screen could not see.
-- Battles: the HP boxes are where the game has them (the opponent's top left,
-  yours bottom right above the buttons); the level-up window moves with your HP
-  box instead of being cut through; in double, triple and rotation battles the
-  buttons sit below all your HP boxes, and choosing a move's target (which was
-  not shown at all) is shown. BATTLE BUTTONS chooses CORNER or PANEL.
-- The X menu's save screen and the start menu (no longer cut off) have layouts
-  of their own; the world no longer flashes up for a frame after CONTINUE;
-  zoomed or rotated backgrounds no longer smear into streaks.
-- The C-Gear question on CONTINUE is answered by itself.
+The widescreen world is drawn by the Switch's graphics chip (deko3D), so Black
+2 runs at (or a whisker under) 60 fps at 720p in towns and battles, measured on
+a Switch OLED in handheld mode.
+Battles, menus and the save screen have their own one-screen layouts, and
+Black 2 loads more of its map around you so the wide view never runs out of
+land. The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 #### Recommended settings
 
