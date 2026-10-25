@@ -25,6 +25,7 @@
 // stencil holds 0x80 where the picture has alpha, plus the ID + 1 of the translucent
 // polygon drawn there last). A final pass applies the fog and writes the picture.
 #pragma once
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -155,6 +156,12 @@ std::unique_ptr<WideGpuDSRenderer> WideGpuMakeDS(std::string& info);
 // whenever the memory may have changed, 0 when that renderer is not in use (the widescreen
 // view's renderer then copies the texture memory every frame).
 extern u64 WideGpuTexVersion;
+
+// The graphics chip's time on the widescreen view's pictures (from its own clock: starting on
+// one to having copied it out), added up as they are fetched, in nanoseconds. The frontend
+// lowers the widescreen view's detail when this takes more of each frame than there is room for
+// (see LOWER DETAIL WHEN BUSY in main.cpp).
+extern std::atomic<u64> WideGpuBusyNs;
 
 // The backend in use, if any (the frontend sets it up; see WideGpuStart).
 extern std::unique_ptr<WideGpuBackend> WideGpuCurrent;

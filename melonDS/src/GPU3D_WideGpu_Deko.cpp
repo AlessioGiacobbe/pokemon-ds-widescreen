@@ -202,6 +202,7 @@ public:
 
     bool Init(std::string& info, bool small)
     {
+        Small = small;
         if (!AcquireShared(info)) return false;
         HaveShared = true;
         // A queue of its own (the widescreen view's and the DS-resolution picture's renderers
@@ -528,6 +529,7 @@ public:
         T.GpuFinal += gpuMs(RepDrawn, RepFinal);
         T.GpuCopy += gpuMs(RepFinal, RepCopied);
         T.GpuTotal += gpuMs(RepStart, RepCopied);
+        if (!Small) WideGpuBusyNs += (u64)(gpuMs(RepStart, RepCopied) * 1e6);
         T.Fragments += rep[RepFragments][0];
         T.Samples += rep[RepSamples][0];
         // Where the time goes, now and then in the log (every 240 pictures: a test run of a few
@@ -638,6 +640,7 @@ private:
     bool Pending = false;
     u64 SubmitTime = 0; // the graphics chip's clock at the last Submit
     DkQueue Queue = nullptr;
+    bool Small = false; // the DS-resolution picture's renderer
 };
 }
 

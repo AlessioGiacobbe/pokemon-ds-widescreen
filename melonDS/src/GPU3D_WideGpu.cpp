@@ -13,6 +13,7 @@ namespace melonDS
 {
 std::unique_ptr<WideGpuBackend> WideGpuCurrent;
 u64 WideGpuTexVersion = 0;
+std::atomic<u64> WideGpuBusyNs { 0 };
 
 namespace
 {

@@ -25,6 +25,9 @@
   the graphics chip when it has changed. On a PC the same
   drawing runs through OpenGL in headless tests (`--wide-gpu`), to compare with the
   processor's picture: they differ only along the edges of polygons.
+  LOWER DETAIL WHEN BUSY works with it too: where the graphics chip spends more than 11 ms
+  of each frame on the world (a battle at 720 lines), the world is drawn with fewer lines
+  until it fits, and back up when there is room.
   Where the game draws its world every other frame (Black 2's cities) and the graphics
   chip has not finished a picture in time, the last one stays on show for a frame instead
   of the game waiting for it; and the graphics chip shades fewer hidden pixels.

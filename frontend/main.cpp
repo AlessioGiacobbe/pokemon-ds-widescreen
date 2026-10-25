@@ -4154,7 +4154,8 @@ int main(int argc, char** argv)
         {
             int ww = opt.headless && opt.composeW ? opt.composeW : outW, wh = opt.headless && opt.composeH ? opt.composeH : outH;
             // Drawing it costs time in proportion to its size; cfg.wideLines caps its height
-            // and the result is enlarged to the picture. Where it cannot keep up (the
+            // and the result is enlarged to the picture. Where it cannot keep up (drawn by the
+            // processor: the
             // emulation waited for it more than 1.5 ms in each of the last 3 frames: a move's
             // animation full of see-through effects), fewer lines for a while, down to 192, a
             // fifth fewer each time; back up a tenth at a time after 2 seconds without waiting.
@@ -4164,6 +4165,42 @@ int main(int argc, char** argv)
             static uint64_t lastWideNs = 0;
             if (!adaptLines || adaptLines > cfg.wideLines) adaptLines = cfg.wideLines;
             if (!cfg.autoDetail) adaptLines = cfg.wideLines; // (LOWER DETAIL WHEN BUSY off)
+#ifdef SSR_DEKO3D
+            else if (!opt.headless && melonDS::WideGpuCurrent)
+            {
+                // Drawn by the graphics chip, which shares its time with SDL's drawing of each
+                // frame: the measure is its own time on the widescreen pictures per frame, over
+                // the last 30 frames (a game drawing its world every other frame needs half). In
+                // a battle (its world drawn every frame) a 720-line picture took 15 ms of the
+                // 16.7, and the frames ran at 17-18 ms; over 11 ms a frame, a tenth fewer lines,
+                // down to 360; back up a tenth at a time while the picture would still take
+                // under 9.5 ms a frame, after 2 seconds.
+                static uint64_t lastBusy = 0, window = 0;
+                static int windowFrames = 0;
+                const uint64_t busy = melonDS::WideGpuBusyNs.load();
+                window += busy >= lastBusy ? busy - lastBusy : 0;
+                lastBusy = busy;
+                if (++windowFrames >= 30)
+                {
+                    const double perFrame = window / 1e6 / windowFrames;
+                    window = 0;
+                    windowFrames = 0;
+                    const int floorLines = std::min(360, cfg.wideLines);
+                    if (perFrame > 11.0 && adaptLines > floorLines)
+                    {
+                        adaptLines = std::max(floorLines, adaptLines * 9 / 10);
+                        calmFrames = 0;
+                    }
+                    else if (adaptLines < cfg.wideLines && (calmFrames += 30) >= 120)
+                    {
+                        const int up = std::min(cfg.wideLines, adaptLines + std::max(8, cfg.wideLines / 10));
+                        const double scale = (double)up / adaptLines;
+                        if (perFrame * scale * scale < 9.5) adaptLines = up;
+                        calmFrames = 0;
+                    }
+                }
+            }
+#endif
             else if (!opt.headless)
             {
                 const uint64_t ns = SsrStats().WaitWideNs.load();
