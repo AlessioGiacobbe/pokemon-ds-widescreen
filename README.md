@@ -1,13 +1,22 @@
 # ssrecomp: Pokémon Black 2 and White 2 on the Nintendo Switch
 
 **Pokémon Black 2 and White 2 on a Switch with custom firmware, played on one
-screen in widescreen**, with the touch screen's buttons laid out beside the
-game (and in Black 2, more of the map loaded so the wide view does not run out
-of land).
-Download `ssrecomp-black2-white2-switch.zip` from the
-[latest release](../../releases/latest), add your own ROM and play: see
+screen in widescreen, at or near 60 fps.**
+
+- Both DS screens merged into one 16:9 picture, the 3D world drawn across all
+  of it by the Switch's graphics chip at up to 720 lines
+- Skies and distant scenery carried on to the edges, and in Black 2 more of the
+  map loaded around you, so the wide view does not run out of land
+- Battles laid out for the wide screen, with the touch screen's buttons beside
+  the game; double, triple and rotation battles included
+- Bring your own ROM: nothing of the games is in this repository or its
+  downloads
+
+**Get it:** `ssrecomp-black2-white2-switch.zip` from the
+[latest release](../../releases/latest), then follow
 [Black 2 and White 2: ready-made download](#black-2-and-white-2-ready-made-download).
-Nothing of the games is in this repository or its downloads.
+See also [what this fork adds](#what-this-fork-adds-for-black-2-and-white-2) and
+the [recommended settings](#recommended-settings).
 
 This is a fork of [ClickingMaster/ssrecomp](https://github.com/ClickingMaster/ssrecomp)
 (Pokémon SoulSilver on single-screen devices), whose author is no longer
@@ -173,6 +182,88 @@ To use a save from an emulator or a flash cart, copy it into the folder as
 `black2.sav` or `white2.sav` (`tools/bw2/convert_save.py` turns `.dsv` and
 Action Replay saves into the raw 512 KB save).
 
+#### What this fork adds for Black 2 and White 2
+
+**Speed** (Black 2 at or very near 60 fps at 720 lines on a Switch OLED in
+handheld mode, in towns and battles; measured on the console):
+
+- The widescreen world is drawn by the Switch's graphics chip (deko3D, its own
+  graphics API) instead of its processor: about 34 ms a frame on the Skyarrow
+  Bridge at 720 lines became about 16 ms. The DS-resolution 3D picture is drawn
+  there too.
+- Each DS texture is decoded once, when the game changes it, instead of again
+  for every pixel (that was over half the graphics chip's time); textures are
+  only sent to the graphics chip when they change; pictures are kept compressed
+  and drawn straight into the frame on screen; fewer hidden pixels are shaded.
+- Where the game draws its world every other frame (Black 2's cities) and a
+  picture is late, the last one stays up for a frame instead of the game
+  waiting for it.
+- melonDS's JIT with fast memory on the Switch (FAST JIT), the 3D work spread
+  over the console's cores, and each frame shown while the next one is
+  emulated.
+- CPU BOOST sets the clocks directly, as sys-clk does, so the system can no
+  longer take its boost mode away every minute or so.
+- LOWER DETAIL WHEN BUSY drops the lines for a moment where a move's animation
+  is too heavy, instead of slowing the game down.
+
+**Widescreen fixes:**
+
+- Skies, clouds and distant layers (Castelia zoomed out, the lookouts'
+  mountains, haze and far trees) are continued to the edges of the wide view
+  instead of stopping short with a strip of flat colour.
+- Black 2 loads more of the map around you (3 of the game's 32-tile chunks
+  across instead of 2, with 8 MB of memory as on a DSi), so the land no longer
+  ends where the DS's own screen could not see.
+- Battles: the HP boxes are where the game has them (the opponent's top left,
+  yours bottom right above the buttons); the level-up window moves with your HP
+  box instead of being cut through; in double, triple and rotation battles the
+  buttons sit below all your HP boxes, and choosing a move's target (which was
+  not shown at all) is shown. BATTLE BUTTONS chooses CORNER or PANEL.
+- The X menu's save screen and the start menu (no longer cut off) have layouts
+  of their own; the world no longer flashes up for a frame after CONTINUE;
+  zoomed or rotated backgrounds no longer smear into streaks.
+- The C-Gear question on CONTINUE is answered by itself.
+
+#### Recommended settings
+
+**sys-clk** (optional; in its overlay, for the game you start the Homebrew
+Menu from, or as the global profile), handheld:
+
+| | |
+|---|---|
+| CPU | 1785 MHz |
+| GPU | 460 MHz (the highest of the console's own handheld speeds; no need to go higher) |
+| Memory | 1600 MHz |
+
+With sys-clk setting the clocks, turn **CPU BOOST** off in the pause menu so
+the two do not fight. Without sys-clk, leave CPU BOOST on: it sets the same
+processor and memory speeds itself (the graphics chip stays at the system's
+speed).
+
+**Pause menu** (+ and − together). The first start already uses what is
+recommended, except CPU BOOST with sys-clk:
+
+| Setting | Recommended | What it does |
+|---|---|---|
+| SCREEN LAYOUT | MERGED | both DS screens as one picture |
+| LARGE SCREEN | AUTO | which screen is large when both are shown |
+| 60 FPS | ON | in-between frames: the game draws its 3D at 30 fps |
+| CPU BOOST | ON, or OFF with sys-clk | processor 1785 MHz, memory 1600 MHz |
+| SMOOTH SCALING | OFF | sharp pixels |
+| WIDESCREEN WORLD | ON | the 3D world drawn across the whole 16:9 screen |
+| BATTLE BUTTONS | CORNER or PANEL | where a battle's touch-screen buttons go |
+| WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
+| LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
+| WORLD ON GPU | ON | the world drawn by the graphics chip |
+| FPS COUNTER | your choice | frames per second in a corner |
+| STICK TOUCH CURSOR | your choice | right stick as a touch cursor (the touch screen works too) |
+| EMULATION | FAST JIT | from the next start; FAST JIT, JIT or INTERPRETER |
+
+If a start ever fails with FAST JIT, the next start falls back by itself, and
+holding L while starting uses the interpreter once. Settings are kept in
+`ssrecomp.cfg` in the game's folder. FAST FORWARD, SAVE STATE, LOAD STATE,
+RESET GAME and QUIT are at the bottom (QUIT saves first).
+
 #### Building it yourself
 
 It needs Linux, or Windows with WSL2 (Ubuntu 24.04), with git, CMake, Ninja and
@@ -213,22 +304,8 @@ Keep what it makes from a ROM to yourself: SoulSilver's `.nro` holds parts of
 the game's code, and `funcs.txt` is made from your ROM. The `bw` build holds
 neither and can be shared.
 
-The pause menu opens with + and − together. On the Switch it has:
-
-- **CPU BOOST** (on): the processor at 1785 MHz and the memory at 1600 MHz, set
-  directly as sys-clk does (the system's own boost mode is taken away every
-  minute or so), and put back when the game ends.
-- **WORLD ON GPU** (on): the widescreen world drawn by the Switch's graphics chip
-  instead of its processor. With it Black 2 runs at or very near 60 fps at
-  **WORLD DETAIL** 720, in cities and battles. The first start uses 288 lines and leaves **60 FPS**
-  off; raise them there.
-- **LOWER DETAIL WHEN BUSY** (on): fewer lines for a moment where the graphics
-  chip cannot keep up. Turn it off to always keep WORLD DETAIL.
-- **BATTLE BUTTONS** (Black, Black 2 and White 2): how a battle's touch-screen buttons
-  sit beside the wide view: CORNER, PANEL or, in Black, STRIP.
-- **EMULATION**: FAST JIT, JIT or INTERPRETER, from the next start. Holding L
-  while starting uses the interpreter once, and a start where the JIT failed
-  falls back to it by itself.
+The pause menu opens with + and − together; see "Recommended settings" above
+for what each row does. SoulSilver uses the same menu (without BATTLE BUTTONS).
 
 The touch screen works in handheld mode, like a mouse on a PC. Bug reports
 should come with `game.log` from the game's folder, and a save state from the
