@@ -1239,7 +1239,6 @@ struct Settings
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
     bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
-    bool gpuBoost = true; // Switch only: CPU BOOST also runs the graphics chip at its docked speed
     bool jit = true;      // Switch, games that are not recompiled: melonDS's JIT (read at start-up)
     bool fastMem = true;  // ... and its fast memory (also read at start-up)
     bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
@@ -1296,7 +1295,6 @@ struct Settings
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "cpu_boost") cpuBoost = v == "1";
-            else if (k == "gpu_boost") gpuBoost = v != "0";
             else if (k == "jit") jit = v == "1";
             else if (k == "fastmem") fastMem = v == "1";
             else if (k == "cgear_start") cgearOff = v != "ask";
@@ -1333,7 +1331,6 @@ struct Settings
 #endif
 #ifdef __SWITCH__
         f << "cpu_boost=" << (cpuBoost ? 1 : 0) << "\n";
-        f << "gpu_boost=" << (gpuBoost ? 1 : 0) << "\n";
         f << "jit=" << (jit ? 1 : 0) << "\n";
         f << "fastmem=" << (fastMem ? 1 : 0) << "\n";
         f << "cgear_start=" << (cgearOff ? "off" : "ask") << "\n";
@@ -1561,7 +1558,6 @@ int main(int argc, char** argv)
     for (const std::string& kv : opt.sets) cfg.Apply(kv);
     if (!opt.sets.empty() || opt.keepSettings) cfg.readOnly = true;
 #ifdef __SWITCH__
-    SwitchPlatform::SetGpuBoost(cfg.gpuBoost);
     if (!opt.headless) SwitchPlatform::SetCpuBoost(cfg.cpuBoost);
 #endif
     if (opt.layoutGiven || opt.headless) cfg.layout = opt.layout;

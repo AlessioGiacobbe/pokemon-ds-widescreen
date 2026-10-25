@@ -314,51 +314,12 @@ static bool OpenClocks()
 // speeds itself and checks them every 0.3 seconds, had none. So the same is done here: the
 // processor at 1785 MHz (boost mode's speed) and the memory at 1600 MHz (its docked speed;
 // handheld mode runs it at 1331 and the emulation uses memory constantly), checked five times
-// a second and set again if the system has lowered them. The graphics chip goes to 768 MHz,
-// its docked speed, too (unless gpu_boost=0): in handheld mode it runs at 460, and with the
-// widescreen world on it a battle at 720 lines left the game waiting for it in one frame in
-// seven. (Boost mode itself would turn it down to 76 MHz.) When boost is turned off or the game
-// ends, they go back to the speeds they had.
-static bool g_direct = false, g_gpuWanted = true, g_gpuSet = false;
-static u32 g_cpuNormal = 0, g_memNormal = 0, g_gpuNormal = 0;
-static constexpr u32 BoostCpuHz = 1785000000u, BoostMemHz = 1600000000u, BoostGpuHz = 768000000u;
-
-void SetGpuBoost(bool on)
-{
-    g_gpuWanted = on;
-}
-
-// The graphics chip to its boost speed when it is slower (and it is wanted), or back.
-static void GpuBoost(bool on)
-{
-    static bool failed = false;
-    if (!on)
-    {
-        // (Only in handheld mode: docked, 768 MHz is the system's own speed.)
-        if (g_gpuSet && appletGetOperationMode() == AppletOperationMode_Handheld)
-        {
-            clkrstSetClockRate(&g_gpuClock, g_gpuNormal);
-            fprintf(stderr, "[switch] graphics chip %u MHz again\n", g_gpuNormal / 1000000);
-        }
-        g_gpuSet = false;
-        return;
-    }
-    u32 gpu = 0;
-    if (!g_gpuWanted || failed || R_FAILED(clkrstGetClockRate(&g_gpuClock, &gpu))) return;
-    if (!g_gpuSet) g_gpuNormal = gpu;
-    if (gpu >= BoostGpuHz - 15000000u) return; // docked: already there
-    const Result rc = clkrstSetClockRate(&g_gpuClock, BoostGpuHz);
-    u32 now = 0;
-    clkrstGetClockRate(&g_gpuClock, &now);
-    if (R_FAILED(rc) || now < BoostGpuHz - 15000000u)
-    {
-        fprintf(stderr, "[switch] the graphics chip's speed cannot be set (0x%x)\n", (unsigned)rc);
-        failed = true;
-        return;
-    }
-    if (!g_gpuSet) fprintf(stderr, "[switch] graphics chip %u MHz (was %u)\n", now / 1000000, gpu / 1000000);
-    g_gpuSet = true;
-}
+// a second and set again if the system has lowered them. The graphics chip keeps its own
+// speed (boost mode would turn it down to 76 MHz). When boost is turned off or the game ends,
+// both go back to the speeds they had.
+static bool g_direct = false;
+static u32 g_cpuNormal = 0, g_memNormal = 0;
+static constexpr u32 BoostCpuHz = 1785000000u, BoostMemHz = 1600000000u;
 
 static bool DirectBoost(bool on)
 {
@@ -369,7 +330,6 @@ static bool DirectBoost(bool on)
             clkrstSetClockRate(&g_cpuClock, g_cpuNormal);
             clkrstSetClockRate(&g_memClock, g_memNormal);
             fprintf(stderr, "[switch] CPU boost off: processor %u MHz, memory %u MHz again\n", g_cpuNormal / 1000000, g_memNormal / 1000000);
-            GpuBoost(false);
         }
         g_direct = false;
         return true;
@@ -396,7 +356,6 @@ static bool DirectBoost(bool on)
     g_direct = true;
     fprintf(stderr, "[switch] CPU boost on: processor %u MHz (was %u), memory %u MHz (was %u)\n", nowCpu / 1000000,
         g_cpuNormal / 1000000, nowMem / 1000000, g_memNormal / 1000000);
-    GpuBoost(true);
     return true;
 }
 
@@ -407,8 +366,6 @@ void KeepBoost(uint32_t frame)
     u32 cpu = 0, mem = 0;
     if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &cpu)) || R_FAILED(clkrstGetClockRate(&g_memClock, &mem))) return;
     const bool cpuLow = cpu < BoostCpuHz - 15000000u, memLow = g_direct && mem < BoostMemHz - 15000000u;
-    // (The graphics chip quietly: undocking puts it to 460 MHz again, which is expected.)
-    if (g_direct && g_gpuWanted) GpuBoost(true);
     if (!cpuLow && !memLow) return;
     events++;
     if (events <= 10 || events % 50 == 0)
