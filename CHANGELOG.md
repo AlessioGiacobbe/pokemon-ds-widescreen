@@ -25,6 +25,9 @@
   the graphics chip when it has changed. On a PC the same
   drawing runs through OpenGL in headless tests (`--wide-gpu`), to compare with the
   processor's picture: they differ only along the edges of polygons.
+  Where the game draws its world every other frame (Black 2's cities) and the graphics
+  chip has not finished a picture in time, the last one stays on show for a frame instead
+  of the game waiting for it; and the graphics chip shades fewer hidden pixels.
 
 - Switch: quitting no longer hangs when closing the sound never returns (seen at
   "[exit] audio"): after three seconds the program ends without it.
