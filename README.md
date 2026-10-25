@@ -18,6 +18,9 @@ screen in widescreen, at or near 60 fps.**
 See also [what this fork adds](#what-this-fork-adds-for-black-2-and-white-2) and
 the [recommended settings](#recommended-settings).
 
+**Enjoying it?** Tips are welcome but never expected:
+[buy me a coffee](https://buymeacoffee.com/mamesj).
+
 This is a fork of [ClickingMaster/ssrecomp](https://github.com/ClickingMaster/ssrecomp)
 (Pokémon SoulSilver on single-screen devices), whose author is no longer
 working on it and now works on
