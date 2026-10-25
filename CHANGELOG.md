@@ -44,6 +44,10 @@
   The graphics chip now keeps its pictures compressed and draws the world straight into
   the frame it shows, and each DS texture is decoded once (when the game changes it)
   rather than again for every pixel (that decoding was over half of its drawing time).
+- Black 2 battles: the level-up window (the list of stats) moves with your HP box instead of
+  being cut through by it; in double, triple and rotation battles the buttons sit in the
+  message box's band (as BATTLE BUTTONS' PANEL), below all your HP boxes instead of over the
+  lowest one, and choosing a move's target, which was not shown at all, is.
 - Black 2: with the widescreen world on, the game loads more of its map beside you (3 of its
   32-tile chunks across instead of 2), so the wide view no longer comes to the end of the
   land where the DS's own screen could not see (beside the cliff at Aspertia's lookout). The

@@ -1925,6 +1925,8 @@ int main(int argc, char** argv)
         int battleList = -1, battleBag = -1, battleChoice = -1, battleYesNo = -1;
         int setupSingle = -1, setupDouble = -1, setupTriple = -1, setupRotation = -1;
         int save = -1, saveWrite = -1;
+        std::vector<int> levelUpWin; // the level-up window in a battle (BtlvCore_Wait*LevelUp*)
+        int battleTarget = -1;       // choosing a move's target (double, triple, rotation battles)
         std::vector<int> weatherObj; // the weathers with particles (see Scene::weatherObj)
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
@@ -1971,6 +1973,9 @@ int main(int argc, char** argv)
         // Waits for the save memory: while the game writes its save it does nothing else, for
         // over a second, not even the overworld (see the save layout).
         bw2.saveWrite = bw2Find("CARD_WaitBackupAsync");
+        bw2.battleTarget = bw2Find("BtlvCore_WaitTargetSelect");
+        for (const char* f : { "BtlvCore_WaitLevelUpWin", "BtlvCore_WaitLevelUpStats", "BtlvCore_WaitCloseLevelUpWin" })
+            bw2.levelUpWin.push_back(bw2Find(f));
         // The weathers with particles, each running in its own overlay (75: snow, 76: rain, 77:
         // sandstorm; pokebw2's include/field/weather_*.h) while it fades in, lasts and fades out.
         for (const char* w : { "Flake", "Blizzard", "Flutter", "Speck", "Rain", "Thunder", "GustyRain", "Sandstorm" })
@@ -2089,7 +2094,12 @@ int main(int argc, char** argv)
                 // y 110-138 (with room for them to shake when hit).
                 Element& top = sc.items[0];
                 top.holeCount = 2;
-                const int enemy[4] = { 0, 26, 116, 56 }, mine[4] = { 138, 106, 256, 142 };
+                // While the level-up window is open (above the player's box, x 150-255, y 34-132,
+                // its last rows over the box) the window moves with the box: the piece starts at
+                // its top, or the box would cut through the list of stats.
+                bool levelUp = false;
+                for (int f : bw2.levelUpWin) levelUp |= funcWatch.Ran(f, 3);
+                const int enemy[4] = { 0, 26, 116, 56 }, mine[4] = { 138, levelUp ? 20 : 106, 256, 142 };
                 std::copy(enemy, enemy + 4, top.holes[0]);
                 std::copy(mine, mine + 4, top.holes[1]);
                 // (The enemy's box starts 4 pixels in from the left edge of its piece, as from the
@@ -2110,16 +2120,22 @@ int main(int argc, char** argv)
                 sc.items.push_back(m);
             }
             const bool moves = funcWatch.Ran(bw2.battleMove, 1), command = !moves && funcWatch.Ran(bw2.battleCommand, 1);
+            // Choosing the target of a move in a double, triple or rotation battle: the foes'
+            // panels above, the player's side below (touch screen rows 22-131).
+            const bool target = !moves && !command && funcWatch.Ran(bw2.battleTarget, 1);
             // The touch screen's buttons, as BATTLE BUTTONS in the pause menu says: CORNER or
             // PANEL (Black's are drawn differently: frontend/bw1.h changes the corner panel made
             // here into its own, STRIP among them; Black 2 has no STRIP, which left out the party's
-            // balls and did not look good).
-            const int style = bw1.on || !wideView || !screens ? 0 : cfg.battleButtons;
-            if ((moves || command) && style == 2)
+            // balls and did not look good). A battle with two or three Pokemon on each side has
+            // as many HP boxes down the right, the lowest one ending at row 145, which the corner
+            // panel would cover: it always has the panel, in the message box's band below them.
+            int style = bw1.on || !wideView || !screens ? 0 : cfg.battleButtons;
+            if (wideView && screens && !bw1.on && kind == 2) style = 2;
+            if ((moves || command || target) && style == 2)
             {
                 // PANEL: the corner panel's piece as tall as the message box (rows 147-189),
                 // against the view's right edge.
-                Element c = moves ? Crop(1, 0, 30, 256, 98) : Crop(1, 0, 78, 256, 114);
+                Element c = moves ? Crop(1, 0, 30, 256, 98) : target ? Crop(1, 0, 22, 256, 110) : Crop(1, 0, 78, 256, 114);
                 c.scale = 43.0f / c.sh;
                 c.dx = viewRight - 2 - c.sw * c.scale;
                 c.dy = 147;
@@ -2130,6 +2146,8 @@ int main(int argc, char** argv)
                 cornerPanel(Crop(1, 0, 30, 256, 98), 0.5f);   // the four moves, two by two (49 high)
             else if (command)
                 cornerPanel(Crop(1, 0, 78, 256, 114), 0.44f); // FIGHT above BAG, RUN and POKEMON (50 high)
+            else if (target)
+                cornerPanel(Crop(1, 0, 22, 256, 110), 0.45f); // the targets (50 high)
         }
         else if (funcWatch.Ran(bw2.save, 8) || (funcWatch.Ran(bw2.saveWrite, 8) && !strcmp(lastKnownBw2.name, "save")))
         {
