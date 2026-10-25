@@ -96,12 +96,12 @@ struct Shared
     // SSR_WIDEGPU_NOATTR=1, the second target (depth and fog flag, for the fog) not written;
     // SSR_WIDEGPU_DEPTH=24, a 32-bit depth buffer (24-bit fixed point) instead of 64 bits.
     bool TexBuf = false, Zcull = false, Plain = false, NoAttr = false, Depth24 = false;
-    // And two that keep the picture right, to measure: SSR_WIDEGPU_COMPRESS=1, the graphics
-    // chip's own compression of the targets (less memory traffic, nearly free clears);
-    // SSR_WIDEGPU_DIRECT=1, the final pass written straight into the memory the processor
-    // reads (a pitch-linear target over the slot), without the copy after it (2.4 ms a
-    // 720-line picture in a battle).
-    bool Compress = false, Direct = false;
+    // The graphics chip's own compression of the targets (less memory traffic, nearly free
+    // clears), and the final pass written straight into the memory the processor reads (a
+    // pitch-linear target over the slot) without a copy after it. Measured in a battle, a
+    // 720-line picture every frame: 12.7 ms instead of 15.2, frames on time 79% instead of 53%,
+    // the same picture. (SSR_WIDEGPU_COMPRESS=0, SSR_WIDEGPU_DIRECT=0: without them.)
+    bool Compress = true, Direct = true;
 };
 Shared* Sh = nullptr;
 
@@ -170,10 +170,10 @@ bool AcquireShared(std::string& info)
     Sh->Plain = on("SSR_WIDEGPU_PLAIN", "1");
     Sh->NoAttr = on("SSR_WIDEGPU_NOATTR", "1");
     Sh->Depth24 = on("SSR_WIDEGPU_DEPTH", "24");
-    Sh->Compress = on("SSR_WIDEGPU_COMPRESS", "1");
-    Sh->Direct = on("SSR_WIDEGPU_DIRECT", "1");
-    if (Sh->Compress || Sh->Direct)
-        fprintf(stderr, "[widegpu] deko3D:%s%s\n", Sh->Compress ? " compressed targets" : "", Sh->Direct ? " final pass into the slot" : "");
+    Sh->Compress = !on("SSR_WIDEGPU_COMPRESS", "0");
+    Sh->Direct = !on("SSR_WIDEGPU_DIRECT", "0");
+    if (!Sh->Compress || !Sh->Direct)
+        fprintf(stderr, "[widegpu] deko3D:%s%s\n", Sh->Compress ? "" : " targets not compressed", Sh->Direct ? "" : " the picture copied out");
     if (Sh->Plain || Sh->NoAttr || Sh->Depth24)
         fprintf(stderr, "[widegpu] deko3D, for measuring (the pictures are wrong):%s%s%s\n", Sh->Plain ? " no textures" : "",
             Sh->NoAttr ? " no depth/fog target" : "", Sh->Depth24 ? " 32-bit depth buffer" : "");
