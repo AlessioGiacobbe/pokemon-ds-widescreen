@@ -8,8 +8,8 @@
 // the scroll, palettes and brightness of the screen's last line. Not sprites, rotating or
 // bitmap backgrounds, windows or blending between layers; nor the 3D layer. A background
 // that fills the screen's last line but whose map stops there (a pattern behind everything
-// else, made only as tall as the screen) goes on as its last row of tiles repeated, rather
-// than leaving the backdrop colour.
+// else, made only as tall as the screen) goes on mirrored about that line, rather than leaving
+// the backdrop colour.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -115,10 +115,13 @@ inline bool RenderBelowScreen(melonDS::NDS& nds, int unitNum, int rows, uint32_t
                     c = colour(palette(idx * 2), layers[i].num);
                     found = true;
                 }
-            // Nothing there: the layers that filled the last line, their last 8 rows again.
+            // Nothing there: the layers that filled the last line, mirrored about it (their rows
+            // going back up from the last, which keeps a background's stripes and closes a shape
+            // cut by the screen's edge, as Black 2's grey circle behind its start menu, instead
+            // of drawing it on as a straight band).
             for (int i = 0; i < n && !found; i++)
                 if (fills[i])
-                    if (const int idx = sample(layers[i], x, 184 + (r & 7)))
+                    if (const int idx = sample(layers[i], x, 190 - (r % 191)))
                     {
                         c = colour(palette(idx * 2), layers[i].num);
                         found = true;

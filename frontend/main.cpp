@@ -4990,7 +4990,14 @@ int main(int argc, char** argv)
             snprintf(name, sizeof(name), "/frame_%06u.png", frame);
             if (opt.composeW > 0 && opt.composeH > 0)
             {
-                if (merged) { takeWideImage(); MergedCompose(scene, screenImages, opt.composeW, opt.composeH, shot, cfg.smooth, &wideImage); }
+                if (merged)
+                {
+                    takeWideImage();
+                    // (A widened battle picture to be made beside the next frame: made now, for
+                    // the picture; the drawing job then shows the same.)
+                    if (battleRenderLater && BattleRender(battleWide, wideImage, 0)) battleRenderLater = false;
+                    MergedCompose(scene, screenImages, opt.composeW, opt.composeH, shot, cfg.smooth, &wideImage);
+                }
                 else Compose(layout, opt.composeW, opt.composeH, top, bot, shot);
                 BlendCanvas(canvas, shot);
                 WritePNG(opt.shotDir + name, shot.data(), opt.composeW, opt.composeH);

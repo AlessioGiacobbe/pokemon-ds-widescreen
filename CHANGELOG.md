@@ -28,6 +28,10 @@
   Where the game draws its world every other frame (Black 2's cities) and the graphics
   chip has not finished a picture in time, the last one stays on show for a frame instead
   of the game waiting for it; and the graphics chip shades fewer hidden pixels.
+- Black 2: where a large polygon (a sky made of panels around the camera, as in Castelia
+  zoomed out) ends a little short of the wide view's edge with nothing beside it, it is
+  stretched to the edge instead of leaving a strip of flat colour. The start menu's grey
+  circle no longer runs on below the screen as a straight band.
 
 - Switch: quitting no longer hangs when closing the sound never returns (seen at
   "[exit] audio"): after three seconds the program ends without it.

@@ -611,10 +611,90 @@ struct WideAccess
         const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view + 0.5f);
         u32 matched;
         Replay(g, false, xnum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, MaxPolygons, MaxVertices);
+        ExtendToEdges(ListReal.data(), NumReal, view);
         NumInterp = 0;
         if (g.InterpPending)
+        {
             Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices);
+            ExtendToEdges(ListInterp.data(), NumInterp, view);
+        }
         Dirty = true;
+    }
+
+    // The game leaves out what its own screen cannot show, so the wide view can come to the end
+    // of a large polygon a little short of its edge where the game drew nothing further: a
+    // sky made of panels around the camera (Castelia zoomed out by the Pokemon Center: the
+    // last panel on each side ended 20-40 pixels of 1280 short, the rear plane's flat colour
+    // beyond). A polygon at least a quarter of the view wide that reaches past the DS screen's
+    // edge, ends within 5% of the view's edge, and has nothing else beside it there (no other
+    // polygon's extent reaches into the strip between its end and the edge, over more than a
+    // third of its rows) is
+    // stretched to that edge: its outermost corners moved out, the texture with them. (Only
+    // where nothing else is: stretching a polygon that has neighbours there, a shadow on the
+    // street, a floor, shifted its texture for nothing. Others ending in the same strip, the
+    // sky's other layers, do not count as neighbours.)
+    static void ExtendToEdges(Polygon** list, u32 count, float view)
+    {
+        static const bool off = getenv("SSR_WIDE_NO_EXTEND") != nullptr; // (to compare)
+        if (off) return;
+        constexpr s32 full = 256 * 16;      // the view's width in HiresPosition's units
+        const s32 dsLeft = (s32)(full / 2 - (full / 2) * 256.0f / view), dsRight = full - dsLeft;
+        const s32 gap = full / 20;
+        struct Box { s32 x0, x1, y0, y1; u8 side; }; // side: 1 ends in the left strip, 2 the right
+        static std::vector<Box> boxes;
+        boxes.assign(count, Box { 0, -1, 0, -1, 0 });
+        bool any = false;
+        for (u32 i = 0; i < count; i++)
+        {
+            const Polygon* poly = list[i];
+            if (!poly || poly->Degenerate || poly->Type != 0 || poly->NumVertices < 3) continue;
+            Box& b = boxes[i];
+            b.x0 = b.y0 = INT32_MAX;
+            b.x1 = b.y1 = INT32_MIN;
+            for (u32 v = 0; v < poly->NumVertices; v++)
+            {
+                const s32* p = poly->Vertices[v]->HiresPosition;
+                b.x0 = std::min(b.x0, p[0]); b.x1 = std::max(b.x1, p[0]);
+                b.y0 = std::min(b.y0, p[1]); b.y1 = std::max(b.y1, p[1]);
+            }
+            if (b.x1 - b.x0 < full / 4) continue;
+            if (b.x0 > 0 && b.x0 <= gap && b.x0 < dsLeft) b.side |= 1;
+            if (b.x1 < full && b.x1 >= full - gap && b.x1 > dsRight) b.side |= 2;
+            any |= b.side != 0;
+        }
+        if (!any) return;
+        for (u32 i = 0; i < count; i++)
+        {
+            const Box b = boxes[i];
+            if (!b.side) continue;
+            for (int side = 1; side <= 2; side++)
+            {
+                if (!(b.side & side)) continue;
+                // The strip between the polygon's end and the view's edge, over its rows.
+                const s32 sx0 = side == 1 ? 0 : b.x1, sx1 = side == 1 ? b.x0 : full;
+                bool alone = true;
+                for (u32 j = 0; j < count && alone; j++)
+                {
+                    const Box& o = boxes[j];
+                    if (j == i || o.x1 < o.x0 || (o.side & side)) continue;
+                    // (Touching counts: a neighbour sharing the corner to be moved would be bent.
+                    // One beside only a third of its rows or less does not: the sea below the
+                    // sky's haze at the horizon.)
+                    const s32 rows = std::min(o.y1, b.y1) - std::max(o.y0, b.y0);
+                    if (o.x0 <= sx1 && o.x1 >= sx0 && rows > 0 && rows * 3 > b.y1 - b.y0) alone = false;
+                }
+                if (!alone) continue;
+                Polygon* poly = list[i];
+                // (The corners at its end, a slanted end's both, beside the DS screen.)
+                const s32 tol = (b.x1 - b.x0) / 6;
+                for (u32 v = 0; v < poly->NumVertices; v++)
+                {
+                    s32& x = poly->Vertices[v]->HiresPosition[0];
+                    if (side == 1 && x <= b.x0 + tol && x < dsLeft) x = 0;
+                    if (side == 2 && x >= b.x1 - tol && x > dsRight) x = full;
+                }
+            }
+        }
     }
 
     // Called where the 3D renderer draws a frame. The image drawn here belongs to the
