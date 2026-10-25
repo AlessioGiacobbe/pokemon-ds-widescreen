@@ -678,7 +678,7 @@ struct WideAccess
         {
             const Box b = boxes[i];
             if (!b.side) continue;
-            const bool far = (s64)b.w1 * 10 >= (s64)farW * 9;
+            const bool far = (s64)b.w1 * 10 >= (s64)farW * 9, distant = (s64)b.w1 * 10 >= (s64)farW * 6;
             for (int side = 1; side <= 2; side++)
             {
                 if (!(b.side & side)) continue;
@@ -690,13 +690,17 @@ struct WideAccess
                     const Box& o = boxes[j];
                     if (j == i || o.x1 < o.x0 || (o.side & side)) continue;
                     if (list[j]->Translucent && (side == 1 ? o.x0 <= 0 : o.x1 >= full)) continue;
-                    // (For a layer of the distance, as far as anything in the picture, a sky's
-                    // mountains: nor, if it hangs from the top of the view, what stands below its
-                    // top, the land in front of it;
+                    // (Nor anything wholly nearer, by more than a twentieth: it stays in front of
+                    // what is continued behind it; the trees before a far line of trees at Aspertia's
+                    // lookout.)
+                    if ((s64)o.w1 * 21 < (s64)b.w0 * 20) continue;
+                    // (For a layer of the distance, a sky's mountains or haze: nor, if it hangs from
+                    // the top of the view, what stands below its top, nor anything wholly further,
+                    // which it covers, as it would on the DS: the land beside the lookout that
+                    // Black 2 draws once it loads more of its map, frontend/bw2map.h.)
                     if (far && b.y0 <= 0 && o.y0 > 0) continue;
-                    // nor anything wholly nearer, by more than a twentieth: the land in front of
-                    // it once Black 2 draws more of its map, frontend/bw2map.h.)
-                    if (far && (s64)o.w1 * 21 < (s64)b.w0 * 20) continue;
+                    if (distant && o.w0 > b.w1) continue;
+
                     // (Touching counts: a neighbour sharing the corner to be moved would be bent.
                     // One beside only a third of its rows or less does not: the sea below the
                     // sky's haze at the horizon.)
