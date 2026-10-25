@@ -1,6 +1,22 @@
-# THIS PROJECT IS NOT BEING WORKED ON AND WILL NOT RECEIVE UPDATES
-## I am working on this now which is superior to this project: [pokeheartgold-single-screen](https://github.com/ClickingMaster/pokeheartgold-single-screen)
+# ssrecomp: Pokémon Black 2 and White 2 on the Nintendo Switch
 
+**Pokémon Black 2 and White 2 on a Switch with custom firmware, played on one
+screen in widescreen**, with the touch screen's buttons laid out beside the
+game (and in Black 2, more of the map loaded so the wide view does not run out
+of land).
+Download `ssrecomp-black2-white2-switch.zip` from the
+[latest release](../../releases/latest), add your own ROM and play: see
+[Black 2 and White 2: ready-made download](#black-2-and-white-2-ready-made-download).
+Nothing of the games is in this repository or its downloads.
+
+This is a fork of [ClickingMaster/ssrecomp](https://github.com/ClickingMaster/ssrecomp)
+(Pokémon SoulSilver on single-screen devices), whose author is no longer
+working on it and now works on
+[pokeheartgold-single-screen](https://github.com/ClickingMaster/pokeheartgold-single-screen).
+Everything below about SoulSilver, the PC setup program and Android is that
+project's, and still works here.
+
+---
 
 # ssrecomp
 
@@ -43,8 +59,8 @@ buttons laid out along the bottom in battle (one screen, played with a controlle
 You need your own copy of Pokémon SoulSilver (US) as a `.nds` file, dumped from
 your cartridge. Nothing of the game is in this repository or its releases.
 
-1. Download the setup program for your system from the
-   [latest release](../../releases/latest):
+1. Download the setup program for your system from the original project's
+   [latest release](https://github.com/ClickingMaster/ssrecomp/releases/latest):
    - Linux PC: `ssrecomp-setup-linux-x86_64`
    - Linux on ARM (Raspberry Pi 4/5 with a 64-bit OS, other arm64 boards and
      laptops): `ssrecomp-setup-linux-aarch64.AppImage`
@@ -132,9 +148,10 @@ screen layouts follow which of the game's functions run, from a table made from
 a decompilation's symbol files (`tools/bw2/funcmap.py` from
 [pokebw2](https://github.com/fuddlesworth/pokebw2), `tools/bw1/funcmap.py` from
 [aletheia](https://github.com/Project-Holon/aletheia); only their symbol files
-are downloaded) and a few bytes read from your ROM. Black 2 and White 2 also
-load more of the map around you, so the wide view does not run out of land
-(the program gives the console 8 MB of memory for it, as a DSi has).
+are downloaded) and a few bytes read from your ROM. Black 2 also loads more of
+the map around you, so the wide view does not run out of land (the program
+gives the console 8 MB of memory for it, as a DSi has); White 2 does not yet,
+as with it White 2's overworld did not come back after a trainer battle.
 
 #### Black 2 and White 2: ready-made download
 
@@ -668,6 +685,13 @@ fights battles by pressing A and tapping the left-hand moves in turn, `--pos-eve
 decompilation's `files/fielddata/eventdata/zone_event/*.json`.
 
 ## Thanks
+
+Thank you to [ClickingMaster](https://github.com/ClickingMaster), whose
+[ssrecomp](https://github.com/ClickingMaster/ssrecomp) this is a fork of; to the
+[pokebw2](https://github.com/fuddlesworth/pokebw2) and
+[aletheia](https://github.com/Project-Holon/aletheia) decompilations, whose
+symbol files name the functions Black 2, White 2 and Black are followed by; and
+to [melonDS](https://melonds.kuribo64.net), which emulates the DS underneath.
 
 Thank you to [DarthMDev](https://github.com/DarthMDev) for the macOS side of the
 project: the native macOS build and setup program
