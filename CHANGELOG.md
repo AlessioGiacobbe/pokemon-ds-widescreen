@@ -3,8 +3,9 @@
 ## Unreleased
 
 - **Pokemon White 2 (US/Europe, English):** plays like Black 2, with the same layouts, wide
-  view, wider map and battle screens (its function table comes from the pokebw2
-  decompilation's White 2 symbols).
+  view and battle screens (its function table comes from the pokebw2 decompilation's White 2
+  symbols). Not yet the wider map: with it White 2's overworld did not come back after a
+  trainer battle.
 - **Switch, Black 2 and White 2 without building:** the program can carry the function tables
   for Black 2, White 2 and Black itself and read the few bytes it needs from your ROM when
   the game starts, so one ready-made `.nro` plays any English copy of those games

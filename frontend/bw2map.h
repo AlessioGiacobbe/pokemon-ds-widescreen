@@ -10,7 +10,8 @@
 // chunks wide becomes three, centred on the player's chunk, so there is a chunk on each side, and
 // the map's memory (the field heap, made from the same table) grows by what the extra chunks use.
 //
-// Development aid: SSR_B2_MAP=0 leaves the table alone; SSR_B2_MAP_LOG=1 prints it.
+// Development aid: SSR_B2_MAP=0 leaves the table alone (=1: on for White 2 too); SSR_B2_MAP_LOG=1
+// prints it.
 #pragma once
 #include <cstdint>
 #include <cstdio>
@@ -67,15 +68,19 @@ private:
     // Where each version has MAP_CONFIGS (in the field overlay) and HEAP_SETUP_NTR (in the main
     // binary), from the decompilation's symbols for that version (pokebw2: config/b2_us, w2_us).
     // White 2's code is Black 2's, a little further along in memory.
-    struct Version { const char* code; uint32_t table, heapSetup; };
+    struct Version { const char* code; uint32_t table, heapSetup; bool on; };
     static const Version* Find(const char* code)
     {
         static const Version versions[] = {
-            { "IREO", 0x021ca01c, 0x0208ee68 }, // Black 2
-            { "IRDO", 0x021ca050, 0x0208ee94 }, // White 2
+            { "IREO", 0x021ca01c, 0x0208ee68, true }, // Black 2
+            // White 2: not yet. With 8 MB (even with the game's heaps moved and nothing else
+            // changed) its overworld is not drawn again after a trainer battle, while Black 2's
+            // is; the cause is not known yet. SSR_B2_MAP=1 turns it on to test.
+            { "IRDO", 0x021ca050, 0x0208ee94, false }, // White 2
         };
+        const char* env = getenv("SSR_B2_MAP");
         for (const Version& v : versions)
-            if (!strcmp(code, v.code)) return &v;
+            if (!strcmp(code, v.code)) return v.on || (env && !strcmp(env, "1")) ? &v : nullptr;
         return nullptr;
     }
 
