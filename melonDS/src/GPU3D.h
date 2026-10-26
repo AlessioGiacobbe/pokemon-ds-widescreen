@@ -199,7 +199,15 @@ public:
     FIFO<CmdFIFOEntry, 256> CmdFIFO {};
     FIFO<CmdFIFOEntry, 4> CmdPIPE {};
 
-    FIFO<CmdFIFOEntry, 64> CmdStallQueue {};
+    // ssrecomp: melonDS keeps 64 here, enough for one STM. A JIT block only stops after its
+    // last instruction, though, so a block of unrolled stores to the geometry ports (Black 2's
+    // and White 2's battles and overworld) can write well over 64 commands after the FIFO is
+    // full. The extra ones were dropped, which left every later command reading its
+    // neighbour's parameters: White 2's overworld not drawn after a battle (its projection
+    // matrix one word out), black battle backgrounds after a faint, missing summary sprites.
+    // 2048 covers the worst case of a 32-instruction block (32 STMs of 16 words, packed 4 to a
+    // word). Savestates still hold the first 64, as before (GPU3D::DoSavestate).
+    FIFO<CmdFIFOEntry, 2048> CmdStallQueue {};
 
     u32 ZeroDotWLimit = 0xFFFFFF;
 
@@ -207,6 +215,9 @@ public:
 
     u32 ExecParams[32] {};
     u32 ExecParamCount = 0;
+    // ssrecomp: the command whose parameters ExecParams holds (0xFF: not known, after a
+    // savestate load), to start again in step with the FIFO if a command was cut short.
+    u8 ExecCommand = 0xFF;
 
     s32 CycleCount = 0;
     s32 VertexPipeline = 0;

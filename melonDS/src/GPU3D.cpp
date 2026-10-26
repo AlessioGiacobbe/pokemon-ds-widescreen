@@ -212,6 +212,7 @@ void GPU3D::Reset() noexcept
 
     memset(ExecParams, 0, 32*4);
     ExecParamCount = 0;
+    ExecCommand = 0xFF;
 
     CycleCount = 0;
     VertexPipeline = 0;
@@ -380,6 +381,7 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
 
     file->VarArray(ExecParams, 32*4);
     file->Var32(&ExecParamCount);
+    if (!file->Saving) ExecCommand = 0xFF;
     file->Var32((u32*)&CycleCount);
     file->Var64(&Timestamp);
 
@@ -507,7 +509,21 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
         }
     }
 
-    CmdStallQueue.DoSavestate(file);
+    {
+        // The savestate keeps melonDS's 64-entry layout for the stall queue (see GPU3D.h);
+        // at a frame's end it is all but always empty.
+        FIFO<CmdFIFOEntry, 64> stall;
+        if (file->Saving)
+            for (u32 i = 0; i < CmdStallQueue.Level() && i < 64; i++)
+                stall.Write(CmdStallQueue.Peek(i));
+        stall.DoSavestate(file);
+        if (!file->Saving)
+        {
+            CmdStallQueue.Clear();
+            while (!stall.IsEmpty())
+                CmdStallQueue.Write(stall.Read());
+        }
+    }
 
     file->Var32((u32*)&VertexPipeline);
     file->Var32((u32*)&NormalPipeline);
@@ -1800,6 +1816,13 @@ void GPU3D::ExecuteCommand() noexcept
     {
         // fast path for command which only have a single parameter
 
+        // ssrecomp: every FIFO entry carries its command, so one that arrives while another
+        // command still waits for parameters means that command lost some (dropped by the
+        // old 64-entry stall queue, and kept in savestates made then). Without this, every
+        // later command took its neighbour's parameters until another loss happened to undo
+        // it; a valid command stream never gets here.
+        ExecParamCount = 0;
+
         /*printf("[GXS:%08X] 0x%02X,  0x%08X", GXStat, entry.Command, entry.Param);*/
 
         switch (entry.Command)
@@ -2152,6 +2175,9 @@ void GPU3D::ExecuteCommand() noexcept
     }
     else
     {
+        if (ExecParamCount && ExecCommand != 0xFF && entry.Command != ExecCommand)
+            ExecParamCount = 0; // the same as above
+        ExecCommand = entry.Command;
         ExecParams[ExecParamCount] = entry.Param;
         ExecParamCount++;
 

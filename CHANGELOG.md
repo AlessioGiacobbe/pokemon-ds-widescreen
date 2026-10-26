@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **3D drawing commands are no longer lost (Black 2, White 2 and the other games on the fast
+  JIT).** When the console's 3D command queue was full, a burst of commands from the fast JIT
+  could overflow the small overflow store melonDS keeps, and from then on every command read
+  its neighbour's numbers. Fixed: White 2's overworld not drawn after a trainer battle (so
+  White 2 now has the wider map too), triple and double battles' backgrounds going black for
+  a few seconds after a Pokémon faints, and the summary screen's Pokémon sometimes missing.
+  Save states made before keep working and fall back in step at once.
 - **Black 2 and White 2: double, triple and rotation battles' HP boxes against the edges of the
   wide view,** the foes' in the upper left and yours in the lower right, as in single battles
   (they kept the DS's places in the middle). The boxes stay put while the screen goes black
@@ -14,8 +21,7 @@
   had nothing to choose on the Switch, is gone too.
 - **Pokemon White 2 (US/Europe, English):** plays like Black 2, with the same layouts, wide
   view and battle screens (its function table comes from the pokebw2 decompilation's White 2
-  symbols). Not yet the wider map: with it White 2's overworld did not come back after a
-  trainer battle.
+  symbols), and the wider map.
 - **Switch, Black, Black 2 and White 2 start at WORLD DETAIL 720 with 60 FPS on** (with WORLD
   ON GPU, about 16 ms a frame), instead of 288 lines and 60 FPS off, which suited the world
   drawn by the processor. Settings you have already changed are kept.
