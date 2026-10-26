@@ -10,6 +10,7 @@
 | **Pokémon Black 2 and White 2** | ✅ out now | [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
 | **Pokémon SoulSilver and HeartGold** | ✅ out now | [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
 | **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
+| **All six games in one** | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v1) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 Every download is free of the games themselves: you bring your own ROM, and
@@ -33,8 +34,9 @@ DS game, presented the way it should look on a Switch.
 
 ## Installing (any of the games)
 
-1. Download the game's zip (table above) and unzip it to the root of the SD
-   card. It makes a folder for each game in `/switch/`.
+1. Download the game's zip (table above), or the one with all six games, and
+   unzip it to the root of the SD card. It makes a folder for each game in
+   `/switch/`; a game whose ROM you don't put in its folder just isn't used.
 2. Copy your own ROM into the game's folder, as the only `.nds` file there.
 3. **Hold R while starting any game** to open the Homebrew Menu, then pick the
    game (started from the album there is not enough memory). **QUIT** in the
