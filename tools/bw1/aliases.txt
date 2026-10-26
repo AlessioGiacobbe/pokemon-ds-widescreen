@@ -14,6 +14,13 @@
 # 2); its part, a YES / NO question on the touch screen in a battle ("Use next Pokemon?", "Give
 # a nickname?"), is Black's BTLV_SCD choice screen, polled by BTLV_CORE_PollYesNoMenu every frame
 # while it is up (Black 2's BtlvCore_PollYesNo): matched by role, "role".
+# BtlvCore_WaitTargetSelect: Black's BTLV_CORE_PollTargetMenu, right after BTLV_CORE_StartTargetMenu
+# as Black 2's follows BtlvCore_StartTargetSelect (the same size, 0x2c), between the move menu's
+# functions and the input's abort. The level-up window's three waits (open, the new stats, close)
+# are the second of each of Black's three pairs of 16-byte functions after the move-forgetting
+# screen (aletheia's "BallWindow"), as Black 2's three pairs follow its move-forgetting screen,
+# just before the fades. ShinkaDemo_Main: the evolution scene's main function, SHINKA_DEMO_Main
+# in aletheia too.
 # StartMenu_Continue is Black's STARTMENU_StateConnectPrompt: the same C-Gear question as Black
 # 2's (message, YES / NO; B gives a second "is that OK?" YES / NO whose YES leaves the C-Gear
 # off; skipped at once when the C-Gear has not been obtained), so the shared code answers it
@@ -24,6 +31,7 @@ ItemMenuProc_Main            ITEMMENU_Main                        ov070  021b890
 BtlMain_ProcMain             BTL_MAIN_ProcMain                    ov093  021b6434  align0.89
 BtlvCore_WaitCommandSelect   BTLV_CORE_PollActionMenu             ov093  021e97a4  exact
 BtlvCore_WaitMoveSelect      BTLV_CORE_PollMoveMenu               ov093  021e98b4  align1.00
+BtlvCore_WaitTargetSelect    BTLV_CORE_PollTargetMenu             ov093  021e98e8  position
 PokeListProc_Main            POKELIST_Main                        ov091  021b65b8  align0.85
 TrainerCard_Main             VIEWER_MAIN_Main                     ov111  021c3f54  align0.72
 TownMap_ProcMain             TOWNMAP_Update                       ov072  021b98f8  exact
@@ -45,6 +53,10 @@ BtlMain_SetupAloneSingle     BTL_MAIN_TaskSetupSingle             ov093  021b6aa
 BtlMain_SetupAloneDouble     BTL_MAIN_TaskSetupDouble             ov093  021b6c5c  exact
 BtlMain_SetupAloneTriple     BTL_MAIN_TaskSetupTriple             ov093  021b7050  exact
 BtlMain_SetupAloneRotation   BTL_MAIN_TaskSetupRotation           ov093  021b71d4  exact
+BtlvCore_WaitLevelUpWin      BTLV_CORE_UpdateBallWindowOpen       ov093  021eadb4  position
+BtlvCore_WaitLevelUpStats    BTLV_CORE_UpdateBallWindowRefresh    ov093  021eadd4  position
+BtlvCore_WaitCloseLevelUpWin BTLV_CORE_UpdateBallWindowClose      ov093  021eadf4  position
+ShinkaDemo_Main              SHINKA_DEMO_Main                     ov195  022040e0  position
 Flake_Main                   WEATHER_SNOW_Run                     ov025  021ee888  exact
 Flake_FadeIn                 WEATHER_SNOW_BeginParticles          ov025  021ee798  align0.98
 Flake_FadeOut                WEATHER_SNOW_EndFade                 ov025  021ee8ec  exact

@@ -81,6 +81,7 @@ public:
         field = fw.Find("FieldmapProc_Update");
         commandMenu = fw.Find("BtlvCore_WaitCommandSelect");
         moveMenu = fw.Find("BtlvCore_WaitMoveSelect");
+        targetMenu = fw.Find("BtlvCore_WaitTargetSelect");
         fprintf(stderr, "[bw1] Pokemon Black: badges %d, card edit %d, save %d\n", badges, cardEdit, report);
     }
 
@@ -153,11 +154,17 @@ public:
         }
         if (!strcmp(sc.name, "battle"))
         {
-            BattleBoxes(sc, viewLeft, viewRight);
-            if (battleButtons != BUTTONS_CORNER && wideView && screens)
+            const bool many = BattleBoxes(sc, viewLeft, viewRight);
+            // (A double, triple or rotation battle has the player's boxes down to the message
+            // box, where the corner panel would stand: there the panel takes the box's band.)
+            const int buttons = many && battleButtons == BUTTONS_CORNER ? BUTTONS_PANEL : battleButtons;
+            if (buttons != BUTTONS_CORNER && wideView && screens)
             {
                 const bool moves = Fw->Ran(moveMenu, 1), command = !moves && Fw->Ran(commandMenu, 1);
-                if (moves || command)
+                // (Choosing a move's target, in a double, triple or rotation battle: the foes'
+                // buttons above, the player's side below, touch screen rows 32-134.)
+                const bool target = !moves && !command && Fw->Ran(targetMenu, 1);
+                if (moves || command || target)
                 {
                     // The panel pickSceneBw2 put in the corner (a bordered backing and a piece
                     // of the touch screen) goes; the strip or the smaller panel takes its place.
@@ -165,14 +172,15 @@ public:
                     for (const Element& e : sc.items)
                         if (e.screen != 1 && !(e.screen == -1 && e.border)) keep.push_back(e);
                     sc.items = keep;
-                    if (battleButtons == BUTTONS_STRIP)
+                    if (buttons == BUTTONS_STRIP && !target)
                         BattleStrip(sc, viewRight, screens[1].pixels, moves);
                     else
                     {
                         // The same pieces as the corner panel (pickSceneBw2's: the four moves,
-                        // or FIGHT above BAG, RUN and POKEMON), as tall as the message box
-                        // (rows 147-189), against the view's right edge.
-                        Element c = moves ? Crop(1, 0, 30, 256, 98) : Crop(1, 0, 78, 256, 114);
+                        // or FIGHT above BAG, RUN and POKEMON; the targets, also in STRIP), as
+                        // tall as the message box (rows 147-189), against the view's right edge.
+                        Element c = moves ? Crop(1, 0, 30, 256, 98) : target ? Crop(1, 0, 32, 256, 103)
+                            : Crop(1, 0, 78, 256, 114);
                         c.scale = 43.0f / c.sh;
                         c.dx = viewRight - 2 - c.sw * c.scale;
                         c.dy = 147;
@@ -193,7 +201,7 @@ public:
 private:
     const FuncWatch* Fw = nullptr;
     int badges = -1, cardEdit = -1, report = -1, field = -1, dexRegister = -1, touchInput = -1;
-    int commandMenu = -1, moveMenu = -1;
+    int commandMenu = -1, moveMenu = -1, targetMenu = -1;
     bool saving = false; // the save's screen was shown last
 
     static void Only(Scene& sc, const char* name, int screen)
@@ -205,17 +213,26 @@ private:
         sc = n;
     }
 
-    // A single battle on a wide view (pickSceneBw2 has made holes for Black 2's HP boxes and
-    // put them against the view's edges). Black's boxes are drawn against the screen's edges: the
-    // foe's along the left edge (x 0-123, y 30-48), its bars running off it, and the player's
-    // along the right edge (x 136-255, y 110-138). They stay against those edges, now the
-    // view's: the foe's at its left, 4 pixels higher; the player's at its right, 10 pixels higher
-    // (still in the lower half), so that it clears the buttons in the lower right corner.
-    static void BattleBoxes(Scene& sc, float viewLeft, float viewRight)
+    // A battle on a wide view (pickSceneBw2 has made holes for Black 2's HP boxes and put them
+    // against the view's edges). Black's boxes are drawn against the screen's edges and stay
+    // against those edges, now the view's. In a single battle the foe's runs along the left edge
+    // (x 0-123, y 30-48), its bars running off it, and the player's along the right edge
+    // (x 136-255, y 110-138): the foe's goes to the view's left, 4 pixels higher, the player's to
+    // its right, 10 pixels higher (still in the lower half), so that it clears the buttons in the
+    // lower right corner. In a double, triple or rotation battle (pickSceneBw2's foes' hole starts
+    // at row 4) the foes' boxes are stacked down the left edge (a double's x 0-126, y 18-62; a
+    // triple's centred on rows 19, 40 and 61) and the player's down the right edge (a double's
+    // x 136-255, y 90-146, just above the message box): they keep their rows. Returns whether
+    // the battle has more than one Pokemon a side.
+    static bool BattleBoxes(Scene& sc, float viewLeft, float viewRight)
     {
-        if (sc.items.empty() || sc.items[0].holeCount != 2) return; // not a single battle on a wide view
-        static const int enemy[4] = { 0, 26, 128, 54 }, mine[4] = { 132, 106, 256, 142 };
+        if (sc.items.empty() || sc.items[0].holeCount != 2) return false; // no boxes moved
         Element& top = sc.items[0];
+        const bool many = top.holes[0][1] == 4;
+        static const int enemy1[4] = { 0, 26, 128, 54 }, mine1[4] = { 132, 106, 256, 142 };
+        const int enemyN[4] = { 0, 8, 128, 72 }, mineN[4] = { 134, 82, 256, 147 };
+        const int* enemy = many ? enemyN : enemy1;
+        const int* mine = many ? mineN : mine1;
         std::copy(enemy, enemy + 4, top.holes[0]);
         std::copy(mine, mine + 4, top.holes[1]);
         int n = 0;
@@ -230,15 +247,16 @@ private:
             if (n == 0)
             {
                 e.dx = viewLeft;
-                e.dy = enemy[1] - 4;
+                e.dy = enemy[1] - (many ? 0 : 4);
             }
             else
             {
                 e.dx = viewRight - e.sw;
-                e.dy = mine[1] - 10;
+                e.dy = mine[1] - (many ? 0 : 10);
             }
             if (++n == 2) break;
         }
+        return many;
     }
 
     // The battle's buttons as a strip in the lower right of a wide view, below the player's HP

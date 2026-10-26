@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Black: double, triple and rotation battles laid out for the wide view.** The foes' HP boxes
+  stay down the left edge of the view and yours down the right edge, where Black draws them
+  (they were cut by the single battle's places), and the battle buttons sit in the message
+  box's band so they don't cover your boxes. Choosing a move's target shows the target buttons
+  there too (it showed none). Black's table now also knows the target menu, the level-up
+  window and the evolution scene by Black 2's names. Headless tests: `--state-at` counts from
+  the loaded state under `--relative`, like the other frame options.
 - **SoulSilver and HeartGold (English, US) as a download, on the fast JIT.** The program holds
   none of the games' code: its tables have addresses only, and the overlay code the game
   watch compares is read from your ROM when the game starts. HeartGold is told apart by its

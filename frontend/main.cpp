@@ -1567,6 +1567,7 @@ int main(int argc, char** argv)
         opt.shotAt = at;
         if (opt.frames) opt.frames += frame;
         if (opt.stopAt) opt.stopAt += frame;
+        if (opt.stateSaveAt) opt.stateSaveAt += frame;
         for (ScriptEvent& ev : script)
         {
             ev.start += frame;
