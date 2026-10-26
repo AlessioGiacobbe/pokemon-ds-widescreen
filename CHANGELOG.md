@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Switch: new names, without "ssrecomp".** The games' folders and programs are now
+  `/switch/pokemon-<game>-wide/pokemon-<game>-wide.nro` (black2, white2, black, white,
+  soulsilver, heartgold) and the downloads `pokemon-…-wide-switch.zip`. The settings file beside
+  the game is `settings.cfg` (an old `ssrecomp.cfg` there is renamed to it), and the program's
+  messages say "Pokemon DS widescreen" and mention starting it from a forwarder.
 - **Pokémon White (English, US/Europe).** The same program and layouts as Black: White is the
   same game with its code a few bytes apart, so its function table is Black's at White's
   addresses (`tools/bw1/white_shifts.txt`, found by `tools/bw1/match_white.py`;

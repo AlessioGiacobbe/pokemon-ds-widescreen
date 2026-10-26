@@ -34,7 +34,7 @@ void ShowMessage(const std::string& text)
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad;
     padInitializeDefault(&pad);
-    printf("\n  ssrecomp\n\n%s\n\n  Press + to return to the Homebrew Menu.\n", text.c_str());
+    printf("\n  Pokemon DS widescreen\n\n%s\n\n  Press + to return to the Homebrew Menu.\n", text.c_str());
     while (appletMainLoop())
     {
         padUpdate(&pad);
@@ -115,7 +115,8 @@ bool Start(int& argc, char**& argv)
     {
         ShowMessage("  This needs the console's full memory.\n"
                     "  Start it from a game instead of the album:\n"
-                    "  hold R while starting any game, then choose ssrecomp.");
+                    "  hold R while starting any game, then choose this game\n"
+                    "  (or start it from its forwarder on the HOME Menu).");
         return false;
     }
     u64 total = 0, used = 0;
@@ -151,7 +152,12 @@ bool Start(int& argc, char**& argv)
     else if (!strcmp(code, "IRBO")) saveName = "black.sav";
     else if (!strcmp(code, "IRAO")) saveName = "white.sav";
     fprintf(stderr, "[switch] game code %s, save %s\n", code[0] ? code : "?", saveName.c_str());
-    g_args = { argc > 0 && argv[0] ? argv[0] : "ssrecomp", rom, "--save", dir + "/" + saveName, "--fullscreen" };
+    // The settings: settings.cfg beside the game (ssrecomp.cfg before; an old one is renamed).
+    const std::string cfgPath = dir + "/settings.cfg", oldCfg = dir + "/ssrecomp.cfg";
+    struct stat cst;
+    if (stat(cfgPath.c_str(), &cst) != 0 && stat(oldCfg.c_str(), &cst) == 0) rename(oldCfg.c_str(), cfgPath.c_str());
+    g_args = { argc > 0 && argv[0] ? argv[0] : "pokemon-ds-wide", rom, "--save", dir + "/" + saveName, "--fullscreen",
+               "--config", cfgPath };
     // A game that is not recompiled (Black, White, Black 2, White 2) comes with its function table, made on the
     // PC by tools/bw2/funcmap.py or tools/bw1/funcmap.py; its layouts follow the functions that
     // run. SoulSilver and HeartGold need none (their layouts come from their own tables, built into the program)
@@ -202,7 +208,6 @@ bool Start(int& argc, char**& argv)
         // melonDS/src/ARMJIT_Memory.cpp) likewise: if a start with it did not get going, the
         // next start goes without it, and the one after tries it again.
         bool jit = true, fastMem = true;
-        const std::string cfgPath = dir + "/ssrecomp.cfg";
         if (FILE* f = fopen(cfgPath.c_str(), "r"))
         {
             char line[128];
