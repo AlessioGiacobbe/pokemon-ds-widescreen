@@ -4,6 +4,11 @@ function list (layout/function_addrs.tsv) and your own ROM, in the same form as 
 
     python3 tools/bw1/funcmap.py <aletheia>/layout/function_addrs.tsv <rom.nds> out/funcs.txt
     python3 tools/bw1/funcmap.py <aletheia>/layout/function_addrs.tsv - out/IRBO.txt
+    python3 tools/bw1/funcmap.py <aletheia>/layout/function_addrs.tsv <white.nds> out/funcs.txt --white
+    python3 tools/bw1/funcmap.py <aletheia>/layout/function_addrs.tsv - out/IRAO.txt --white
+
+--white makes Pokemon White's (IRAO) table: the same functions as Black's, at White's addresses
+(tools/bw1/white_shifts.txt, made by tools/bw1/match_white.py).
 
 With - for the ROM the overlay functions' first bytes are left as ?, for the program to read
 from the player's ROM (see tools/bw2/funcmap.py).
@@ -35,14 +40,41 @@ def load_aliases(path):
     return out
 
 
+def load_shifts(path):
+    """module -> sorted [(Black address from which, White - Black)]."""
+    out = {}
+    for line in open(path):
+        line = line.split("#", 1)[0].split()
+        if len(line) >= 3:
+            out.setdefault(line[0], []).append((int(line[1], 16), int(line[2], 16)))
+    for v in out.values():
+        v.sort()
+    return out
+
+
+def shifted(shifts, module, addr):
+    """Where White has the function Black has at addr (unchanged where no shift is known)."""
+    d = 0
+    for start, delta in shifts.get(module, ()):
+        if start > addr:
+            break
+        d = delta
+    return addr + d
+
+
 def main():
-    tsv, rom_path, out_path = sys.argv[1:4]
+    args = [a for a in sys.argv[1:] if a != "--white"]
+    white = "--white" in sys.argv[1:]
+    tsv, rom_path, out_path = args[:3]
+    shifts = load_shifts(os.path.join(HERE, "white_shifts.txt")) if white else {}
+    want = b"IRAO" if white else b"IRBO"
     if rom_path == "-":
         rom, ovs = None, {}
     else:
         rom = open(rom_path, "rb").read()
-        if rom[0x0C:0x10] != b"IRBO":
-            print("warning: %s is not Pokemon Black (US/Europe): game code %r" % (rom_path, rom[0x0C:0x10]))
+        if rom[0x0C:0x10] != want:
+            print("warning: %s is not Pokemon %s (US/Europe): game code %r"
+                  % (rom_path, "White" if white else "Black", rom[0x0C:0x10]))
         ovs = overlays(rom)
     aliases = load_aliases(os.path.join(HERE, "aliases.txt"))
     found = set()
@@ -61,16 +93,18 @@ def main():
             if not m:
                 continue  # the DSi-only code (twl) and overlay 230's second half (ov230d)
             module, check = region, ovs.get(int(m.group(1)))
+        alias = aliases.get((module, addr))
+        if alias:
+            found.add((module, addr))
+            name = alias
+        if white:
+            addr = shifted(shifts, module, addr)
         first = "?" if rom is None and module.startswith("ov") else "-"
         if check:
             base, data = check
             off = addr - base
             if 0 <= off and off + 4 <= len(data):
                 first = data[off:off + 4].hex()
-        alias = aliases.get((module, addr))
-        if alias:
-            found.add((module, addr))
-            name = alias
         rows.append((addr, "t" if isa == "thumb" else "a", module, first, name))
     missing = [aliases[k] for k in aliases if k not in found]
     if missing:

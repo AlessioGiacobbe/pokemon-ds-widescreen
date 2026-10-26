@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Pokemon Black for the Nintendo Switch: build-switch-bw1/ssrecomp.nro. Like Black 2's
+# Builds Pokemon Black (or White: SSR_NRO_TITLE="Pokemon White") for the Nintendo Switch: build-switch-bw1/ssrecomp.nro. Like Black 2's
 # (tools/bw2/build_switch.sh): no recompiled code (tools/bw2/stubgen stands in for gen/), the game
 # runs on melonDS's JIT, and its layouts follow the functions listed in funcs.txt, which
 # tools/bw1/funcmap.py makes from the aletheia decompilation and your ROM. The same program as
@@ -24,7 +24,7 @@ cmake -S . -B "$BUILD" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Switch.cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     -DSSR_GENERATED_DIR="$HERE/tools/bw2/stubgen" \
-    -DSSR_NRO_TITLE="Pokemon Black" \
+    -DSSR_NRO_TITLE="${SSR_NRO_TITLE:-Pokemon Black}" \
     -DSSR_JIT=ON
 ninja -C "$BUILD" ssrecomp_nro
 [ -f "$BUILD/ssrecomp.nro" ] || { echo "the build finished but $BUILD/ssrecomp.nro was not made" >&2; exit 1; }

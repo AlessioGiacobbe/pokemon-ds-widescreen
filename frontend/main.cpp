@@ -64,7 +64,7 @@
 #include "SsrThreads.h"
 #include "switch_platform.h"
 #include "funcwatch.h"
-#include "bw1.h" // Pokemon Black's own layouts (Black 1 only)
+#include "bw1.h" // Pokemon Black and White's own layouts
 #include "bw2map.h" // Black 2 and White 2: more of the map loaded beside the player
 #if defined(__SWITCH__) && defined(SSR_DEKO3D)
 #include "dekoprobe.h"
@@ -1974,7 +1974,7 @@ int main(int argc, char** argv)
     int cgearStep = 0;
     bool cgearAsked = false;  // its YES / NO was up in the last frame
     bool cgearHidden = false; // the question is being answered unseen this frame
-    Bw1Layouts bw1; // Pokemon Black's own layouts (frontend/bw1.h; nothing for other games)
+    Bw1Layouts bw1; // Pokemon Black and White's own layouts (frontend/bw1.h; nothing for other games)
     Bw2Map bw2map;  // Black 2: more of the map loaded beside the player (frontend/bw2map.h)
     if (funcWatchOn)
     {
@@ -2023,7 +2023,7 @@ int main(int argc, char** argv)
         for (const char* w : { "Flake", "Blizzard", "Flutter", "Speck", "Rain", "Thunder", "GustyRain", "Sandstorm" })
             for (const char* phase : { "_Main", "_FadeIn", "_FadeOut" })
                 bw2.weatherObj.push_back(bw2Find((std::string(w) + phase).c_str()));
-        bw1.Init(opt.rom, funcWatch, bw2Names, opt.config); // Pokemon Black: its own functions too
+        bw1.Init(opt.rom, funcWatch, bw2Names, opt.config); // Pokemon Black and White: their own functions too
         bw1.battleButtons = cfg.battleButtons;
         {
             char code[5] = {};
@@ -4865,7 +4865,7 @@ int main(int argc, char** argv)
             fieldHeldBySave = writing && fieldActive();
             Scene picked = funcWatchOn ? pickSceneBw2(view.width, screenImages)
                                        : pickScene(frame < cursorShownUntil, view.width, screenImages);
-            if (funcWatchOn) bw1.Adjust(picked, view.width, screenImages); // Pokemon Black
+            if (funcWatchOn) bw1.Adjust(picked, view.width, screenImages); // Pokemon Black and White
             // An application's own layout stays while it fades out: the game is still ending it
             // (and its picture is still what is on the screens) when only a general layout
             // would be chosen, until the overworld runs again or a moment has passed.

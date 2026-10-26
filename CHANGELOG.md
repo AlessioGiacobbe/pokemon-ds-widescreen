@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Pokémon White (English, US/Europe).** The same program and layouts as Black: White is the
+  same game with its code a few bytes apart, so its function table is Black's at White's
+  addresses (`tools/bw1/white_shifts.txt`, found by `tools/bw1/match_white.py`;
+  `tools/bw1/funcmap.py --white` makes the table). On the Switch it gets `white.sav`, and the
+  messages for a missing or unknown game list it.
 - **Black: double, triple and rotation battles laid out for the wide view.** The foes' HP boxes
   stay down the left edge of the view and yours down the right edge, where Black draws them
   (they were cut by the single battle's places), and the battle buttons sit in the message

@@ -66,8 +66,8 @@ std::string FindRom(const std::string& dir, std::string& problem)
     }
     if (found.size() == 1) return dir + "/" + found[0];
     if (found.empty())
-        problem = "  No game found. Copy your ROM (Pokemon SoulSilver US; Black 2, White 2\n"
-                  "  or Black in English) into\n  " + dir + "/";
+        problem = "  No game found. Copy your ROM (Pokemon SoulSilver or HeartGold US; Black 2,\n"
+                  "  White 2, Black or White in English) into\n  " + dir + "/";
     else
         problem = "  More than one .nds file in\n  " + dir + "\n  Rename the one to play to rom.nds.";
     return "";
@@ -149,9 +149,10 @@ bool Start(int& argc, char**& argv)
     else if (!strcmp(code, "IREO")) saveName = "black2.sav";
     else if (!strcmp(code, "IRDO")) saveName = "white2.sav";
     else if (!strcmp(code, "IRBO")) saveName = "black.sav";
+    else if (!strcmp(code, "IRAO")) saveName = "white.sav";
     fprintf(stderr, "[switch] game code %s, save %s\n", code[0] ? code : "?", saveName.c_str());
     g_args = { argc > 0 && argv[0] ? argv[0] : "ssrecomp", rom, "--save", dir + "/" + saveName, "--fullscreen" };
-    // A game that is not recompiled (Black, Black 2, White 2) comes with its function table, made on the
+    // A game that is not recompiled (Black, White, Black 2, White 2) comes with its function table, made on the
     // PC by tools/bw2/funcmap.py or tools/bw1/funcmap.py; its layouts follow the functions that
     // run. SoulSilver and HeartGold need none (their layouts come from their own tables, built into the program)
     // and must not be given one: a function table switches to the Black games' layouts.
@@ -172,8 +173,8 @@ bool Start(int& argc, char**& argv)
                 ShowMessage(std::string("  ") + rom.substr(rom.find_last_of('/') + 1) + " is a game this program does not know\n"
                             "  (game code " + (code[0] ? code : "?") + ").\n\n"
                             "  It plays the English versions of:\n"
-                            "    Pokemon Black 2 (IREO), Pokemon White 2 (IRDO) and Pokemon Black (IRBO),\n"
-                            "    US and Europe;\n"
+                            "    Pokemon Black 2 (IREO), Pokemon White 2 (IRDO), Pokemon Black (IRBO)\n"
+                            "    and Pokemon White (IRAO), US and Europe;\n"
                             "    Pokemon SoulSilver (IPGE) and Pokemon HeartGold (IPKE), US, with the\n"
                             "    SoulSilver and HeartGold download.\n"
                             "  Other languages put the game's code in other places.");

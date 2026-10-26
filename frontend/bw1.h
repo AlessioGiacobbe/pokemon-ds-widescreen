@@ -1,4 +1,5 @@
-// Pokemon Black (US/Europe, IRBO): its own screen layouts, on top of the Black 2 ones.
+// Pokemon Black and White (US/Europe, IRBO and IRAO): their own screen layouts, on top of the
+// Black 2 ones.
 //
 // Black runs like Black 2 (melonDS's JIT, layouts that follow the game's own functions), with
 // a function table made by tools/bw1/funcmap.py from the aletheia decompilation. The functions
@@ -6,7 +7,8 @@
 // pickSceneBw2 in main.cpp picks the scenes for Black too. Where Black's screens are drawn
 // differently, Bw1Layouts::Adjust changes the scene it picked (by the scene's name), and a few
 // screens Black 2 does not have get scenes of their own (by Black's function names). For any
-// other game it does nothing.
+// other game it does nothing. White is the same program as Black, its functions a few bytes
+// apart (tools/bw1/funcmap.py --white): everything here is for both.
 //
 // Hooked into main.cpp in two places: Init before the function watch is attached (so Black's own
 // functions are watched too) and Adjust on the scene pickSceneBw2 chose.
@@ -56,7 +58,7 @@ public:
             if (fseek(f, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, f) != 4) code[0] = 0;
             fclose(f);
         }
-        on = !strcmp(code, "IRBO");
+        on = !strcmp(code, "IRBO") || !strcmp(code, "IRAO");
         if (!on) return;
         Fw = &fw;
         auto find = [&](const char* name) {
