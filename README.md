@@ -91,17 +91,11 @@ The widescreen world is drawn by the Switch's graphics chip (deko3D), so Black
 2 runs at (or a whisker under) 60 fps at 720p in towns and battles, measured on
 a Switch OLED in handheld mode.
 Battles, menus and the save screen have their own one-screen layouts, and
-Black 2 loads more of its map around you so the wide view never runs out of
+both games load more of their map around you so the wide view never runs out of
 land. The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Known limits
 
-- White 2 doesn't load the extra map around you yet (with it, its overworld
-  didn't come back after a trainer battle). A minor issue: it only shows as
-  far-off background land missing at the very edges of the wide view, and
-  gameplay isn't affected.
-- In triple battles the background can flicker black for a few seconds after a
-  Pokémon faints. It happens in the emulator core itself; being looked into.
 - English (US/Europe) versions only: the program says so for other languages.
 - Switch only for now. Bug reports: attach `game.log` from the game's folder,
   and a save state from the pause menu if you can.

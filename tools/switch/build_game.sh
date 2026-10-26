@@ -18,7 +18,8 @@
 # Needs Linux or WSL2 (Ubuntu 24.04) with git, CMake, Ninja and Python 3, and devkitPro with
 # switch-dev and switch-sdl2. When devkitPro is not installed but Docker is, its official image
 # (devkitpro/devkita64) is used instead: their servers refuse some IP addresses (403).
-# SSR_SWITCH_ICON=path/to/icon.jpg (256x256 JPEG) gives the game your own Homebrew Menu icon.
+# SSR_SWITCH_ICON=path/to/icon.jpg (256x256 JPEG) gives the game your own Homebrew Menu icon
+# (for bw: SSR_SWITCH_ICON_BLACK2 and SSR_SWITCH_ICON_WHITE2, one each).
 #
 # Keep what it makes to yourself: SoulSilver's .nro holds parts of the game's code (the images
 # its layouts tell its overlays apart by), and the others' funcs.txt is made from your ROM.
@@ -145,10 +146,15 @@ bw)
     python3 tools/bw2/funcmap.py build-decomp-pokebw2/config/b2_us/arm9 - "$ROMFS/funcs/IREO.txt"
     python3 tools/bw2/funcmap.py build-decomp-pokew2/config/w2_us/arm9 - "$ROMFS/funcs/IRDO.txt"
     python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$ROMFS/funcs/IRBO.txt"
-    [ -n "${SSR_SWITCH_ICON:-}" ] && install -D -m 644 "$SSR_SWITCH_ICON" "$BUILD/icon.jpg"
     say "Compiling for the Switch"
-    # Packed once per game, with its own title in the Homebrew Menu (the same program).
+    # Packed once per game, with its own title and icon in the Homebrew Menu (the same program).
+    # The icons: SSR_SWITCH_ICON_BLACK2 and SSR_SWITCH_ICON_WHITE2 (256x256 JPEG), else
+    # SSR_SWITCH_ICON for both, else libnx's.
     for g in black2:"Black 2" white2:"White 2"; do
+        var="SSR_SWITCH_ICON_$(echo "${g%%:*}" | tr a-z A-Z)"
+        icon="${!var:-${SSR_SWITCH_ICON:-}}"
+        rm -f "$BUILD/icon.jpg"
+        [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
         build SSR_SWITCH_BUILD="$BUILD" SSR_NRO_TITLE="Pokemon ${g#*:}" SSR_SWITCH_ROMFS="$ROMFS" bash tools/bw2/build_switch.sh
         mkdir -p "build-sd/switch/ssrecomp-${g%%:*}"
         cp "$BUILD/ssrecomp.nro" "build-sd/switch/ssrecomp-${g%%:*}/ssrecomp-${g%%:*}.nro"
