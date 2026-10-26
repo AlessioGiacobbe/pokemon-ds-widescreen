@@ -7,9 +7,9 @@
 #   tools/switch/build_game.sh bw
 #   tools/switch/build_game.sh hgss       your-soulsilver-us.nds
 #
-# bw needs no ROM: one program for Black 2 and White 2 (and Black) that reads what it needs
-# from the player's ROM when it starts, packed as build-sd/ssrecomp-black2-white2-switch.zip
-# to share (a release's download). hgss likewise packs one program for SoulSilver and HeartGold
+# bw needs no ROM: one program for Black 2, White 2 and Black that reads what it needs from
+# the player's ROM when it starts, packed as build-sd/ssrecomp-black2-white2-switch.zip and
+# build-sd/ssrecomp-black-switch.zip to share (the releases' downloads). hgss likewise packs one program for SoulSilver and HeartGold
 # (US) as build-sd/ssrecomp-soulsilver-heartgold-switch.zip: the SoulSilver ROM is only read for
 # the addresses in its tables (tools/soulsilver/tables_only.py); none of its code goes in.
 #   tools/switch/build_game.sh black      your-black-us-or-europe.nds
@@ -22,7 +22,7 @@
 # switch-dev and switch-sdl2. When devkitPro is not installed but Docker is, its official image
 # (devkitpro/devkita64) is used instead: their servers refuse some IP addresses (403).
 # SSR_SWITCH_ICON=path/to/icon.jpg (256x256 JPEG) gives the game your own Homebrew Menu icon
-# (for bw: SSR_SWITCH_ICON_BLACK2 and SSR_SWITCH_ICON_WHITE2, one each; for hgss:
+# (for bw: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2 and SSR_SWITCH_ICON_BLACK, one each; for hgss:
 # SSR_SWITCH_ICON_SOULSILVER and SSR_SWITCH_ICON_HEARTGOLD).
 #
 # Keep funcs.txt (black2, white2, black) to yourself: it is made from your ROM. Never share a
@@ -153,9 +153,9 @@ bw)
     python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$ROMFS/funcs/IRBO.txt"
     say "Compiling for the Switch"
     # Packed once per game, with its own title and icon in the Homebrew Menu (the same program).
-    # The icons: SSR_SWITCH_ICON_BLACK2 and SSR_SWITCH_ICON_WHITE2 (256x256 JPEG), else
-    # SSR_SWITCH_ICON for both, else libnx's.
-    for g in black2:"Black 2" white2:"White 2"; do
+    # The icons: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2 and SSR_SWITCH_ICON_BLACK
+    # (256x256 JPEG), else SSR_SWITCH_ICON for all, else libnx's.
+    for g in black2:"Black 2" white2:"White 2" black:"Black"; do
         var="SSR_SWITCH_ICON_$(echo "${g%%:*}" | tr a-z A-Z)"
         icon="${!var:-${SSR_SWITCH_ICON:-}}"
         rm -f "$BUILD/icon.jpg"
@@ -170,14 +170,33 @@ import sys, zipfile
 with zipfile.ZipFile('ssrecomp-black2-white2-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sys.argv[1:]: z.write(p)
 " switch/ssrecomp-black2/ssrecomp-black2.nro switch/ssrecomp-white2/ssrecomp-white2.nro)
-    say "Done: $HERE/build-sd/ssrecomp-black2-white2-switch.zip"
-    ls -l build-sd/switch/ssrecomp-black2 build-sd/switch/ssrecomp-white2 build-sd/ssrecomp-black2-white2-switch.zip
+    # Black's own download (its own release): the same program, in its own folder.
+    rm -f build-sd/ssrecomp-black-switch.zip
+    (cd build-sd && python3 -c "
+import sys, zipfile
+with zipfile.ZipFile('ssrecomp-black-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+    for p in sys.argv[1:]: z.write(p)
+" switch/ssrecomp-black/ssrecomp-black.nro)
+    # (Only the programs: no ROM, save, save state or function table made from a ROM.)
+    for zip in ssrecomp-black2-white2-switch.zip ssrecomp-black-switch.zip; do
+        python3 -c "
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+bad = [n for n in names if not n.endswith('.nro')]
+if bad: sys.exit('unexpected files in the zip: %s' % names)
+print(sys.argv[1], 'holds:', ', '.join(names))
+" "build-sd/$zip"
+    done
+    say "Done: $HERE/build-sd/ssrecomp-black2-white2-switch.zip and ssrecomp-black-switch.zip"
+    ls -l build-sd/switch/ssrecomp-black2 build-sd/switch/ssrecomp-white2 build-sd/switch/ssrecomp-black \
+        build-sd/ssrecomp-black2-white2-switch.zip build-sd/ssrecomp-black-switch.zip
     cat <<EOF
 
-Copy build-sd/switch to the root of the SD card, then a Black 2 ROM into /switch/ssrecomp-black2/
-and a White 2 ROM into /switch/ssrecomp-white2/ (English, US or Europe; any copy of each works).
+Copy build-sd/switch to the root of the SD card, then a Black 2 ROM into /switch/ssrecomp-black2/,
+a White 2 ROM into /switch/ssrecomp-white2/ and a Black ROM into /switch/ssrecomp-black/
+(English, US or Europe; any copy of each works).
 On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
-The zip is the same two files, ready to share: it holds nothing of the games.
+The zips hold only these programs, ready to share: nothing of the games.
 EOF
     exit 0
     ;;

@@ -9,7 +9,7 @@
 |---|---|---|
 | **Pokémon Black 2 and White 2** | ✅ out now | [ssrecomp-black2-white2-switch.zip](../../releases/tag/bw2-switch-v1) |
 | **Pokémon SoulSilver and HeartGold** | ✅ out now | [ssrecomp-soulsilver-heartgold-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
-| **Pokémon Black** | 🔜 this week | |
+| **Pokémon Black** | ✅ out now | [ssrecomp-black-switch.zip](../../releases/tag/black-switch-v1) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 Every download is free of the games themselves: you bring your own ROM, and
@@ -83,16 +83,24 @@ emulator or a flash cart, copy your save in under that name.
   out for one screen. Where this project started: the
   original ssrecomp was SoulSilver on the PC.
 
-## Pokémon Black (this week)
+## Pokémon Black
+
+![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg)
 
 | | |
 |---|---|
-| ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) | ![Black: Undella Town's Pokémon Center by the sea](docs/screenshots/black-undella.jpg) |
+| ![Black: a double battle, Reshiram and Excadrill against a wild Pelipper and Mantyke, the HP boxes down the edges](docs/screenshots/black-reshiram-double.jpg) | ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) |
 
-Unova's first adventure (Reshiram's battle pictures come with its release),
-with the same treatment as Black 2: its own layouts
-for the start menu, the X menu, battles, the save screen, the Badge Case and
-the Pokédex, and the C-Gear's question answered for you. Coming this week.
+- **Download:** [`ssrecomp-black-switch.zip`](../../releases/tag/black-switch-v1),
+  folder `/switch/ssrecomp-black/`.
+- **ROMs:** any English copy (US or Europe), trimmed or not.
+- **Saves:** `black.sav` (`tools/bw2/convert_save.py` turns `.dsv` and Action
+  Replay saves into the raw 512 KB save).
+- **What you get:** Unova's first adventure with the same treatment as Black 2:
+  battles (single, double, triple, rotation) with the HP boxes at the edges of
+  the wide view and the battle buttons beside them; its own layouts for the
+  start menu, the X menu, the save screen, the Badge Case and the Pokédex; and
+  the C-Gear's question at the start answered for you.
 
 ---
 
@@ -116,7 +124,7 @@ what is recommended, and every game always uses the one wide screen:
 | Setting | Recommended | What it does |
 |---|---|---|
 | 60 FPS | ON | in-between frames: the games draw their 3D at 30 fps |
-| BATTLE BUTTONS | PANEL | Black 2 and White 2: the game's own FIGHT, BAG, RUN and POKÉMON panel beside the battle |
+| BATTLE BUTTONS | PANEL | Black 2, White 2 and Black: the game's own FIGHT, BAG, RUN and POKÉMON panel beside the battle (Black also has STRIP: large buttons in the message box) |
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
 | LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
 | WORLD ON GPU | ON | the world drawn by the graphics chip |
@@ -133,8 +141,8 @@ a Switch OLED in handheld mode. The full list of changes is in
 
 ## Known limits
 
-- Black 2 and White 2: English (US/Europe) versions only. SoulSilver and
-  HeartGold: US versions only.
+- Black, Black 2 and White 2: English (US/Europe) versions only. SoulSilver
+  and HeartGold: US versions only.
 - SoulSilver and HeartGold: at map borders (Route 29 and New Bark Town, Celadon
   City and Route 16), parts of the neighbouring map pop in and out at the sides
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
@@ -144,7 +152,6 @@ a Switch OLED in handheld mode. The full list of changes is in
 
 ## What's next
 
-- **Pokémon Black**: this week.
 - **Pokémon Omega Ruby**: in the works, as its own project.
 - **Native Switch ports**: the dream, hopefully for all of them. Optimistic,
   but we're aiming for it.
@@ -157,7 +164,8 @@ or Docker, which then uses devkitPro's `devkitpro/devkita64` image):
 
     tools/switch/build_game.sh bw
 
-makes the Black 2 and White 2 zip in `build-sd/` (no ROM needed), and
+makes the Black 2 and White 2 zip and the Black one in `build-sd/` (no ROM
+needed), and
 
     tools/switch/build_game.sh hgss your-soulsilver-us.nds
 
