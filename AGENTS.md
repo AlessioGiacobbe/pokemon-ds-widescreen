@@ -1,7 +1,7 @@
 # Notes for coding agents
 
 This file is for AI coding agents (and people) working on ssrecomp. The README
-is the user documentation for Black 2 and White 2 on the Switch; the original
+is the user documentation for the games on the Switch; the original
 project's README, `docs/original-ssrecomp-README.md`, has "How the recompiled
 code works" and "Testing": read them before changing the recompiler.
 

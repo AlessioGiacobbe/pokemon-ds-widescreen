@@ -1,23 +1,27 @@
-# Pokémon Black 2 and White 2 on the Nintendo Switch
+# Pokémon DS games on the Nintendo Switch
 
-**Pokémon Black 2 and White 2 on your modded Switch: one screen, widescreen,
+**Your favourite DS Pokémon games on a modded Switch: one screen, widescreen,
 720p, 60 fps.** No more squinting at two tiny stacked DS screens.
 
-![Cycling along Castelia City's waterfront in widescreen, with the in-between frames on](docs/screenshots/black2-castelia-bike-60fps.gif)
+![Black 2: cycling along Castelia City's waterfront in widescreen, with the in-between frames on](docs/screenshots/black2-castelia-bike-60fps.gif)
+
+| Game | Status | Download |
+|---|---|---|
+| **Pokémon Black 2 and White 2** | ✅ out now | [ssrecomp-black2-white2-switch.zip](../../releases/tag/bw2-switch-v1) |
+| **Pokémon SoulSilver and HeartGold** | ✅ out now | [ssrecomp-soulsilver-heartgold-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
+| **Pokémon Black** | 🔜 this week | |
+| **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
+
+Every download is free of the games themselves: you bring your own ROM, and
+the program reads what it needs from it when the game starts.
 
 ## What is it?
 
 A Switch homebrew app that runs the game on the melonDS emulator core, plus a
 layer that knows what the game is doing (which screen, which menu, which
 battle) and rearranges it into one proper widescreen picture. It is **not a
-native port**; it's the DS game, presented the way it should look on a Switch.
-
-## What's next
-
-- **Pokémon Black**: releasing this week, same treatment.
-- **Pokémon Omega Ruby**: in the works.
-- **Native Switch ports**: the dream, hopefully for all of them. Optimistic,
-  but we're aiming for it.
+native port** (those are the dream, see [What's next](#whats-next)); it's the
+DS game, presented the way it should look on a Switch.
 
 ## Why not just play it in melonDS?
 
@@ -27,57 +31,70 @@ native port**; it's the DS game, presented the way it should look on a Switch.
 | 3D world | 4:3 at DS resolution | 16:9 at 720p, drawn by the Switch's graphics chip, skies and scenery carried to the edges |
 | Frame rate | the game's own 30 fps 3D | 60 fps, with in-between frames |
 
+## Installing (any of the games)
+
+1. Download the game's zip (table above) and unzip it to the root of the SD
+   card. It makes a folder for each game in `/switch/`.
+2. Copy your own ROM into the game's folder, as the only `.nds` file there.
+3. **Hold R while starting any game** to open the Homebrew Menu, then pick the
+   game (started from the album there is not enough memory). **QUIT** in the
+   pause menu (+ and − together) saves and goes back to the Homebrew Menu.
+
+Each game keeps its save in its own folder (named below). To carry on from an
+emulator or a flash cart, copy your save in under that name.
+
+---
+
+## Pokémon Black 2 and White 2
+
 | | |
 |---|---|
+| ![Black 2: Black Kyurem against a wild Crustle, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black2-black-kyurem-battle.jpg) | ![White 2: White Kyurem against a wild Tropius, with the FIGHT panel beside the battle](docs/screenshots/white2-white-kyurem-battle.jpg) |
 | ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
-| ![Black 2: a double battle, the HP boxes against the edges and the moves below them](docs/screenshots/black2-double-battle.jpg) | ![White 2: Serperior against a wild Scrafty, with FIGHT, BAG, RUN and POKÉMON beside the game](docs/screenshots/white2-battle.jpg) |
 
-*Pictures from the PC test build, which draws the Switch's picture (only the
-edges of polygons can differ by a pixel), at 720 lines.*
+- **Download:** [`ssrecomp-black2-white2-switch.zip`](../../releases/tag/bw2-switch-v1),
+  folders `/switch/ssrecomp-black2/` and `/switch/ssrecomp-white2/`.
+- **ROMs:** any English copy (US or Europe), trimmed or not, including the
+  "NDSi Enhanced" one. Other languages put the game's code elsewhere: the
+  program says so instead of starting.
+- **Saves:** `black2.sav` and `white2.sav` (`tools/bw2/convert_save.py` turns
+  `.dsv` and Action Replay saves into the raw 512 KB save).
+- **What you get:** battles (single, double, triple, rotation) with the HP boxes
+  at the edges of the wide view and the battle buttons beside them; menus, the
+  bag and the save screen laid out for one screen; and more of the map loaded
+  around you, so the wide view never runs out of land.
 
-## Install
+## Pokémon SoulSilver and HeartGold
 
-Download `ssrecomp-black2-white2-switch.zip` from the
-[Black 2 and White 2 release](../../releases/tag/bw2-switch-v1). Nothing of the games is in it: the
-program reads what it needs from your own ROM when it starts.
-
-1. Unzip it to the root of the SD card (it makes `/switch/ssrecomp-black2/` and
-   `/switch/ssrecomp-white2/`).
-2. Copy your ROM into its folder, as the only `.nds` file there. Any English
-   (US or Europe) copy works, trimmed or not, including the "NDSi Enhanced" one.
-   Other languages put the game's code elsewhere: the program says so instead
-   of starting.
-3. **Hold R while starting any game** and choose Pokemon Black 2 or Pokemon
-   White 2 in the Homebrew Menu (started from the album there is not enough
-   memory). **QUIT** in the pause menu saves and goes back to the Homebrew Menu.
-
-To use a save from an emulator or a flash cart, copy it into the folder as
-`black2.sav` or `white2.sav` (`tools/bw2/convert_save.py` turns `.dsv` and
-Action Replay saves into the raw 512 KB save).
-
-## SoulSilver and HeartGold
-
-The same treatment for **Pokémon SoulSilver and HeartGold** (English, US): one
-wide picture, the battle buttons beside the action, on melonDS's fast JIT.
+![SoulSilver: a wild Meowth appears and Lugia is sent out, in widescreen](docs/screenshots/soulsilver-lugia-battle.gif)
 
 | | |
 |---|---|
-| ![SoulSilver: New Bark Town in widescreen](docs/screenshots/soulsilver-new-bark-town.jpg) | ![HeartGold: Goldenrod City in widescreen](docs/screenshots/heartgold-goldenrod.jpg) |
+| ![HeartGold: Ho-Oh against a wild Spearow, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/heartgold-ho-oh-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
 
-Download `ssrecomp-soulsilver-heartgold-switch.zip` from the
-[SoulSilver and HeartGold release](../../releases/tag/soulsilver-heartgold-v1).
-Like the Black 2 and White 2 download, it holds nothing of the games: the
-program reads what it needs from your own ROM when it starts.
+- **Download:** [`ssrecomp-soulsilver-heartgold-switch.zip`](../../releases/tag/soulsilver-heartgold-v1),
+  folders `/switch/ssrecomp-soulsilver/` and `/switch/ssrecomp-heartgold/`.
+- **ROMs:** the English US versions. Other versions start, but without the
+  one-screen layouts.
+- **Saves:** `soulsilver.sav` and `heartgold.sav` (the same format, so either
+  game reads the other's).
+- **What you get:** Johto and Kanto in widescreen, with your partner Pokémon
+  walking behind you; battles with their buttons beside the action; menus laid
+  out for one screen. Where this project started: the
+  original ssrecomp was SoulSilver on the PC.
 
-1. Unzip it to the root of the SD card (it makes `/switch/ssrecomp-soulsilver/`
-   and `/switch/ssrecomp-heartgold/`).
-2. Copy your ROM into its folder, as the only `.nds` file there: SoulSilver (US)
-   or HeartGold (US). Other versions start, but without the one-screen layouts.
-3. **Hold R while starting any game** and choose Pokemon SoulSilver or Pokemon
-   HeartGold in the Homebrew Menu.
+## Pokémon Black (this week)
 
-Saves are `soulsilver.sav` and `heartgold.sav` in the game's folder (the two
-games' saves have the same format).
+| | |
+|---|---|
+| ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) | ![Black: Undella Town's Pokémon Center by the sea](docs/screenshots/black-undella.jpg) |
+
+Unova's first adventure (Reshiram's battle pictures come with its release),
+with the same treatment as Black 2: its own layouts
+for the start menu, the X menu, battles, the save screen, the Badge Case and
+the Pokédex, and the C-Gear's question answered for you. Coming this week.
+
+---
 
 ## Recommended settings
 
@@ -90,43 +107,47 @@ the Homebrew Menu from, or as the global profile), handheld:
 | GPU | 460 MHz (the highest of the console's own handheld speeds; no need to go higher) |
 | Memory | 1600 MHz |
 
-Without sys-clk the game runs at the console's normal speeds and drops frames
-in busy places. (Earlier versions had a CPU BOOST option for this, but the
-system kept taking its boost away, so it is gone: sys-clk does it properly.)
+Without sys-clk the games run at the console's normal speeds and drop frames
+in busy places.
 
-**Pause menu** (+ and − together). The first start already uses what is
-recommended, and the game always uses the one wide screen:
+**Pause menu** (+ and − together). Black 2 and White 2 already start with
+what is recommended, and every game always uses the one wide screen:
 
 | Setting | Recommended | What it does |
 |---|---|---|
-| 60 FPS | ON | in-between frames: the game draws its 3D at 30 fps |
-| BATTLE BUTTONS | CORNER or PANEL | where a battle's touch-screen buttons go |
+| 60 FPS | ON | in-between frames: the games draw their 3D at 30 fps |
+| BATTLE BUTTONS | PANEL | Black 2 and White 2: the game's own FIGHT, BAG, RUN and POKÉMON panel beside the battle |
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
 | LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
 | WORLD ON GPU | ON | the world drawn by the graphics chip |
 
-The game always runs on melonDS's FAST JIT. If a start ever fails with it, the
-next one falls back by itself (hold L while starting for the interpreter). QUIT in the pause menu saves first.
+The games run on melonDS's FAST JIT. If a start ever fails with it, the next
+one falls back by itself (hold L while starting for the interpreter).
 
 ## Under the hood
 
 The widescreen world is drawn by the Switch's graphics chip (deko3D), so Black
 2 runs at (or a whisker under) 60 fps at 720p in towns and battles, measured on
-a Switch OLED in handheld mode.
-Battles, menus and the save screen have their own one-screen layouts, and
-both games load more of their map around you so the wide view never runs out of
-land. The full list is in [CHANGELOG.md](CHANGELOG.md).
+a Switch OLED in handheld mode. The full list of changes is in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Known limits
 
-- English (US/Europe) versions only: the program says so for other languages.
-  SoulSilver and HeartGold: the US versions only.
+- Black 2 and White 2: English (US/Europe) versions only. SoulSilver and
+  HeartGold: US versions only.
 - SoulSilver and HeartGold: at map borders (Route 29 and New Bark Town, Celadon
   City and Route 16), parts of the neighbouring map pop in and out at the sides
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
 - Switch only for now. Bug reports: attach `game.log` from the game's folder,
   and a save state from the pause menu if you can.
+
+## What's next
+
+- **Pokémon Black**: this week.
+- **Pokémon Omega Ruby**: in the works, as its own project.
+- **Native Switch ports**: the dream, hopefully for all of them. Optimistic,
+  but we're aiming for it.
 
 ## Building it yourself
 
