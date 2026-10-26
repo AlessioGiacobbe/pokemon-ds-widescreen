@@ -38,7 +38,7 @@ edges of polygons can differ by a pixel), at 720 lines.*
 ## Install
 
 Download `ssrecomp-black2-white2-switch.zip` from the
-[latest release](../../releases/latest). Nothing of the games is in it: the
+[Black 2 and White 2 release](../../releases/tag/bw2-switch-v1). Nothing of the games is in it: the
 program reads what it needs from your own ROM when it starts.
 
 1. Unzip it to the root of the SD card (it makes `/switch/ssrecomp-black2/` and
