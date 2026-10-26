@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **SoulSilver and HeartGold (English, US) as a download, on the fast JIT.** The program holds
+  none of the games' code: its tables have addresses only, and the overlay code the game
+  watch compares is read from your ROM when the game starts. HeartGold is told apart by its
+  game code; its few moved functions come from `tools/soulsilver/heartgold-us.json`. All of
+  SoulSilver's layouts work without the recompiled code, about 1.7 times as fast. The new
+  game's first menu is skipped again (also in HeartGold). Battles' widened picture is made
+  beside the next frame's emulation. A bot for long test runs: `tools/soulsilver/bot/`.
+  On the Switch, HeartGold gets `heartgold.sav` and the JIT like SoulSilver, and the message
+  for a game the program doesn't know lists both.
+- **The bars beside an evolution or a battle take the screen's outermost colour that isn't
+  black** (from its last four columns), so a scene that leaves a black column at the screen's
+  edge (SoulSilver's evolution) no longer gets a black bar on that side.
 - **3D drawing commands are no longer lost (Black 2, White 2 and the other games on the fast
   JIT).** When the console's 3D command queue was full, a burst of commands from the fast JIT
   could overflow the small overflow store melonDS keeps, and from then on every command read

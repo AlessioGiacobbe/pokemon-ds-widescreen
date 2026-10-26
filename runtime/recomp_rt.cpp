@@ -44,6 +44,7 @@ struct Probe
     u32 section;
     u32 lastFrame;
     u32 next; // next probe at the same address (index + 1), for overlays that share addresses
+    u32 chunk; // the chunk the address is in (~0u: none): a function is not always a chunk's start
 };
 std::vector<Probe> probes;
 std::vector<u32> probeHead; // per halfword of main RAM: first probe index + 1
@@ -139,6 +140,84 @@ void BailCommon(u32 section, u32 addr)
 }
 }
 
+// Tables without the game's code (rc_register_portable): the game the ROM is, and where each
+// chunk is in it (SoulSilver's addresses with that game's shifts applied).
+namespace
+{
+const RcPortable* portable = nullptr;
+const RcPortableGame* portableGame = nullptr;
+bool portableLoaded = false;
+std::vector<std::vector<u8>> portableImages;
+std::vector<u32> chunkStart, chunkEnd;
+
+// A SoulSilver address in section `sec` as it is in the game being played.
+u32 Remap(u32 sec, u32 addr)
+{
+    if (!portableGame) return addr;
+    const char* name = rc_sections[sec].name;
+    for (unsigned i = 0; i < portableGame->numShifts; i++)
+    {
+        const RcPortableShift& sh = portableGame->shifts[i];
+        if (addr >= sh.from && addr < sh.to && !strcmp(sh.section, name)) return addr + sh.shift;
+    }
+    return addr;
+}
+
+void ChunkAddresses()
+{
+    if (chunkStart.size() == rc_num_chunks) return;
+    chunkStart.resize(rc_num_chunks);
+    chunkEnd.resize(rc_num_chunks);
+    for (u32 i = 0; i < rc_num_chunks; i++)
+    {
+        const RcChunk& c = rc_chunks[i];
+        chunkStart[i] = Remap(c.section, c.start);
+        chunkEnd[i] = chunkStart[i] + (c.end - c.start);
+    }
+}
+}
+
+bool rc_register_portable(const RcPortable* tables)
+{
+    portable = tables;
+    return true;
+}
+
+bool rc_portable_needed() { return portable && !portableLoaded; }
+
+const char* rc_portable_load(const char code[4], const unsigned char* (*overlay)(void*, int, unsigned*), void* user)
+{
+    if (!portable) return nullptr;
+    portableLoaded = true;
+    portableGame = nullptr;
+    for (unsigned g = 0; g < portable->numGames; g++)
+        if (!memcmp(portable->games[g].code, code, 4)) portableGame = &portable->games[g];
+    if (!portableGame)
+    {
+        fprintf(stderr, "[recomp] game %.4s: not one these tables know; layouts that need the game's functions are off\n", code);
+        return nullptr;
+    }
+    portableImages.assign(rc_num_sections, {});
+    unsigned loaded = 0, missing = 0;
+    for (u32 s = 0; s < rc_num_sections; s++)
+    {
+        if (portable->overlayOf[s] < 0) continue;
+        unsigned size = 0;
+        const unsigned char* data = overlay(user, portable->overlayOf[s], &size);
+        if (!data) { missing++; continue; }
+        portableImages[s].assign(data, data + size);
+        rc_sections[s].image = portableImages[s].data();
+        // (An overlay can be a little longer in another game: HeartGold's title screen.)
+        if (size > rc_sections[s].size) rc_sections[s].size = size;
+        loaded++;
+    }
+    chunkStart.clear();
+    ChunkAddresses();
+    fprintf(stderr, "[recomp] %s (%.4s): code of %u overlays read from the ROM%s\n", portableGame->name, code, loaded,
+        missing ? ", some missing" : "");
+    return portableGame->name;
+}
+
 // The watch used without the recompiled code (rc_watch_attach).
 namespace
 {
@@ -164,12 +243,28 @@ bool WatchChunkPresent(u32 id)
     const RcChunk& c = rc_chunks[id];
     const RcSection& sec = rc_sections[c.section];
     if (!sectionShared[c.section]) return true;
-    const u32 n = c.end - c.start < 16 ? c.end - c.start : 16;
-    return memcmp(sec.image + (c.start - sec.base), GuestPtr(&watchNds->ARM9, c.start), n) == 0;
+    if (!sec.image) return false;
+    const u32 start = chunkStart[id];
+    u32 n = c.end - c.start < 16 ? c.end - c.start : 16;
+    if (start + n > sec.base + sec.size) return false;
+    return memcmp(sec.image + (start - sec.base), GuestPtr(&watchNds->ARM9, start), n) == 0;
 }
 
 void WatchHit(void*, u32 addr, bool thumb)
 {
+    // A probe: on a function, which is not always the start of a chunk (the recompiler puts
+    // small functions together), so it is looked up by its own address. Its overlay is told
+    // by the bytes of the chunk it is in.
+    if (!probeHead.empty() && addr >= kMainBase && addr < kMainEnd)
+        for (u32 p = probeHead[(addr - kMainBase) >> 1]; p; p = probes[p - 1].next)
+        {
+            Probe& pr = probes[p - 1];
+            if (pr.lastFrame == rc_frame || pr.chunk == ~0u || (bool)rc_chunks[pr.chunk].thumb != thumb) continue;
+            if (!WatchChunkPresent(pr.chunk)) continue;
+            pr.lastFrame = rc_frame;
+            rc_section_last_frame[pr.section] = rc_frame;
+            chunkLastFrame[pr.chunk] = rc_frame;
+        }
     const u32 first = watchFirst[(addr - kWatchBase) >> 1];
     if (!first) return;
     for (u32 i = first - 1; watchList[i] != ~0u; i++)
@@ -182,9 +277,6 @@ void WatchHit(void*, u32 addr, bool thumb)
         if (!WatchChunkPresent(id)) continue;
         rc_section_last_frame[c.section] = rc_frame;
         chunkLastFrame[id] = rc_frame;
-        if (!probeHead.empty() && addr >= kMainBase && addr < kMainEnd)
-            for (u32 p = probeHead[(addr - kMainBase) >> 1]; p; p = probes[p - 1].next)
-                if (probes[p - 1].section == c.section) probes[p - 1].lastFrame = rc_frame;
         return;
     }
 }
@@ -206,10 +298,11 @@ bool rc_watch_attach(NDS& nds)
     // which overlays run (the main program and the ITCM run all the time and are only watched
     // where there are probes).
     size_t watched = 0;
+    ChunkAddresses();
     std::unordered_map<u32, std::vector<u32>> byStart;
     for (u32 id = 0; id < rc_num_chunks; id++)
-        if (rc_chunks[id].start >= kWatchBase && rc_chunks[id].start < kWatchEnd)
-            byStart[rc_chunks[id].start].push_back(id);
+        if (chunkStart[id] >= kWatchBase && chunkStart[id] < kWatchEnd)
+            byStart[chunkStart[id]].push_back(id);
     watchFirst.assign((kWatchEnd - kWatchBase) >> 1, 0);
     watchList.clear();
     for (auto& [start, ids] : byStart)
@@ -224,7 +317,7 @@ bool rc_watch_attach(NDS& nds)
         const char* name = rc_sections[c.section].name;
         if (strcmp(name, "main") && strcmp(name, "ITCM") && strcmp(name, "bios9"))
         {
-            WatchAddress(c.start);
+            WatchAddress(chunkStart[id]);
             watched++;
         }
     }
@@ -337,8 +430,10 @@ bool rc_ran_recently(const char* section, unsigned addr, unsigned frames)
     {
         const RcSection& sec = rc_sections[s];
         if (strcmp(sec.name, section) != 0) continue;
+        ChunkAddresses();
+        addr = Remap(s, addr);
         for (u32 c = sec.firstChunk; c < sec.firstChunk + sec.numChunks; c++)
-            if (addr >= rc_chunks[c].start && addr < rc_chunks[c].end)
+            if (addr >= chunkStart[c] && addr < chunkEnd[c])
                 return chunkLastFrame[c] && chunkLastFrame[c] + frames >= rc_frame;
     }
     return false;
@@ -346,17 +441,23 @@ bool rc_ran_recently(const char* section, unsigned addr, unsigned frames)
 
 int rc_add_probe(const char* section, unsigned addr)
 {
-    if (addr < kMainBase || addr >= kMainEnd) return -1;
     u32 sec = ~0u;
     for (u32 s = 0; s < rc_num_sections; s++)
         if (!strcmp(rc_sections[s].name, section)) sec = s;
     if (sec == ~0u) return -1;
+    ChunkAddresses();
+    addr = Remap(sec, addr);
+    if (addr < kMainBase || addr >= kMainEnd) return -1;
     if (probeHead.empty()) probeHead.assign((kMainEnd - kMainBase) >> 1, 0);
     u32& head = probeHead[(addr - kMainBase) >> 1];
-    probes.push_back({ addr, sec, 0, head });
+    probes.push_back({ addr, sec, 0, head, ~0u });
     if (chunkHasProbe.empty()) chunkHasProbe.assign(rc_num_chunks, 0);
     for (u32 c = rc_sections[sec].firstChunk; c < rc_sections[sec].firstChunk + rc_sections[sec].numChunks; c++)
-        if (addr >= rc_chunks[c].start && addr < rc_chunks[c].end) chunkHasProbe[c] = 1;
+        if (addr >= chunkStart[c] && addr < chunkEnd[c])
+        {
+            chunkHasProbe[c] = 1;
+            probes.back().chunk = c;
+        }
     head = (u32)probes.size();
     WatchAddress(addr);
     return (int)probes.size() - 1;

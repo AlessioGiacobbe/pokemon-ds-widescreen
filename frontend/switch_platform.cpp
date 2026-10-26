@@ -141,8 +141,11 @@ bool Start(int& argc, char**& argv)
         if (fseek(f, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, f) != 4) code[0] = 0;
         fclose(f);
     }
+    // SoulSilver and HeartGold (US): the same program, layouts from its own tables.
+    const bool heartSilver = !strcmp(code, "IPGE") || !strcmp(code, "IPKE");
     std::string saveName = "game.sav";
     if (!strcmp(code, "IPGE")) saveName = "soulsilver.sav";
+    else if (!strcmp(code, "IPKE")) saveName = "heartgold.sav";
     else if (!strcmp(code, "IREO")) saveName = "black2.sav";
     else if (!strcmp(code, "IRDO")) saveName = "white2.sav";
     else if (!strcmp(code, "IRBO")) saveName = "black.sav";
@@ -150,14 +153,14 @@ bool Start(int& argc, char**& argv)
     g_args = { argc > 0 && argv[0] ? argv[0] : "ssrecomp", rom, "--save", dir + "/" + saveName, "--fullscreen" };
     // A game that is not recompiled (Black, Black 2, White 2) comes with its function table, made on the
     // PC by tools/bw2/funcmap.py or tools/bw1/funcmap.py; its layouts follow the functions that
-    // run. SoulSilver needs none (its layouts come from its own tables, built into the program)
+    // run. SoulSilver and HeartGold need none (their layouts come from their own tables, built into the program)
     // and must not be given one: a function table switches to the Black games' layouts.
     // A funcs.txt beside the game is used first (made from the player's ROM by
     // tools/switch/build_game.sh); otherwise the shared build's own, one per version in its
     // romfs (tools/switch/build_game.sh bw), whose overlay bytes are read from the ROM.
     struct stat st;
     std::string funcsPath;
-    if (strcmp(code, "IPGE") != 0)
+    if (!heartSilver)
     {
         const std::string own = dir + "/funcs.txt", builtIn = std::string("romfs:/funcs/") + code + ".txt";
         if (stat(own.c_str(), &st) == 0) funcsPath = own;
@@ -168,8 +171,11 @@ bool Start(int& argc, char**& argv)
             {
                 ShowMessage(std::string("  ") + rom.substr(rom.find_last_of('/') + 1) + " is a game this program does not know\n"
                             "  (game code " + (code[0] ? code : "?") + ").\n\n"
-                            "  It plays the English (US and Europe) versions of:\n"
-                            "    Pokemon Black 2 (IREO), Pokemon White 2 (IRDO) and Pokemon Black (IRBO).\n"
+                            "  It plays the English versions of:\n"
+                            "    Pokemon Black 2 (IREO), Pokemon White 2 (IRDO) and Pokemon Black (IRBO),\n"
+                            "    US and Europe;\n"
+                            "    Pokemon SoulSilver (IPGE) and Pokemon HeartGold (IPKE), US, with the\n"
+                            "    SoulSilver and HeartGold download.\n"
                             "  Other languages put the game's code in other places.");
                 return false;
             }
@@ -182,11 +188,11 @@ bool Start(int& argc, char**& argv)
         g_args.push_back("--funcs");
         g_args.push_back(funcsPath);
     }
-    // Black and Black 2 run on melonDS's JIT or its interpreter; so does SoulSilver in a build
+    // Black and Black 2 run on melonDS's JIT or its interpreter; so do SoulSilver and HeartGold in a build
     // with the JIT (tools/switch/build.sh with SSR_JIT=ON: about 1.7 times as fast as its
     // recompiled code; a build without the JIT runs the recompiled code, given neither option).
 #ifdef JIT_ENABLED
-    if (funcs || !strcmp(code, "IPGE"))
+    if (funcs || heartSilver)
     {
         // melonDS's JIT (code translated for the Switch's processor as it runs), unless the
         // L is held while the game starts, or the last start with the JIT never got going (a

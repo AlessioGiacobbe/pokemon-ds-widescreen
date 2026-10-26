@@ -330,8 +330,8 @@ private:
         (void)outH;
     }
 
-    // The bars beside a battle: each row's outermost pixel, darkening outwards (see
-    // Scene::edgeFill). The darkening is baked into a 16-pixel-wide texture per side.
+    // The bars beside a battle: each row's outermost pixel that isn't black (EdgeFillColour),
+    // darkening outwards (see Scene::edgeFill). The darkening is baked into a 16-pixel-wide texture per side.
     void DrawEdgeFill(const ScreenImage& top, int outW, const MergedView& v)
     {
         const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
@@ -341,7 +341,7 @@ private:
         {
             for (int y = 0; y < 192; y++)
             {
-                const uint32_t c = top.pixels[y * 256 + (side ? 255 : 0)];
+                const uint32_t c = EdgeFillColour(top, y, side);
                 for (int x = 0; x < 16; x++)
                 {
                     // Column 0 is the outer edge on the left side, the inner one on the right.

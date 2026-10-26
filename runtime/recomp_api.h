@@ -40,3 +40,36 @@ unsigned rc_current_frame();
 // it needs. Returns false if the watch is taken already (a game with a function table).
 namespace melonDS { class NDS; }
 bool rc_watch_attach(melonDS::NDS& nds);
+
+// Tables without the game's code (tools/soulsilver/tables_only.py): they hold addresses only,
+// and the overlays' code, which the watch compares to tell overlays at the same address apart,
+// is read from the player's own ROM when the program starts. The same tables serve games
+// whose code is SoulSilver's with some functions moved (HeartGold): per such game, the
+// stretches of SoulSilver addresses that are shifted in it.
+struct RcPortableShift
+{
+    const char* section;
+    unsigned from, to; // SoulSilver addresses, `to` not included
+    int shift;
+};
+struct RcPortableGame
+{
+    const char* code;  // the ROM header's game code, e.g. "IPGE"
+    const char* name;
+    const RcPortableShift* shifts;
+    unsigned numShifts;
+};
+struct RcPortable
+{
+    const int* overlayOf; // per section: its overlay's number in the ROM, -1 for none (main, ITCM, BIOS)
+    const RcPortableGame* games;
+    unsigned numGames;
+};
+// Called by the tables as the program starts (nothing else needs to know about them).
+bool rc_register_portable(const RcPortable* tables);
+// Whether the tables are waiting for the code from the ROM (call rc_portable_load first).
+bool rc_portable_needed();
+// Reads the overlays' code through `overlay` (its bytes and size, or null when the ROM has no
+// such overlay) for a ROM with game code `code`. Returns the game's name, or null if the
+// tables do not know that game (then nothing is watched). Before rc_watch_attach and probes.
+const char* rc_portable_load(const char code[4], const unsigned char* (*overlay)(void* user, int id, unsigned* size), void* user);

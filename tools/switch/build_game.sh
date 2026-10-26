@@ -5,10 +5,13 @@
 #   tools/switch/build_game.sh black2     your-black2-us.nds
 #   tools/switch/build_game.sh white2     your-white2-us.nds
 #   tools/switch/build_game.sh bw
+#   tools/switch/build_game.sh hgss       your-soulsilver-us.nds
 #
 # bw needs no ROM: one program for Black 2 and White 2 (and Black) that reads what it needs
 # from the player's ROM when it starts, packed as build-sd/ssrecomp-black2-white2-switch.zip
-# to share (a release's download).
+# to share (a release's download). hgss likewise packs one program for SoulSilver and HeartGold
+# (US) as build-sd/ssrecomp-soulsilver-heartgold-switch.zip: the SoulSilver ROM is only read for
+# the addresses in its tables (tools/soulsilver/tables_only.py); none of its code goes in.
 #   tools/switch/build_game.sh black      your-black-us-or-europe.nds
 #
 # The result is a folder laid out like the SD card, build-sd/switch/<game folder>/, with the
@@ -19,10 +22,12 @@
 # switch-dev and switch-sdl2. When devkitPro is not installed but Docker is, its official image
 # (devkitpro/devkita64) is used instead: their servers refuse some IP addresses (403).
 # SSR_SWITCH_ICON=path/to/icon.jpg (256x256 JPEG) gives the game your own Homebrew Menu icon
-# (for bw: SSR_SWITCH_ICON_BLACK2 and SSR_SWITCH_ICON_WHITE2, one each).
+# (for bw: SSR_SWITCH_ICON_BLACK2 and SSR_SWITCH_ICON_WHITE2, one each; for hgss:
+# SSR_SWITCH_ICON_SOULSILVER and SSR_SWITCH_ICON_HEARTGOLD).
 #
-# Keep what it makes to yourself: SoulSilver's .nro holds parts of the game's code (the images
-# its layouts tell its overlays apart by), and the others' funcs.txt is made from your ROM.
+# Keep funcs.txt (black2, white2, black) to yourself: it is made from your ROM. Never share a
+# build of the recompiled code (tools/switch/build.sh without SSR_SWITCH_JIT=1, build-switch/):
+# it is the game's code.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -46,8 +51,8 @@ case "$GAME" in
     black2) FOLDER=ssrecomp-black2; NRO=ssrecomp-black2.nro ;;
     white2) FOLDER=ssrecomp-white2; NRO=ssrecomp-white2.nro ;;
     black) FOLDER=ssrecomp-black; NRO=ssrecomp-black.nro ;;
-    bw) FOLDER=; NRO= ;;
-    *) fail "which game? tools/switch/build_game.sh soulsilver|black2|white2|black your-rom.nds (or bw, no ROM)" ;;
+    bw|hgss) FOLDER=; NRO= ;;
+    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|black2|white2|black your-rom.nds (or bw, no ROM)" ;;
 esac
 if [ "$GAME" != bw ]; then
     [ -n "$ROM" ] || fail "give your ROM: tools/switch/build_game.sh $GAME your-rom.nds"
@@ -171,6 +176,58 @@ with zipfile.ZipFile('ssrecomp-black2-white2-switch.zip', 'w', zipfile.ZIP_DEFLA
 
 Copy build-sd/switch to the root of the SD card, then a Black 2 ROM into /switch/ssrecomp-black2/
 and a White 2 ROM into /switch/ssrecomp-white2/ (English, US or Europe; any copy of each works).
+On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
+The zip is the same two files, ready to share: it holds nothing of the games.
+EOF
+    exit 0
+    ;;
+hgss)
+    # One program for SoulSilver and HeartGold (US) on melonDS's JIT, from the tables only
+    # (addresses: tools/soulsilver/tables_only.py); the overlay code its watch compares is read
+    # from the player's ROM when the game starts. Nothing of the games is in it, so it can be
+    # shared (a release's download).
+    BUILD=build-switch-jit
+    [ "$(dd if="$ROM" bs=1 skip=12 count=4 2>/dev/null)" = IPGE ] ||
+        fail "$ROM is not Pokemon SoulSilver (US, game code IPGE): the tables are made from it"
+    if [ ! -f gen/sources.cmake ]; then
+        say "The game's tables, from $ROM"
+        python3 tools/recomp.py --rom "$ROM" --layout layouts/soulsilver-us.json melonDS/src gen
+        python3 tools/apps.py --layout layouts/soulsilver-us.json gen
+    fi
+    python3 tools/soulsilver/tables_only.py gen build-gen-tables
+    say "Compiling for the Switch"
+    # Packed once per game, with its own title and icon in the Homebrew Menu (the same program).
+    for g in soulsilver:SoulSilver heartgold:HeartGold; do
+        var="SSR_SWITCH_ICON_$(echo "${g%%:*}" | tr a-z A-Z)"
+        icon="${!var:-${SSR_SWITCH_ICON:-}}"
+        rm -f "$BUILD/icon.jpg"
+        [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
+        build SSR_SWITCH_JIT=1 SSR_SWITCH_GEN="$HERE/build-gen-tables" SSR_SWITCH_BUILD="$BUILD" \
+            SSR_NRO_TITLE="Pokemon ${g#*:}" bash tools/switch/build.sh
+        mkdir -p "build-sd/switch/ssrecomp-${g%%:*}"
+        cp "$BUILD/ssrecomp.nro" "build-sd/switch/ssrecomp-${g%%:*}/ssrecomp-${g%%:*}.nro"
+    done
+    ZIP=ssrecomp-soulsilver-heartgold-switch.zip
+    rm -f "build-sd/$ZIP"
+    (cd build-sd && python3 -c "
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
+    for p in sys.argv[2:]: z.write(p)
+" "$ZIP" switch/ssrecomp-soulsilver/ssrecomp-soulsilver.nro switch/ssrecomp-heartgold/ssrecomp-heartgold.nro)
+    # (Only the two programs: no ROM, save, save state or generated code.)
+    python3 -c "
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+bad = [n for n in names if not n.endswith('.nro')]
+if bad or len(names) != 2: sys.exit('unexpected files in the zip: %s' % names)
+print('zip holds:', ', '.join(names))
+" "build-sd/$ZIP"
+    say "Done: $HERE/build-sd/$ZIP"
+    ls -l build-sd/switch/ssrecomp-soulsilver build-sd/switch/ssrecomp-heartgold "build-sd/$ZIP"
+    cat <<EOF
+
+Copy build-sd/switch to the root of the SD card, then a SoulSilver ROM into
+/switch/ssrecomp-soulsilver/ and a HeartGold ROM into /switch/ssrecomp-heartgold/ (English, US).
 On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
 The zip is the same two files, ready to share: it holds nothing of the games.
 EOF

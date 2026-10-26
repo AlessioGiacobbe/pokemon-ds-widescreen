@@ -195,6 +195,21 @@ struct ScreenImage
     const uint8_t* edgeFlat = nullptr;
 };
 
+// The colour the edge fill continues on row `y` of a side (0 left, 1 right): the outermost of
+// the screen's last few columns that isn't black. Some scenes leave a black column or two at
+// the screen's edge (SoulSilver's evolution, its right side), which would make the whole bar
+// black. frontend/gpucompose.h's DrawEdgeFill uses it too.
+inline uint32_t EdgeFillColour(const ScreenImage& top, int y, int side)
+{
+    const uint32_t* row = top.pixels + y * 256;
+    for (int i = 0; i < 4; i++)
+    {
+        const uint32_t c = row[side ? 255 - i : i];
+        if (((c >> 16) & 0xFF) > 8 || ((c >> 8) & 0xFF) > 8 || (c & 0xFF) > 8) return c;
+    }
+    return row[side ? 255 : 0];
+}
+
 // The colour of the weather particle beside the top screen at base x bx (outside 0..255) and
 // row sy, if there is one there (see Scene::weatherObj).
 inline bool MergedWeatherPixel(const ScreenImage& top, int bx, int sy, uint32_t& rgb)
@@ -690,7 +705,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                     uint32_t* dst = &out[(size_t)y * outW];
                     for (int side = 0; side < 2; side++)
                     {
-                        const uint32_t c = top.pixels[sy * 256 + (side ? 255 : 0)];
+                        const uint32_t c = EdgeFillColour(top, sy, side);
                         const int x0 = side ? right : 0, x1 = side ? outW : left;
                         for (int x = x0; x < x1; x++)
                         {

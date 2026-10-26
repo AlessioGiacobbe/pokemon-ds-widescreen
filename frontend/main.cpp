@@ -1460,7 +1460,8 @@ int main(int argc, char** argv)
     std::vector<uint8_t> rom = ReadFile(opt.rom);
     FuncWatch::RomPath = opt.rom; // (for a function table that reads its first bytes from it)
     // Pokemon SoulSilver (US): its new game's first menu is skipped (see where keys are sent).
-    const bool soulSilverRom = rom.size() > 0x10 && memcmp(&rom[0x0C], "IPGE", 4) == 0;
+    // (HeartGold too: the same game where it matters here.)
+    const bool soulSilverRom = rom.size() > 0x10 && (memcmp(&rom[0x0C], "IPGE", 4) == 0 || memcmp(&rom[0x0C], "IPKE", 4) == 0);
     if (rom.empty())
     {
         fprintf(stderr, "cannot read ROM: %s\n", opt.rom.c_str());
@@ -1510,6 +1511,27 @@ int main(int argc, char** argv)
     }
     // SoulSilver without its recompiled code (--interp, --jit): which of its functions and
     // overlays run, for the layouts, comes from the core's watch instead (runtime/recomp_rt.cpp).
+    // With tables that hold no code of the game (tools/soulsilver/tables_only.py), the overlays'
+    // code it compares is read from this ROM first, which tells SoulSilver from HeartGold too.
+    if (!nds->ARM9.RecompEnable && !funcWatchOn && rc_num_chunks && rc_portable_needed())
+    {
+        NdsOverlays overlays;
+        char code[4] = {};
+        if (FILE* f = fopen(opt.rom.c_str(), "rb"))
+        {
+            if (fseek(f, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, f) != 4) memset(code, 0, 4);
+            fclose(f);
+        }
+        if (overlays.Open(opt.rom))
+            rc_portable_load(code, [](void* user, int id, unsigned* size) -> const unsigned char* {
+                const NdsOverlays::Overlay* ov = static_cast<NdsOverlays*>(user)->Get((uint32_t)id);
+                if (!ov) return nullptr;
+                *size = (unsigned)ov->data.size();
+                return ov->data.data();
+            }, &overlays);
+        else
+            fprintf(stderr, "[recomp] cannot read the overlays of %s\n", opt.rom.c_str());
+    }
     if (!nds->ARM9.RecompEnable && !funcWatchOn && rc_num_chunks) rc_watch_attach(*nds);
     // (Attached once the layouts' functions are known, below.)
     if (!opt.traceFuncsAt.empty() && !funcWatchOn)
@@ -1914,12 +1936,13 @@ int main(int argc, char** argv)
         return false;
     };
 
-    auto sectionActive = [&](const char* name) {
+    auto sectionWithin = [&](const char* name, unsigned frames) {
         for (u32 i = 0; i < rc_num_sections; i++)
             if (!strcmp(rc_sections[i].name, name))
-                return rc_section_last_frame[i] && rc_section_last_frame[i] + 3 >= rc_current_frame();
+                return rc_section_last_frame[i] && rc_section_last_frame[i] + frames >= rc_current_frame();
         return false;
     };
+    auto sectionActive = [&](const char* name) { return sectionWithin(name, 3); };
 
     // Whether an application driven from the bottom screen is starting, running or ending
     // (worked out each frame before the scene is chosen).
@@ -3011,7 +3034,11 @@ int main(int argc, char** argv)
         }
         else if (focus.wantBottom || appBottomNow)
             only("bottom", 1);
-        else if (sectionActive("OVY_8"))
+        else if (sectionActive("OVY_8") ||
+                 // (Opening, the Bag or the party pauses for about 5 frames after it has started,
+                 // with neither it nor the battle running: without this the battle would flash
+                 // up at 4:3 in between.)
+                 (sectionWithin("OVY_8", 12) && !sectionActive("OVY_12")))
             // In-battle bag and party screens (overlay 8) fill the bottom screen.
             only("battle-submenu", 1);
         else if (probeActive(probeBattleInput) ||
@@ -4676,8 +4703,9 @@ int main(int argc, char** argv)
                     return std::abs((int)((p >> 16) & 255) - 24) < 16 && std::abs((int)((p >> 8) & 255) - 186) < 16 &&
                         std::abs((int)(p & 255) - 195) < 16;
                 };
-                const bool menu = sectionActive("OVY_53") && !appActive("OakSpeech") && teal(60, 40) && teal(60, 96) &&
-                    teal(60, 152) && teal(200, 96);
+                // (Not also waiting for the professor's application to be idle: on the JIT its probe
+                // runs throughout, the menu included, since the probes found it.)
+                const bool menu = sectionActive("OVY_53") && teal(60, 40) && teal(60, 96) && teal(60, 152) && teal(200, 96);
                 skipFrames = menu ? skipFrames + 1 : 0;
                 // (Touched for 6 frames in every 30, after it has been up for 20: a touch while it
                 // is still sliding in, or held on, is not taken.)
