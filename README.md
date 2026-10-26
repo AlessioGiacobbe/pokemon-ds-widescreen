@@ -43,6 +43,15 @@ DS game, presented the way it should look on a Switch.
 Each game keeps its save in its own folder (named below). To carry on from an
 emulator or a flash cart, copy your save in under that name.
 
+**Recommended: start each game from the HOME Menu.** With
+[sphaira](https://github.com/ITotalJustice/sphaira) (a Homebrew Menu you can
+use instead of the usual one) you can install a forwarder for each game: an
+icon on the Switch's HOME Menu that starts it directly, with no holding R. In
+sphaira's Homebrew list, select the game (for example `ssrecomp-black2`) and
+choose to install a forwarder. Do it once per game; keep the game's folder
+where it is, as the forwarder starts the `.nro` in it. Each game then has its
+own entry, so sys-clk (below) can have its own settings for it.
+
 ---
 
 ## Pokémon Black 2 and White 2
@@ -106,8 +115,10 @@ emulator or a flash cart, copy your save in under that name.
 
 ## Recommended settings
 
-**sys-clk** (recommended for full speed; in its overlay, for the game you start
-the Homebrew Menu from, or as the global profile), handheld:
+**sys-clk** (recommended for full speed), handheld. With a forwarder (above),
+start the game, open sys-clk's overlay and set these for that game's own
+profile: they then apply whenever you play it, and only then. Without one, set
+them for the game you start the Homebrew Menu from, or as the global profile.
 
 | | |
 |---|---|
