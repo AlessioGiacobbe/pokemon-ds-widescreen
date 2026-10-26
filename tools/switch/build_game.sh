@@ -6,10 +6,11 @@
 #   tools/switch/build_game.sh white2     your-white2-us.nds
 #   tools/switch/build_game.sh bw
 #   tools/switch/build_game.sh hgss       your-soulsilver-us.nds
+#   tools/switch/build_game.sh white      your-white-us-or-europe.nds
 #
-# bw needs no ROM: one program for Black 2, White 2 and Black that reads what it needs from
-# the player's ROM when it starts, packed as build-sd/ssrecomp-black2-white2-switch.zip and
-# build-sd/ssrecomp-black-switch.zip to share (the releases' downloads). hgss likewise packs one program for SoulSilver and HeartGold
+# bw needs no ROM: one program for Black 2, White 2, Black and White that reads what it needs
+# from the player's ROM when it starts, packed as build-sd/ssrecomp-black2-white2-switch.zip and
+# build-sd/ssrecomp-black-white-switch.zip to share (the releases' downloads). hgss likewise packs one program for SoulSilver and HeartGold
 # (US) as build-sd/ssrecomp-soulsilver-heartgold-switch.zip: the SoulSilver ROM is only read for
 # the addresses in its tables (tools/soulsilver/tables_only.py); none of its code goes in.
 #   tools/switch/build_game.sh black      your-black-us-or-europe.nds
@@ -22,10 +23,11 @@
 # switch-dev and switch-sdl2. When devkitPro is not installed but Docker is, its official image
 # (devkitpro/devkita64) is used instead: their servers refuse some IP addresses (403).
 # SSR_SWITCH_ICON=path/to/icon.jpg (256x256 JPEG) gives the game your own Homebrew Menu icon
-# (for bw: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2 and SSR_SWITCH_ICON_BLACK, one each; for hgss:
+# (for bw: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2, SSR_SWITCH_ICON_BLACK and
+# SSR_SWITCH_ICON_WHITE, one each; for hgss:
 # SSR_SWITCH_ICON_SOULSILVER and SSR_SWITCH_ICON_HEARTGOLD).
 #
-# Keep funcs.txt (black2, white2, black) to yourself: it is made from your ROM. Never share a
+# Keep funcs.txt (black2, white2, black, white) to yourself: it is made from your ROM. Never share a
 # build of the recompiled code (tools/switch/build.sh without SSR_SWITCH_JIT=1, build-switch/):
 # it is the game's code.
 set -euo pipefail
@@ -51,8 +53,9 @@ case "$GAME" in
     black2) FOLDER=ssrecomp-black2; NRO=ssrecomp-black2.nro ;;
     white2) FOLDER=ssrecomp-white2; NRO=ssrecomp-white2.nro ;;
     black) FOLDER=ssrecomp-black; NRO=ssrecomp-black.nro ;;
+    white) FOLDER=ssrecomp-white; NRO=ssrecomp-white.nro ;;
     bw|hgss) FOLDER=; NRO= ;;
-    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|black2|white2|black your-rom.nds (or bw, no ROM)" ;;
+    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|black2|white2|black|white your-rom.nds (or bw, no ROM)" ;;
 esac
 if [ "$GAME" != bw ]; then
     [ -n "$ROM" ] || fail "give your ROM: tools/switch/build_game.sh $GAME your-rom.nds"
@@ -136,7 +139,7 @@ black2|white2)
     build SSR_SWITCH_BUILD="$BUILD" SSR_NRO_TITLE="Pokemon $NAME" SSR_SWITCH_ROMFS= bash tools/bw2/build_switch.sh
     ;;
 bw)
-    # One program for Black 2, White 2 and Black, with their function tables inside (made
+    # One program for Black 2, White 2, Black and White, with their function tables inside (made
     # without a ROM: the program reads the few bytes the tables need from the player's ROM).
     # Nothing of the games is in it, so it can be shared (a release's download).
     BUILD=build-switch-bwshared
@@ -151,11 +154,12 @@ bw)
     python3 tools/bw2/funcmap.py build-decomp-pokebw2/config/b2_us/arm9 - "$ROMFS/funcs/IREO.txt"
     python3 tools/bw2/funcmap.py build-decomp-pokew2/config/w2_us/arm9 - "$ROMFS/funcs/IRDO.txt"
     python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$ROMFS/funcs/IRBO.txt"
+    python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$ROMFS/funcs/IRAO.txt" --white
     say "Compiling for the Switch"
     # Packed once per game, with its own title and icon in the Homebrew Menu (the same program).
-    # The icons: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2 and SSR_SWITCH_ICON_BLACK
-    # (256x256 JPEG), else SSR_SWITCH_ICON for all, else libnx's.
-    for g in black2:"Black 2" white2:"White 2" black:"Black"; do
+    # The icons: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2, SSR_SWITCH_ICON_BLACK and
+    # SSR_SWITCH_ICON_WHITE (256x256 JPEG), else SSR_SWITCH_ICON for all, else libnx's.
+    for g in black2:"Black 2" white2:"White 2" black:"Black" white:"White"; do
         var="SSR_SWITCH_ICON_$(echo "${g%%:*}" | tr a-z A-Z)"
         icon="${!var:-${SSR_SWITCH_ICON:-}}"
         rm -f "$BUILD/icon.jpg"
@@ -170,15 +174,15 @@ import sys, zipfile
 with zipfile.ZipFile('ssrecomp-black2-white2-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sys.argv[1:]: z.write(p)
 " switch/ssrecomp-black2/ssrecomp-black2.nro switch/ssrecomp-white2/ssrecomp-white2.nro)
-    # Black's own download (its own release): the same program, in its own folder.
-    rm -f build-sd/ssrecomp-black-switch.zip
+    # Black and White's own download (their own release): the same program, a folder each.
+    rm -f build-sd/ssrecomp-black-switch.zip build-sd/ssrecomp-black-white-switch.zip
     (cd build-sd && python3 -c "
 import sys, zipfile
-with zipfile.ZipFile('ssrecomp-black-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+with zipfile.ZipFile('ssrecomp-black-white-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sys.argv[1:]: z.write(p)
-" switch/ssrecomp-black/ssrecomp-black.nro)
+" switch/ssrecomp-black/ssrecomp-black.nro switch/ssrecomp-white/ssrecomp-white.nro)
     # (Only the programs: no ROM, save, save state or function table made from a ROM.)
-    for zip in ssrecomp-black2-white2-switch.zip ssrecomp-black-switch.zip; do
+    for zip in ssrecomp-black2-white2-switch.zip ssrecomp-black-white-switch.zip; do
         python3 -c "
 import sys, zipfile
 names = zipfile.ZipFile(sys.argv[1]).namelist()
@@ -187,14 +191,14 @@ if bad: sys.exit('unexpected files in the zip: %s' % names)
 print(sys.argv[1], 'holds:', ', '.join(names))
 " "build-sd/$zip"
     done
-    say "Done: $HERE/build-sd/ssrecomp-black2-white2-switch.zip and ssrecomp-black-switch.zip"
+    say "Done: $HERE/build-sd/ssrecomp-black2-white2-switch.zip and ssrecomp-black-white-switch.zip"
     ls -l build-sd/switch/ssrecomp-black2 build-sd/switch/ssrecomp-white2 build-sd/switch/ssrecomp-black \
-        build-sd/ssrecomp-black2-white2-switch.zip build-sd/ssrecomp-black-switch.zip
+        build-sd/switch/ssrecomp-white build-sd/ssrecomp-black2-white2-switch.zip build-sd/ssrecomp-black-white-switch.zip
     cat <<EOF
 
 Copy build-sd/switch to the root of the SD card, then a Black 2 ROM into /switch/ssrecomp-black2/,
-a White 2 ROM into /switch/ssrecomp-white2/ and a Black ROM into /switch/ssrecomp-black/
-(English, US or Europe; any copy of each works).
+a White 2 ROM into /switch/ssrecomp-white2/, a Black ROM into /switch/ssrecomp-black/ and a
+White ROM into /switch/ssrecomp-white/ (English, US or Europe; any copy of each works).
 On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
 The zips hold only these programs, ready to share: nothing of the games.
 EOF
@@ -261,6 +265,17 @@ black)
     [ -n "${SSR_SWITCH_ICON:-}" ] && install -D -m 644 "$SSR_SWITCH_ICON" "$BUILD/icon.jpg"
     say "Compiling for the Switch"
     build bash tools/bw1/build_switch.sh
+    ;;
+white)
+    # The same program as Black's, with White's table: Black's functions at White's addresses.
+    BUILD=build-switch-bw1
+    say "White's function table, from the aletheia decompilation's function list and your ROM"
+    fetch_symbols build-decomp-aletheia "$BW1_DECOMP" "$BW1_COMMIT" '/layout/function_addrs.tsv'
+    mkdir -p "$BUILD"
+    python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv "$ROM" "$BUILD/funcs.txt" --white
+    [ -n "${SSR_SWITCH_ICON:-}" ] && install -D -m 644 "$SSR_SWITCH_ICON" "$BUILD/icon.jpg"
+    say "Compiling for the Switch"
+    build SSR_NRO_TITLE="Pokemon White" bash tools/bw1/build_switch.sh
     ;;
 esac
 

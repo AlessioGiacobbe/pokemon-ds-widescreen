@@ -9,7 +9,7 @@
 |---|---|---|
 | **Pokémon Black 2 and White 2** | ✅ out now | [ssrecomp-black2-white2-switch.zip](../../releases/tag/bw2-switch-v1) |
 | **Pokémon SoulSilver and HeartGold** | ✅ out now | [ssrecomp-soulsilver-heartgold-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
-| **Pokémon Black** | ✅ out now | [ssrecomp-black-switch.zip](../../releases/tag/black-switch-v1) |
+| **Pokémon Black and White** | ✅ out now | [ssrecomp-black-white-switch.zip](../../releases/tag/black-white-switch-v1) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 Every download is free of the games themselves: you bring your own ROM, and
@@ -83,19 +83,19 @@ emulator or a flash cart, copy your save in under that name.
   out for one screen. Where this project started: the
   original ssrecomp was SoulSilver on the PC.
 
-## Pokémon Black
-
-![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg)
+## Pokémon Black and White
 
 | | |
 |---|---|
+| ![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg) | ![White: Zekrom in battle, with the FIGHT panel beside it](docs/screenshots/white-zekrom-battle.jpg) |
 | ![Black: a double battle, Reshiram and Excadrill against a wild Pelipper and Mantyke, the HP boxes down the edges](docs/screenshots/black-reshiram-double.jpg) | ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) |
 
-- **Download:** [`ssrecomp-black-switch.zip`](../../releases/tag/black-switch-v1),
-  folder `/switch/ssrecomp-black/`.
+- **Download:** [`ssrecomp-black-white-switch.zip`](../../releases/tag/black-white-switch-v1),
+  folders `/switch/ssrecomp-black/` and `/switch/ssrecomp-white/`.
 - **ROMs:** any English copy (US or Europe), trimmed or not.
-- **Saves:** `black.sav` (`tools/bw2/convert_save.py` turns `.dsv` and Action
-  Replay saves into the raw 512 KB save).
+- **Saves:** `black.sav` and `white.sav` (the same format, so either game reads
+  the other's; `tools/bw2/convert_save.py` turns `.dsv` and Action Replay saves
+  into the raw 512 KB save).
 - **What you get:** Unova's first adventure with the same treatment as Black 2:
   battles (single, double, triple, rotation) with the HP boxes at the edges of
   the wide view and the battle buttons beside them; its own layouts for the
@@ -124,7 +124,7 @@ what is recommended, and every game always uses the one wide screen:
 | Setting | Recommended | What it does |
 |---|---|---|
 | 60 FPS | ON | in-between frames: the games draw their 3D at 30 fps |
-| BATTLE BUTTONS | PANEL | Black 2, White 2 and Black: the game's own FIGHT, BAG, RUN and POKÉMON panel beside the battle (Black also has STRIP: large buttons in the message box) |
+| BATTLE BUTTONS | PANEL | Black 2, White 2, Black and White: the game's own FIGHT, BAG, RUN and POKÉMON panel beside the battle (Black and White also have STRIP: large buttons in the message box) |
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
 | LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
 | WORLD ON GPU | ON | the world drawn by the graphics chip |
@@ -141,7 +141,7 @@ a Switch OLED in handheld mode. The full list of changes is in
 
 ## Known limits
 
-- Black, Black 2 and White 2: English (US/Europe) versions only. SoulSilver
+- Black, White, Black 2 and White 2: English (US/Europe) versions only. SoulSilver
   and HeartGold: US versions only.
 - SoulSilver and HeartGold: at map borders (Route 29 and New Bark Town, Celadon
   City and Route 16), parts of the neighbouring map pop in and out at the sides
@@ -164,8 +164,8 @@ or Docker, which then uses devkitPro's `devkitpro/devkita64` image):
 
     tools/switch/build_game.sh bw
 
-makes the Black 2 and White 2 zip and the Black one in `build-sd/` (no ROM
-needed), and
+makes the Black 2 and White 2 zip and the Black and White one in `build-sd/`
+(no ROM needed), and
 
     tools/switch/build_game.sh hgss your-soulsilver-us.nds
 
