@@ -14,8 +14,7 @@ native port**; it's the DS game, presented the way it should look on a Switch.
 
 ## What's next
 
-- **Pokémon Black** and **Pokémon SoulSilver**: releasing this week, same
-  treatment.
+- **Pokémon Black**: releasing this week, same treatment.
 - **Pokémon Omega Ruby**: in the works.
 - **Native Switch ports**: the dream, hopefully for all of them. Optimistic,
   but we're aiming for it.
@@ -55,6 +54,30 @@ program reads what it needs from your own ROM when it starts.
 To use a save from an emulator or a flash cart, copy it into the folder as
 `black2.sav` or `white2.sav` (`tools/bw2/convert_save.py` turns `.dsv` and
 Action Replay saves into the raw 512 KB save).
+
+## SoulSilver and HeartGold
+
+The same treatment for **Pokémon SoulSilver and HeartGold** (English, US): one
+wide picture, the battle buttons beside the action, on melonDS's fast JIT.
+
+| | |
+|---|---|
+| ![SoulSilver: New Bark Town in widescreen](docs/screenshots/soulsilver-new-bark-town.jpg) | ![HeartGold: Goldenrod City in widescreen](docs/screenshots/heartgold-goldenrod.jpg) |
+
+Download `ssrecomp-soulsilver-heartgold-switch.zip` from the
+[SoulSilver and HeartGold release](../../releases/tag/soulsilver-heartgold-v1).
+Like the Black 2 and White 2 download, it holds nothing of the games: the
+program reads what it needs from your own ROM when it starts.
+
+1. Unzip it to the root of the SD card (it makes `/switch/ssrecomp-soulsilver/`
+   and `/switch/ssrecomp-heartgold/`).
+2. Copy your ROM into its folder, as the only `.nds` file there: SoulSilver (US)
+   or HeartGold (US). Other versions start, but without the one-screen layouts.
+3. **Hold R while starting any game** and choose Pokemon SoulSilver or Pokemon
+   HeartGold in the Homebrew Menu.
+
+Saves are `soulsilver.sav` and `heartgold.sav` in the game's folder (the two
+games' saves have the same format).
 
 ## Recommended settings
 
@@ -97,6 +120,11 @@ land. The full list is in [CHANGELOG.md](CHANGELOG.md).
 ## Known limits
 
 - English (US/Europe) versions only: the program says so for other languages.
+  SoulSilver and HeartGold: the US versions only.
+- SoulSilver and HeartGold: at map borders (Route 29 and New Bark Town, Celadon
+  City and Route 16), parts of the neighbouring map pop in and out at the sides
+  of the wide view. Loading more of the map, as Black 2 and White 2 do, should
+  fix it.
 - Switch only for now. Bug reports: attach `game.log` from the game's folder,
   and a save state from the pause menu if you can.
 
@@ -108,8 +136,13 @@ or Docker, which then uses devkitPro's `devkitpro/devkita64` image):
 
     tools/switch/build_game.sh bw
 
-makes the release's zip in `build-sd/` (no ROM needed). The full instructions,
-and builds for SoulSilver and Black, are in the
+makes the Black 2 and White 2 zip in `build-sd/` (no ROM needed), and
+
+    tools/switch/build_game.sh hgss your-soulsilver-us.nds
+
+the SoulSilver and HeartGold one (the SoulSilver ROM only gives the addresses
+in its tables; none of its code goes in). The full instructions, and the other
+builds, are in the
 [original project's README](docs/original-ssrecomp-README.md#nintendo-switch-experimental).
 
 ## Support
@@ -126,7 +159,8 @@ single-screen and widescreen view; [its README](docs/original-ssrecomp-README.md
 covers that project. Function names come from the
 [pokebw2](https://github.com/fuddlesworth/pokebw2) and
 [aletheia](https://github.com/Project-Holon/aletheia) decompilations (only their
-symbol files), and the DS is emulated by [melonDS](https://melonds.kuribo64.net).
+symbol files); SoulSilver's and HeartGold's addresses come from ssrecomp's own
+SoulSilver layout. The DS is emulated by [melonDS](https://melonds.kuribo64.net).
 
 GPL-3.0-or-later (see `LICENSE`), as required by melonDS. Not affiliated with
 or endorsed by Nintendo, Game Freak, The Pokémon Company or the melonDS
