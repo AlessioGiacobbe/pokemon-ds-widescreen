@@ -58,6 +58,9 @@ BtlvCore_WaitLevelUpWin      BTLV_CORE_UpdateBallWindowOpen       ov093  021eadb
 BtlvCore_WaitLevelUpStats    BTLV_CORE_UpdateBallWindowRefresh    ov093  021eadd4  position
 BtlvCore_WaitCloseLevelUpWin BTLV_CORE_UpdateBallWindowClose      ov093  021eadf4  position
 ShinkaDemo_Main              SHINKA_DEMO_Main                     ov195  022040e0  position
+GetFieldmapZoneHeapSize      FIELDMAP_GetHeapSizeForMapType       ov021  02189bbc  align1.00
+SetupLoadZoneMapTypeData     FIELDMAP_SetupMapperParam            ov021  02189b30  exact
+GFLAppInit                   GFL_USE_InitSystem                   main   0200545c  align0.64
 BtlvBGauge_Create            BTLV_B_GAUGE_CreatePartyBallBar      ov094  02208dac  role
 BtlvBGauge_SlideTask         BTLV_B_GAUGE_TaskPartyBallBar        ov094  022090b4  role
 BtlvBGauge_Delete            BTLV_B_GAUGE_DeletePartyBallBar      ov094  02209068  role

@@ -1232,6 +1232,9 @@ struct Settings
     bool fullscreen = false;
     bool smooth = false;
     bool wide = true;   // widescreen 3D overworld
+    // Black, White, Black 2 and White 2: more of the map loaded around the player, so the wide
+    // view does not run out of land at its sides (frontend/bw2map.h). Read when the game starts.
+    bool wideMap = true;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1290,6 +1293,7 @@ struct Settings
             else if (k == "fullscreen") fullscreen = v == "1";
             else if (k == "smooth") smooth = v == "1";
             else if (k == "wide") wide = v == "1";
+            else if (k == "wide_map") wideMap = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1319,6 +1323,7 @@ struct Settings
         f << "fullscreen=" << (fullscreen ? 1 : 0) << "\n";
         f << "smooth=" << (smooth ? 1 : 0) << "\n";
         f << "wide=" << (wide ? 1 : 0) << "\n";
+        f << "wide_map=" << (wideMap ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -2038,7 +2043,7 @@ int main(int argc, char** argv)
                 if (fseek(rf, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, rf) != 4) code[0] = 0;
                 fclose(rf);
             }
-            bw2map.Init(code, funcWatch, bw2Names, *nds, cfg.wide);
+            bw2map.Init(code, funcWatch, bw2Names, *nds, cfg.wide && cfg.wideMap);
         }
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
@@ -2197,6 +2202,15 @@ int main(int argc, char** argv)
                           mine[4] = { one ? 138 : 136, levelUp ? 20 : one ? 106 : 78, 256, one ? 142 : 147 };
                 std::copy(enemy, enemy + 4, top.holes[0]);
                 std::copy(mine, mine + 4, top.holes[1]);
+                // A side whose boxes are gone keeps its place: while a Poke Ball is thrown the
+                // camera turns to the foe and the player's box is put away, and the ball, its
+                // shadow and the shakes land inside that box's place, where a moved piece would cut
+                // the ball in two and show its other half at the view's edge. (A box covers more
+                // than a tenth of its side's area; the ball and its sparkles far less.) The piece
+                // stays in the list with no size, so that the Black and White layouts
+                // (frontend/bw1.h) still find each side's piece where they look for it.
+                if (foes2D < 1) std::fill(top.holes[0], top.holes[0] + 4, 0);
+                if (mine2D < 1 && !levelUp) std::fill(top.holes[1], top.holes[1] + 4, 0);
                 // (The enemy's box starts 4 pixels in from the left edge of its piece, as from the
                 // screen's; the player's runs to the right edge of its piece.)
                 Element e = Crop(0, enemy[0], enemy[1], enemy[2] - enemy[0], enemy[3] - enemy[1]);
@@ -2205,6 +2219,7 @@ int main(int argc, char** argv)
                 e.drop = LAYER_3D | LAYER_BACKDROP;
                 e.crisp = true;
                 e.wideOnly = true;
+                if (foes2D < 1) e.sw = e.sh = 0;
                 sc.items.push_back(e);
                 Element m = Crop(0, mine[0], mine[1], mine[2] - mine[0], mine[3] - mine[1]);
                 m.dx = viewRight - (mine[2] - mine[0]);
@@ -2212,6 +2227,7 @@ int main(int argc, char** argv)
                 m.drop = LAYER_3D | LAYER_BACKDROP;
                 m.crisp = true;
                 m.wideOnly = true;
+                if (mine2D < 1 && !levelUp) m.sw = m.sh = 0;
                 sc.items.push_back(m);
             }
             const bool moves = funcWatch.Ran(bw2.battleMove, 1), command = !moves && funcWatch.Ran(bw2.battleCommand, 1);
@@ -2319,16 +2335,31 @@ int main(int argc, char** argv)
             // The bag at full size against the right edge, and the item's card from the other
             // screen (name, icon, count and description) over the left part, where the bottom
             // screen only has a picture of the bag (its pockets also change with L and R).
+            // (No item chosen, or an empty pocket: the card is blank, the bag alone in the
+            // middle. The card's text is white: some of it means there is something to show.)
+            int text = 0;
+            if (screens && screens[0].pixels)
+                for (int y = 28; y < 152; y += 2)
+                    for (int x = 8; x < 248; x += 2)
+                    {
+                        const uint32_t c = screens[0].pixels[y * 256 + x];
+                        text += ((c >> 16) & 0xFF) > 200 && ((c >> 8) & 0xFF) > 200 && (c & 0xFF) > 200;
+                    }
             sc.name = "bag";
             Element list = FullScreen(1);
-            list.dx = viewRight - 256;
-            const float left = viewRight - 256 + 116 - viewLeft; // up to where the list starts
-            Element card = Crop(0, 8, 28, 240, 124);
-            card.scale = std::min(0.85f, (left - 6) / card.sw);
-            card.dx = viewLeft + 3;
-            card.dy = 4;
-            card.border = true;
-            sc.items = { list, card };
+            if (text >= 12)
+            {
+                list.dx = viewRight - 256;
+                const float left = viewRight - 256 + 116 - viewLeft; // up to where the list starts
+                Element card = Crop(0, 8, 28, 240, 124);
+                card.scale = std::min(0.85f, (left - 6) / card.sw);
+                card.dx = viewLeft + 3;
+                card.dy = 4;
+                card.border = true;
+                sc.items = { list, card };
+            }
+            else
+                sc.items = { list };
             sc.bgScreen = 1;
             sc.bgX = 2;
             sc.bgY = 2;
@@ -3436,7 +3467,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3481,6 +3512,10 @@ int main(int argc, char** argv)
 #endif
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
+            // (Black, White, Black 2 and White 2. The game sets its memory up for it as it
+            // starts, so a change waits for the next start.)
+            { "WIDE MAP LOADING", !bw2map.Supported() ? "-" : std::string(cfg.wideMap ? "ON" : "OFF") +
+                (cfg.wideMap != bw2map.on ? " (NEXT START)" : "") },
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -4248,6 +4283,9 @@ int main(int argc, char** argv)
                 break;
             case M_WIDE:
                 cfg.wide = !cfg.wide;
+                break;
+            case M_WIDEMAP:
+                if (bw2map.Supported()) cfg.wideMap = !cfg.wideMap;
                 break;
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
@@ -5249,7 +5287,7 @@ int main(int argc, char** argv)
         }
         if (menu.open)
         {
-            menu.Draw(canvas, "POKEMON SOULSILVER", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
+            menu.Draw(canvas, "", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
             overlayUsed = true;
         }
 
@@ -5265,13 +5303,15 @@ int main(int argc, char** argv)
             for (int scr = 0; scr < 2; scr++)
             {
                 const u8* flags = r2d.LayerFlags[scr == 0 ? topUnit : 1 - topUnit];
+                const u8* prio = r2d.ObjPrio[scr == 0 ? topUnit : 1 - topUnit];
                 for (int i = 0; i < 256 * 192; i++)
                 {
                     u8 f = flags[i];
                     uint32_t c = 0x000000;
                     switch (LayerClass(f))
                     {
-                    case LAYER_OBJ: c = 0xFFFFFF; break;
+                    // (sprites: white at priority 0, darker greys at 1-3)
+                    case LAYER_OBJ: c = prio[i] == 0 ? 0xFFFFFF : prio[i] == 1 ? 0xC0C0C0 : prio[i] == 2 ? 0x909090 : 0x606060; break;
                     case LAYER_3D: c = 0xFF00FF; break;
                     case LAYER_BG0: c = 0xFF0000; break;
                     case LAYER_BG1: c = 0x00C000; break;

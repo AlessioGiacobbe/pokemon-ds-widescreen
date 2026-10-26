@@ -239,17 +239,34 @@ private:
     {
         if (sc.items.empty() || sc.items[0].holeCount != 2) return false; // no boxes moved
         Element& top = sc.items[0];
-        const bool many = top.holes[0][1] == 4;
+        // pickSceneBw2's pieces: the foes' first, then the player's. Their sources tell the kind
+        // of battle (the foes' piece starts at row 4 with more than one Pokemon a side) and
+        // whether the level-up window is open (the player's starts at row 20); a side whose
+        // boxes are put away (a Poke Ball being thrown) has no hole and a piece of no size, and
+        // stays so.
+        Element* piece[2] = {};
+        for (Element& e : sc.items)
+            if (e.wideOnly && !piece[1]) (piece[0] ? piece[1] : piece[0]) = &e;
+        if (!piece[1]) return false;
+        const bool many = piece[0]->sy == 4, levelUp = piece[1]->sy == 20;
+        const bool shown[2] = { top.holes[0][2] > 0, top.holes[1][2] > 0 };
         static const int enemy1[4] = { 0, 26, 128, 54 }, mine1[4] = { 132, 106, 256, 142 };
         const int enemyN[4] = { 0, 8, 128, 72 }, mineN[4] = { 134, 82, 256, 147 };
         const int* enemy = many ? enemyN : enemy1;
-        const int* mine = many ? mineN : mine1;
+        int mine[4];
+        std::copy(many ? mineN : mine1, (many ? mineN : mine1) + 4, mine);
+        // While the level-up window is open (over the player's box, inside its columns) it moves
+        // with the box, from row 20: cut through at the box's top, its last rows went right with
+        // the box and the rest stayed.
+        if (levelUp) mine[1] = 20;
         std::copy(enemy, enemy + 4, top.holes[0]);
         std::copy(mine, mine + 4, top.holes[1]);
-        int n = 0;
-        for (Element& e : sc.items)
+        for (int i = 0; i < 2; i++)
+            if (!shown[i]) std::fill(top.holes[i], top.holes[i] + 4, 0);
+        for (int n = 0; n < 2; n++)
         {
-            if (!e.wideOnly) continue;
+            Element& e = *piece[n];
+            if (!shown[n]) continue;
             const int* r = n == 0 ? enemy : mine;
             e.sx = r[0];
             e.sy = r[1];
@@ -265,7 +282,6 @@ private:
                 e.dx = viewRight - e.sw;
                 e.dy = mine[1] - (many ? 0 : 10);
             }
-            if (++n == 2) break;
         }
         return many;
     }

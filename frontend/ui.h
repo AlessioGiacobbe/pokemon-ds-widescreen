@@ -174,7 +174,9 @@ struct Menu
         if (scale < 1) scale = 1;
         int lineH = 11 * scale;
         // (Rows closer together if they would not all fit on the screen, down to 9 * scale.)
-        const int rows = (int)items.size() + 3;
+        // With no title the box starts with the first item.
+        const bool hasTitle = !title.empty();
+        const int rows = (int)items.size() + (hasTitle ? 3 : 2);
         if (lineH * rows + 6 * scale > c.h - 4) lineH = std::max(9 * scale, (c.h - 4 - 6 * scale) / rows);
         int boxW = 190 * scale;
         if (boxW > c.w - 8) boxW = c.w - 8;
@@ -184,9 +186,9 @@ struct Menu
         c.Fill(0, 0, c.w, c.h, 0xA0000000);
         c.Fill(bx - scale, by - scale, boxW + 2 * scale, boxH + 2 * scale, 0xFFE8E8E8);
         c.Fill(bx, by, boxW, boxH, 0xFF1C2A44);
-        c.Text(bx + (boxW - Canvas::TextWidth(title, scale)) / 2, by + 3 * scale, title, scale, 0xFFFFD75E);
+        if (hasTitle) c.Text(bx + (boxW - Canvas::TextWidth(title, scale)) / 2, by + 3 * scale, title, scale, 0xFFFFD75E);
 
-        int y = by + lineH + 5 * scale;
+        int y = by + (hasTitle ? lineH : 0) + 5 * scale;
         for (int i = 0; i < (int)items.size(); i++)
         {
             bool sel = i == selected;

@@ -1,4 +1,5 @@
-// Pokemon Black 2 and White 2 (US): more of the map loaded beside the player, for the wide view.
+// Pokemon Black 2 and White 2 (US), Black and White (US/Europe): more of the map loaded beside the
+// player, for the wide view.
 //
 // The game keeps a small window of its map's 32x32-tile chunks loaded around the player (most
 // outdoor maps 2x2 chunks, chosen by which half of a chunk the player stands in) and draws only
@@ -26,6 +27,9 @@ class Bw2Map
 {
 public:
     bool on = false;
+
+    // Whether this game is one of the versions below (whether WIDE MAP LOADING applies).
+    bool Supported() const { return V != nullptr; }
 
     // Whether the console should have 8 MB (the ROM is Black 2 or White 2, US, and this is not
     // turned off).
@@ -67,31 +71,36 @@ private:
     // Where each version has MAP_CONFIGS (in the field overlay) and HEAP_SETUP_NTR (in the main
     // binary), from the decompilation's symbols for that version (pokebw2: config/b2_us, w2_us).
     // White 2's code is Black 2's, a little further along in memory.
-    struct Version { const char* code; uint32_t table, heapSetup; };
+    // Black and White have the same table (21 entries) in their field overlay (21), found by its
+    // contents, and their heap setup in the main binary with a smaller user heap (0x199500).
+    struct Version { const char* code; uint32_t table, heapSetup, heapUser, count; };
     static const Version* Find(const char* code)
     {
         static const Version versions[] = {
-            { "IREO", 0x021ca01c, 0x0208ee68 }, // Black 2
-            { "IRDO", 0x021ca050, 0x0208ee94 }, // White 2
+            { "IREO", 0x021ca01c, 0x0208ee68, 0x1a3e00, 29 }, // Black 2
+            { "IRDO", 0x021ca050, 0x0208ee94, 0x1a3e00, 29 }, // White 2
+            { "IRBO", 0x021d3700, 0x0209d8b0, 0x199500, 21 }, // Black
+            { "IRAO", 0x021d3718, 0x0209d8c8, 0x199500, 21 }, // White
         };
         for (const Version& v : versions)
             if (!strcmp(code, v.code)) return &v;
         return nullptr;
     }
 
-    // MAP_CONFIGS: 29 entries of 72 bytes (FieldG3DMapperConfig, 60 bytes, then the control
+    // MAP_CONFIGS: Version::count entries of 72 bytes (FieldG3DMapperConfig, 60 bytes, then the control
     // table, whether the map has a matrix, and the heap's size).
-    static constexpr uint32_t Count = 29, Size = 72;
+    static constexpr uint32_t Size = 72;
     static constexpr uint32_t OffDiameterX = 8, OffDiameterZ = 10, OffBuffer = 52, OffHeap = 68;
     // Besides its buffer each chunk takes its own state and lists from the heap (a few KB;
     // generously).
     static constexpr uint32_t ChunkOverhead = 0x3000;
 
     // OS_ARENA_MAIN's low and high ends (NitroSDK's arena information, HW_ARENA_INFO_BUF), and
-    // HEAP_SETUP_NTR's heap 1 (pokebw2: src/system/gfl_use.c): 0x1a3e00 bytes, 0x48ae00 on a DSi.
+    // HEAP_SETUP_NTR's heap 1 (pokebw2: src/system/gfl_use.c): Version::heapUser bytes (Black 2:
+    // 0x1a3e00, 0x48ae00 on a DSi; Black: 0x199500, 0x486000 on a DSi).
     static constexpr uint32_t ArenaLo = 0x027FFDA0, ArenaHi = 0x027FFDC4;
     static constexpr uint32_t ArenaStart = 0x02400000, ArenaEnd = 0x027E0000;
-    static constexpr uint32_t HeapUser = 0x1a3e00, HeapUserExtra = 0x180000;
+    static constexpr uint32_t HeapUserExtra = 0x180000;
 
     const Version* V = nullptr;
     melonDS::NDS* Nds = nullptr;
@@ -112,15 +121,15 @@ private:
     // arena is left unused.
     void Arena()
     {
-        if (Nds->MainRAMMask != 0x7FFFFF || Read32(V->heapSetup + 8) != HeapUser) return;
+        if (Nds->MainRAMMask != 0x7FFFFF || Read32(V->heapSetup + 8) != V->heapUser) return;
         // The game's protection region for main RAM (region 1, set up by the start-up code for 4 MB:
         // 0x0200002b) made 8 MB, or the first use of the upper half faults.
         if (Nds->ARM9.PU_Region[1] != 0x0200002b) return;
         Nds->ARM9.CP15Write(0x610, 0x0200002d);
         Write32(ArenaLo, ArenaStart);
         Write32(ArenaHi, ArenaEnd);
-        Write32(V->heapSetup + 8, HeapUser + HeapUserExtra);
-        fprintf(stderr, "[bw2map] 8 MB: the game's heap 0x%x bytes at 0x%x\n", HeapUser + HeapUserExtra, ArenaStart);
+        Write32(V->heapSetup + 8, V->heapUser + HeapUserExtra);
+        fprintf(stderr, "[bw2map] 8 MB: the game's heap 0x%x bytes at 0x%x\n", V->heapUser + HeapUserExtra, ArenaStart);
     }
 
     void Patch()
@@ -130,10 +139,10 @@ private:
         if (Read32(V->table) != 0x200000 || Read32(V->table + 4) != 0x400000) return;
         // (Only with the bigger heap: there is no room in the DS's own 4 MB, and a save state made
         // without it keeps the game's own windows.)
-        if (Read32(V->heapSetup + 8) != HeapUser + HeapUserExtra) return;
+        if (Read32(V->heapSetup + 8) != V->heapUser + HeapUserExtra) return;
         static const bool log = getenv("SSR_B2_MAP_LOG") != nullptr;
         if (log) fprintf(stderr, "[bw2map] table read for zone %u\n", Nds->ARM9.R[0] & 0xFFFF);
-        for (uint32_t i = 0; i < Count; i++)
+        for (uint32_t i = 0; i < V->count; i++)
         {
             const uint32_t e = V->table + i * Size;
             const uint16_t dx = Read16(e + OffDiameterX), dz = Read16(e + OffDiameterZ);

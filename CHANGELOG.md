@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Black and White battles: catching and levelling up.** A thrown Poke Ball is shown whole
+  as it lands and shakes (it was cut in two, its other half at the view's right edge: it lands
+  where the player's HP box is, whose place was still being moved while the box was put away),
+  and the level-up window with the new stats moves with the player's box as one piece instead
+  of being cut through (Black 2 already did this; Black's own box places overrode it).
+- **Black and White: the wide view's edges in towns and on routes** (trees popping in and
+  stretching at the sides, as in Nuvema Town) load the wider map as Black 2 and White 2 do:
+  the map's pieces are loaded further out, with the extra memory of the DSi mode
+  (`bw2map.h` now knows Black's and White's addresses). Save states made before this need
+  `SSR_B2_MAP=0`.
+- **Black and White's bag with an empty pocket** is shown as the bag screen alone, without an
+  empty card beside it ("It's empty." with nothing to describe).
+- **WIDE MAP LOADING (pause menu, Black, White, Black 2, White 2):** ON (the default) loads
+  more of the map around the player so the wide view's sides are not empty; OFF leaves the
+  game's own map loading alone, if it ever causes trouble. The game sets its memory up for it
+  as it starts, so a change takes effect on the next start (the menu says "NEXT START" until
+  then). Kept in the settings as `wide_map`.
+- **Pause menu:** no game name at the top (it said "POKEMON SOULSILVER" in every game).
 - **Trainer battles' start (Black 2, White 2, Black, White): the bars of Poke Balls** that slide
   in for each side's party are shown whole: the HP boxes' places stay put while they are up,
   instead of the bars being cut where the boxes' pieces are moved to the view's edges.
