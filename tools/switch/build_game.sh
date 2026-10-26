@@ -9,9 +9,9 @@
 #   tools/switch/build_game.sh white      your-white-us-or-europe.nds
 #
 # bw needs no ROM: one program for Black 2, White 2, Black and White that reads what it needs
-# from the player's ROM when it starts, packed as build-sd/ssrecomp-black2-white2-switch.zip and
-# build-sd/ssrecomp-black-white-switch.zip to share (the releases' downloads). hgss likewise packs one program for SoulSilver and HeartGold
-# (US) as build-sd/ssrecomp-soulsilver-heartgold-switch.zip: the SoulSilver ROM is only read for
+# from the player's ROM when it starts, packed as build-sd/pokemon-black2-white2-wide-switch.zip and
+# build-sd/pokemon-black-white-wide-switch.zip to share (the releases' downloads). hgss likewise packs one program for SoulSilver and HeartGold
+# (US) as build-sd/pokemon-soulsilver-heartgold-wide-switch.zip: the SoulSilver ROM is only read for
 # the addresses in its tables (tools/soulsilver/tables_only.py); none of its code goes in.
 #   tools/switch/build_game.sh black      your-black-us-or-europe.nds
 #
@@ -50,10 +50,10 @@ fail() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 
 case "$GAME" in
     soulsilver) FOLDER=ssrecomp; NRO=ssrecomp.nro ;;
-    black2) FOLDER=ssrecomp-black2; NRO=ssrecomp-black2.nro ;;
-    white2) FOLDER=ssrecomp-white2; NRO=ssrecomp-white2.nro ;;
-    black) FOLDER=ssrecomp-black; NRO=ssrecomp-black.nro ;;
-    white) FOLDER=ssrecomp-white; NRO=ssrecomp-white.nro ;;
+    black2) FOLDER=pokemon-black2-wide; NRO=pokemon-black2-wide.nro ;;
+    white2) FOLDER=pokemon-white2-wide; NRO=pokemon-white2-wide.nro ;;
+    black) FOLDER=pokemon-black-wide; NRO=pokemon-black-wide.nro ;;
+    white) FOLDER=pokemon-white-wide; NRO=pokemon-white-wide.nro ;;
     bw|hgss) FOLDER=; NRO= ;;
     *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|black2|white2|black|white your-rom.nds (or bw, no ROM)" ;;
 esac
@@ -165,24 +165,24 @@ bw)
         rm -f "$BUILD/icon.jpg"
         [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
         build SSR_SWITCH_BUILD="$BUILD" SSR_NRO_TITLE="Pokemon ${g#*:}" SSR_SWITCH_ROMFS="$ROMFS" bash tools/bw2/build_switch.sh
-        mkdir -p "build-sd/switch/ssrecomp-${g%%:*}"
-        cp "$BUILD/ssrecomp.nro" "build-sd/switch/ssrecomp-${g%%:*}/ssrecomp-${g%%:*}.nro"
+        mkdir -p "build-sd/switch/pokemon-${g%%:*}-wide"
+        cp "$BUILD/ssrecomp.nro" "build-sd/switch/pokemon-${g%%:*}-wide/pokemon-${g%%:*}-wide.nro"
     done
-    rm -f build-sd/ssrecomp-black2-white2-switch.zip
+    rm -f build-sd/pokemon-black2-white2-wide-switch.zip
     (cd build-sd && python3 -c "
 import sys, zipfile
-with zipfile.ZipFile('ssrecomp-black2-white2-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+with zipfile.ZipFile('pokemon-black2-white2-wide-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sys.argv[1:]: z.write(p)
-" switch/ssrecomp-black2/ssrecomp-black2.nro switch/ssrecomp-white2/ssrecomp-white2.nro)
+" switch/pokemon-black2-wide/pokemon-black2-wide.nro switch/pokemon-white2-wide/pokemon-white2-wide.nro)
     # Black and White's own download (their own release): the same program, a folder each.
-    rm -f build-sd/ssrecomp-black-switch.zip build-sd/ssrecomp-black-white-switch.zip
+    rm -f build-sd/pokemon-black-wide-switch.zip build-sd/pokemon-black-white-wide-switch.zip
     (cd build-sd && python3 -c "
 import sys, zipfile
-with zipfile.ZipFile('ssrecomp-black-white-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+with zipfile.ZipFile('pokemon-black-white-wide-switch.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sys.argv[1:]: z.write(p)
-" switch/ssrecomp-black/ssrecomp-black.nro switch/ssrecomp-white/ssrecomp-white.nro)
+" switch/pokemon-black-wide/pokemon-black-wide.nro switch/pokemon-white-wide/pokemon-white-wide.nro)
     # (Only the programs: no ROM, save, save state or function table made from a ROM.)
-    for zip in ssrecomp-black2-white2-switch.zip ssrecomp-black-white-switch.zip; do
+    for zip in pokemon-black2-white2-wide-switch.zip pokemon-black-white-wide-switch.zip; do
         python3 -c "
 import sys, zipfile
 names = zipfile.ZipFile(sys.argv[1]).namelist()
@@ -191,14 +191,14 @@ if bad: sys.exit('unexpected files in the zip: %s' % names)
 print(sys.argv[1], 'holds:', ', '.join(names))
 " "build-sd/$zip"
     done
-    say "Done: $HERE/build-sd/ssrecomp-black2-white2-switch.zip and ssrecomp-black-white-switch.zip"
-    ls -l build-sd/switch/ssrecomp-black2 build-sd/switch/ssrecomp-white2 build-sd/switch/ssrecomp-black \
-        build-sd/switch/ssrecomp-white build-sd/ssrecomp-black2-white2-switch.zip build-sd/ssrecomp-black-white-switch.zip
+    say "Done: $HERE/build-sd/pokemon-black2-white2-wide-switch.zip and pokemon-black-white-wide-switch.zip"
+    ls -l build-sd/switch/pokemon-black2-wide build-sd/switch/pokemon-white2-wide build-sd/switch/pokemon-black-wide \
+        build-sd/switch/pokemon-white-wide build-sd/pokemon-black2-white2-wide-switch.zip build-sd/pokemon-black-white-wide-switch.zip
     cat <<EOF
 
-Copy build-sd/switch to the root of the SD card, then a Black 2 ROM into /switch/ssrecomp-black2/,
-a White 2 ROM into /switch/ssrecomp-white2/, a Black ROM into /switch/ssrecomp-black/ and a
-White ROM into /switch/ssrecomp-white/ (English, US or Europe; any copy of each works).
+Copy build-sd/switch to the root of the SD card, then a Black 2 ROM into /switch/pokemon-black2-wide/,
+a White 2 ROM into /switch/pokemon-white2-wide/, a Black ROM into /switch/pokemon-black-wide/ and a
+White ROM into /switch/pokemon-white-wide/ (English, US or Europe; any copy of each works).
 On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
 The zips hold only these programs, ready to share: nothing of the games.
 EOF
@@ -227,16 +227,16 @@ hgss)
         [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
         build SSR_SWITCH_JIT=1 SSR_SWITCH_GEN="$HERE/build-gen-tables" SSR_SWITCH_BUILD="$BUILD" \
             SSR_NRO_TITLE="Pokemon ${g#*:}" bash tools/switch/build.sh
-        mkdir -p "build-sd/switch/ssrecomp-${g%%:*}"
-        cp "$BUILD/ssrecomp.nro" "build-sd/switch/ssrecomp-${g%%:*}/ssrecomp-${g%%:*}.nro"
+        mkdir -p "build-sd/switch/pokemon-${g%%:*}-wide"
+        cp "$BUILD/ssrecomp.nro" "build-sd/switch/pokemon-${g%%:*}-wide/pokemon-${g%%:*}-wide.nro"
     done
-    ZIP=ssrecomp-soulsilver-heartgold-switch.zip
+    ZIP=pokemon-soulsilver-heartgold-wide-switch.zip
     rm -f "build-sd/$ZIP"
     (cd build-sd && python3 -c "
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sys.argv[2:]: z.write(p)
-" "$ZIP" switch/ssrecomp-soulsilver/ssrecomp-soulsilver.nro switch/ssrecomp-heartgold/ssrecomp-heartgold.nro)
+" "$ZIP" switch/pokemon-soulsilver-wide/pokemon-soulsilver-wide.nro switch/pokemon-heartgold-wide/pokemon-heartgold-wide.nro)
     # (Only the two programs: no ROM, save, save state or generated code.)
     python3 -c "
 import sys, zipfile
@@ -246,11 +246,11 @@ if bad or len(names) != 2: sys.exit('unexpected files in the zip: %s' % names)
 print('zip holds:', ', '.join(names))
 " "build-sd/$ZIP"
     say "Done: $HERE/build-sd/$ZIP"
-    ls -l build-sd/switch/ssrecomp-soulsilver build-sd/switch/ssrecomp-heartgold "build-sd/$ZIP"
+    ls -l build-sd/switch/pokemon-soulsilver-wide build-sd/switch/pokemon-heartgold-wide "build-sd/$ZIP"
     cat <<EOF
 
 Copy build-sd/switch to the root of the SD card, then a SoulSilver ROM into
-/switch/ssrecomp-soulsilver/ and a HeartGold ROM into /switch/ssrecomp-heartgold/ (English, US).
+/switch/pokemon-soulsilver-wide/ and a HeartGold ROM into /switch/pokemon-heartgold-wide/ (English, US).
 On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
 The zip is the same two files, ready to share: it holds nothing of the games.
 EOF

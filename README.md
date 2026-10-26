@@ -7,9 +7,9 @@
 
 | Game | Status | Download |
 |---|---|---|
-| **Pokémon Black 2 and White 2** | ✅ out now | [ssrecomp-black2-white2-switch.zip](../../releases/tag/bw2-switch-v1) |
-| **Pokémon SoulSilver and HeartGold** | ✅ out now | [ssrecomp-soulsilver-heartgold-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
-| **Pokémon Black and White** | ✅ out now | [ssrecomp-black-white-switch.zip](../../releases/tag/black-white-switch-v1) |
+| **Pokémon Black 2 and White 2** | ✅ out now | [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
+| **Pokémon SoulSilver and HeartGold** | ✅ out now | [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
+| **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 Every download is free of the games themselves: you bring your own ROM, and
@@ -47,7 +47,7 @@ emulator or a flash cart, copy your save in under that name.
 [sphaira](https://github.com/ITotalJustice/sphaira) (a Homebrew Menu you can
 use instead of the usual one) you can install a forwarder for each game: an
 icon on the Switch's HOME Menu that starts it directly, with no holding R. In
-sphaira's Homebrew list, select the game (for example `ssrecomp-black2`) and
+sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`) and
 choose to install a forwarder. Do it once per game; keep the game's folder
 where it is, as the forwarder starts the `.nro` in it. Each game then has its
 own entry, so sys-clk (below) can have its own settings for it.
@@ -61,8 +61,8 @@ own entry, so sys-clk (below) can have its own settings for it.
 | ![Black 2: Black Kyurem against a wild Crustle, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black2-black-kyurem-battle.jpg) | ![White 2: White Kyurem against a wild Tropius, with the FIGHT panel beside the battle](docs/screenshots/white2-white-kyurem-battle.jpg) |
 | ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
 
-- **Download:** [`ssrecomp-black2-white2-switch.zip`](../../releases/tag/bw2-switch-v1),
-  folders `/switch/ssrecomp-black2/` and `/switch/ssrecomp-white2/`.
+- **Download:** [`pokemon-black2-white2-wide-switch.zip`](../../releases/tag/bw2-switch-v1),
+  folders `/switch/pokemon-black2-wide/` and `/switch/pokemon-white2-wide/`.
 - **ROMs:** any English copy (US or Europe), trimmed or not, including the
   "NDSi Enhanced" one. Other languages put the game's code elsewhere: the
   program says so instead of starting.
@@ -81,8 +81,8 @@ own entry, so sys-clk (below) can have its own settings for it.
 |---|---|
 | ![HeartGold: Ho-Oh against a wild Spearow, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/heartgold-ho-oh-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
 
-- **Download:** [`ssrecomp-soulsilver-heartgold-switch.zip`](../../releases/tag/soulsilver-heartgold-v1),
-  folders `/switch/ssrecomp-soulsilver/` and `/switch/ssrecomp-heartgold/`.
+- **Download:** [`pokemon-soulsilver-heartgold-wide-switch.zip`](../../releases/tag/soulsilver-heartgold-v1),
+  folders `/switch/pokemon-soulsilver-wide/` and `/switch/pokemon-heartgold-wide/`.
 - **ROMs:** the English US versions. Other versions start, but without the
   one-screen layouts.
 - **Saves:** `soulsilver.sav` and `heartgold.sav` (the same format, so either
@@ -99,8 +99,8 @@ own entry, so sys-clk (below) can have its own settings for it.
 | ![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg) | ![White: Zekrom in battle, with the FIGHT panel beside it](docs/screenshots/white-zekrom-battle.jpg) |
 | ![Black: a double battle, Reshiram and Excadrill against a wild Pelipper and Mantyke, the HP boxes down the edges](docs/screenshots/black-reshiram-double.jpg) | ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) |
 
-- **Download:** [`ssrecomp-black-white-switch.zip`](../../releases/tag/black-white-switch-v1),
-  folders `/switch/ssrecomp-black/` and `/switch/ssrecomp-white/`.
+- **Download:** [`pokemon-black-white-wide-switch.zip`](../../releases/tag/black-white-switch-v1),
+  folders `/switch/pokemon-black-wide/` and `/switch/pokemon-white-wide/`.
 - **ROMs:** any English copy (US or Europe), trimmed or not.
 - **Saves:** `black.sav` and `white.sav` (the same format, so either game reads
   the other's; `tools/bw2/convert_save.py` turns `.dsv` and Action Replay saves

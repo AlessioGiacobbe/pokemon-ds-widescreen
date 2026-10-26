@@ -119,10 +119,10 @@ A homebrew version for a Switch running custom firmware (Atmosphère). Four game
 
 | Game | ROM | Folder on the SD card | Save |
 |---|---|---|---|
-| Pokémon Black 2 | English, US/Europe (IREO) | `/switch/ssrecomp-black2/` | `black2.sav` |
-| Pokémon White 2 | English, US/Europe (IRDO) | `/switch/ssrecomp-white2/` | `white2.sav` |
+| Pokémon Black 2 | English, US/Europe (IREO) | `/switch/pokemon-black2-wide/` | `black2.sav` |
+| Pokémon White 2 | English, US/Europe (IRDO) | `/switch/pokemon-white2-wide/` | `white2.sav` |
 | Pokémon SoulSilver | US (IPGE) | `/switch/ssrecomp/` | `soulsilver.sav` |
-| Pokémon Black | English, US/Europe (IRBO) | `/switch/ssrecomp-black/` | `black.sav` |
+| Pokémon Black | English, US/Europe (IRBO) | `/switch/pokemon-black-wide/` | `black.sav` |
 
 All of them run on melonDS's JIT, with the same single-screen view, widescreen
 world and pause menu. Black, Black 2 and White 2 have no recompiled code: their
@@ -159,7 +159,7 @@ devkitPro's official image (`devkitpro/devkita64`, about 2 GB).
    (White 2 after Black 2 takes seconds: it is the same program). The result is
    in `build-sd/switch/`, laid out like the SD card: the `.nro`, and for Black,
    Black 2 and White 2 its `funcs.txt`. `bw` needs no ROM: it makes the
-   ready-made download above (`build-sd/ssrecomp-black2-white2-switch.zip`).
+   ready-made download above (`build-sd/pokemon-black2-white2-wide-switch.zip`).
 2. Copy `build-sd/switch` to the root of the SD card, then your ROM into the
    game's folder: as `rom.nds` for SoulSilver, as the only `.nds` file there for
    the others. Each game keeps its save, settings (`ssrecomp.cfg`) and
