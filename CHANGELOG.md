@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Black 2 and White 2: double, triple and rotation battles' HP boxes against the edges of the
+  wide view,** the foes' in the upper left and yours in the lower right, as in single battles
+  (they kept the DS's places in the middle). The boxes stay put while the screen goes black
+  into an evolution, instead of the next scene showing through where they were.
 - **Switch: a shorter pause menu.** The game always shows the one wide screen, so SCREEN LAYOUT
   and LARGE SCREEN are gone (an older saved layout is ignored). CPU BOOST is gone: the system
   kept taking its boost mode away and the game dropped frames; sys-clk sets the clocks

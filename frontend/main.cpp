@@ -1943,6 +1943,7 @@ int main(int argc, char** argv)
         int save = -1, saveWrite = -1;
         std::vector<int> levelUpWin; // the level-up window in a battle (BtlvCore_Wait*LevelUp*)
         int battleTarget = -1;       // choosing a move's target (double, triple, rotation battles)
+        int evolution = -1;          // the evolution scene, which the battle fades out into
         std::vector<int> weatherObj; // the weathers with particles (see Scene::weatherObj)
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
@@ -1990,6 +1991,7 @@ int main(int argc, char** argv)
         // over a second, not even the overworld (see the save layout).
         bw2.saveWrite = bw2Find("CARD_WaitBackupAsync");
         bw2.battleTarget = bw2Find("BtlvCore_WaitTargetSelect");
+        bw2.evolution = bw2Find("ShinkaDemo_Main");
         for (const char* f : { "BtlvCore_WaitLevelUpWin", "BtlvCore_WaitLevelUpStats", "BtlvCore_WaitCloseLevelUpWin" })
             bw2.levelUpWin.push_back(bw2Find(f));
         // The weathers with particles, each running in its own overlay (75: snow, 76: rain, 77:
@@ -2104,10 +2106,51 @@ int main(int argc, char** argv)
             // (The compositor leaves the boxes where they are in any frame without the wide arena.)
             // The player's box is lifted this much, to clear the corner panel's frame.
             constexpr int BattleBoxLift = 4;
-            if (wideView && kind == 1)
+            // How much of a part of the top screen is 2D, in tenths: where the HP boxes are, some
+            // of it; none when the boxes are not shown (the screen going black into an evolution,
+            // where the wide arena can still show the last picture through the holes); nearly all
+            // under a layer over the whole screen. The boxes move while either side has some (a
+            // side whose Pokemon have all fainted has none) and neither is covered.
+            auto tenths2D = [&](int x0, int y0, int x1, int y1) {
+                if (!screens || !screens[0].flags) return 5;
+                int n = 0;
+                for (int y = y0; y < y1; y++)
+                    for (int x = x0; x < x1; x++)
+                    {
+                        const uint8_t cl = LayerClass(screens[0].flags[y * 256 + x]);
+                        n += cl != LAYER_3D && cl != LAYER_BACKDROP;
+                    }
+                return n * 10 / ((x1 - x0) * (y1 - y0));
+            };
+            const int foes2D = tenths2D(0, 4, 124, 70), mine2D = tenths2D(136, 78, 256, 147);
+            // (And not with the screen as it is shown black there: the battle fading out into an
+            // evolution, with the boxes still in place underneath.)
+            auto lit = [&](int x0, int y0, int x1, int y1) {
+                if (!screens || !screens[0].pixels) return true;
+                int n = 0;
+                for (int y = y0; y < y1; y++)
+                    for (int x = x0; x < x1; x++)
+                    {
+                        const uint32_t c = screens[0].pixels[y * 256 + x];
+                        n += ((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF) > 48;
+                    }
+                return n * 20 > (x1 - x0) * (y1 - y0);
+            };
+            const bool boxesShown = (foes2D >= 1 || mine2D >= 1) && foes2D < 9 && mine2D < 9
+                && (lit(0, 4, 124, 70) || lit(136, 78, 256, 147)) && !funcWatch.Ran(bw2.evolution, 2);
+            // ... or the top screen darkened or whitened (master brightness): the holes would show
+            // the wide arena at full brightness through it.
+            const auto& topGpu = topUnitOf() == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+            const int brightMode = (topGpu.MasterBrightness >> 14) & 3;
+            const bool fading = ((brightMode == 1 || brightMode == 2) && (topGpu.MasterBrightness & 0x1F) != 0)
+                // (or a brightness effect on the 3D layer, as the frame drawing reads it too)
+                || ((topGpu.BlendCnt & 1) && ((topGpu.BlendCnt >> 6) & 3) >= 2 && topGpu.EVY != 0);
+            if (wideView && (kind == 1 || kind == 2) && !fading && boxesShown)
             {
-                // The enemy's box covers x 4-109, y 30-51 of the top screen, the player's x 142-255,
-                // y 110-138 (with room for them to shake when hit).
+                // A single battle: the enemy's box covers x 4-109, y 30-51 of the top screen, the
+                // player's x 142-255, y 110-138 (with room for them to shake when hit). A double,
+                // triple or rotation battle: the foes' two or three boxes x 4-120, y 8-66, the
+                // player's x 140-255, y 82-145 (measured in Black 2 and White 2).
                 Element& top = sc.items[0];
                 top.holeCount = 2;
                 // While the level-up window is open (above the player's box, x 150-255, y 34-132,
@@ -2115,7 +2158,9 @@ int main(int argc, char** argv)
                 // its top, or the box would cut through the list of stats.
                 bool levelUp = false;
                 for (int f : bw2.levelUpWin) levelUp |= funcWatch.Ran(f, 3);
-                const int enemy[4] = { 0, 26, 116, 56 }, mine[4] = { 138, levelUp ? 20 : 106, 256, 142 };
+                const bool one = kind == 1;
+                const int enemy[4] = { 0, one ? 26 : 4, one ? 116 : 124, one ? 56 : 70 },
+                          mine[4] = { one ? 138 : 136, levelUp ? 20 : one ? 106 : 78, 256, one ? 142 : 147 };
                 std::copy(enemy, enemy + 4, top.holes[0]);
                 std::copy(mine, mine + 4, top.holes[1]);
                 // (The enemy's box starts 4 pixels in from the left edge of its piece, as from the
@@ -4871,6 +4916,16 @@ int main(int argc, char** argv)
                     scene = picked;
                     shownName = picked.name;
                     pending = 0;
+                }
+                else if (pendingName.compare(0, 6, "battle") != 0)
+                {
+                    // Held while the next layout (not another of the battle's) waits its turn:
+                    // without its holes and the pieces drawn elsewhere (Black 2's HP boxes), which
+                    // belong to the screen they were made for. A battle fading out into an
+                    // evolution showed the evolution's world through the holes.
+                    for (Element& el : scene.items) el.holeCount = 0;
+                    scene.items.erase(std::remove_if(scene.items.begin(), scene.items.end(),
+                        [](const Element& el) { return el.wideOnly; }), scene.items.end());
                 }
             }
         }
