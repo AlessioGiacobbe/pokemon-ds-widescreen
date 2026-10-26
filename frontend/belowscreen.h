@@ -18,8 +18,19 @@
 #include "GPU2D_Soft.h"
 
 // Rows [192, 192 + rows) of engine unitNum's screen into out (256 wide, XRGB as the screens
-// are). False if the screen is not made the way this can draw (out is then left alone).
-inline bool RenderBelowScreen(melonDS::NDS& nds, int unitNum, int rows, uint32_t* out)
+// are), and, given flagsOut, each pixel's layer as the renderer's per-pixel flags have it (bit
+// n for background n, 0 for the backdrop), so that a layout can leave a layer out below the
+// screen too. False if the screen is not made the way this can draw (out is then left alone).
+//
+// RenderScreenRows draws rows [firstRow, firstRow + rows) the same way, from the top of the
+// screen if asked, and can leave out background layers (skipLayers: bit n for background n):
+// a menu's buttons without the picture behind them, and without the picture blended into
+// them (no layer is blended with another here).
+//
+// unscrollY is taken off every layer's vertical scroll: a list the game has scrolled is drawn
+// as it is before scrolling (all of it, on a view tall enough).
+inline bool RenderScreenRows(melonDS::NDS& nds, int unitNum, int firstRow, int rows, uint32_t* out,
+    uint8_t* flagsOut = nullptr, int skipLayers = 0, int unscrollY = 0)
 {
     using namespace melonDS;
     const GPU2D::Unit& unit = unitNum == 0 ? nds.GPU.GPU2D_A : nds.GPU.GPU2D_B;
@@ -36,7 +47,7 @@ inline bool RenderBelowScreen(melonDS::NDS& nds, int unitNum, int rows, uint32_t
         for (int b = 0; b < 4; b++)
         {
             const u16 cnt = unit.BGCnt[b];
-            if (!(dispcnt & (0x100 << b)) || (cnt & 3) != prio) continue;
+            if (!(dispcnt & (0x100 << b)) || (cnt & 3) != prio || (skipLayers & (1 << b))) continue;
             if (b == 0 && (dispcnt & 8)) continue;          // the 3D layer
             // Text backgrounds only: BG0 and BG1 always, BG2 in modes 0-1, BG3 in mode 0.
             if ((b == 2 && mode > 1) || (b == 3 && mode > 0)) continue;
@@ -77,9 +88,11 @@ inline bool RenderBelowScreen(melonDS::NDS& nds, int unitNum, int rows, uint32_t
     };
     const uint32_t backdrop = colour(palette(0), 5);
     // A layer's palette index at (x, y) of the screen (0: transparent).
+    // (Each of the screen's lines with its own scroll; below the screen, the last line's.)
     auto sample = [&](const Layer& l, int x, int y) -> int {
-        const int sx = (renderer->LineScroll[unitNum][191][l.num][0] + x) & (l.mapW - 1);
-        const int sy = (renderer->LineScroll[unitNum][191][l.num][1] + y) & (l.mapH - 1);
+        const int line = y < 191 ? (y < 0 ? 0 : y) : 191;
+        const int sx = (renderer->LineScroll[unitNum][line][l.num][0] + x) & (l.mapW - 1);
+        const int sy = (renderer->LineScroll[unitNum][line][l.num][1] - unscrollY + y) & (l.mapH - 1);
         const int tx = sx >> 3, ty = sy >> 3;
         // 32x32-tile blocks: across first, then down (a 256-wide map has one across).
         const u32 block = (tx >> 5) + (ty >> 5) * (l.mapW >> 8);
@@ -103,31 +116,41 @@ inline bool RenderBelowScreen(melonDS::NDS& nds, int unitNum, int rows, uint32_t
     }
     for (int r = 0; r < rows; r++)
     {
-        const int y = 192 + r;
+        const int y = firstRow + r;
         uint32_t* row = out + (size_t)r * 256;
+        uint8_t* flagRow = flagsOut ? flagsOut + (size_t)r * 256 : nullptr;
         for (int x = 0; x < 256; x++)
         {
             uint32_t c = backdrop;
+            uint8_t flag = 0;
             bool found = false;
             for (int i = 0; i < n && !found; i++)
                 if (const int idx = sample(layers[i], x, y))
                 {
                     c = colour(palette(idx * 2), layers[i].num);
+                    flag = (uint8_t)(1 << layers[i].num);
                     found = true;
                 }
             // Nothing there: the layers that filled the last line, mirrored about it (their rows
             // going back up from the last, which keeps a background's stripes and closes a shape
             // cut by the screen's edge, as Black 2's grey circle behind its start menu, instead
             // of drawing it on as a straight band).
-            for (int i = 0; i < n && !found; i++)
+            for (int i = 0; i < n && !found && y >= 192; i++)
                 if (fills[i])
-                    if (const int idx = sample(layers[i], x, 190 - (r % 191)))
+                    if (const int idx = sample(layers[i], x, 190 - ((y - 192) % 191)))
                     {
                         c = colour(palette(idx * 2), layers[i].num);
+                        flag = (uint8_t)(1 << layers[i].num);
                         found = true;
                     }
             row[x] = c;
+            if (flagRow) flagRow[x] = flag;
         }
     }
     return true;
+}
+
+inline bool RenderBelowScreen(melonDS::NDS& nds, int unitNum, int rows, uint32_t* out, uint8_t* flagsOut = nullptr)
+{
+    return RenderScreenRows(nds, unitNum, 192, rows, out, flagsOut);
 }

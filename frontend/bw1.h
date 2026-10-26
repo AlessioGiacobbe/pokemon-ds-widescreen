@@ -133,21 +133,20 @@ public:
             // Black's start menu (CONTINUE with the saved game's card, then NEW GAME, MYSTERY
             // GIFT, ... in a list) is all on the top screen; the touch screen is empty. The list
             // goes on below the screen (the DS shows its fourth entry, BATTLE COMPETITION, cut
-            // off; there are eight in all). On a wide view the card (rows 12-127) and the list
-            // (rows 124-297, drawn on below the screen's last line from what the game has there:
-            // frontend/belowscreen.h, Scene::extraRows) go side by side, without the screen's
-            // margins, so that all of it shows, about as large as Black 2's. Otherwise the top
+            // off; there are eight in all). On a wide view the card (x 24-229, rows 15-127) and
+            // the list (x 32-223, rows 128-296, drawn on below the screen's last line:
+            // frontend/belowscreen.h) go side by side across the whole view, on the dark grey of
+            // the menu's own background, without the Poke Ball and stripes behind them (BG3, also
+            // left out of the buttons it shows through: Scene::redrawSkip). Otherwise the top
             // screen alone, with soft bars.
             if (wideView)
             {
-                const int extra = 298 - 192;
-                sc = Stack("launch-menu", { Crop(0, 20, 12, 216, 116), Crop(0, 20, 127, 216, 171) }, true, viewWidth);
-                sc.extraRows[0] = extra;
-                sc.items[0].dy = sc.items[1].dy; // (the card level with the list's top)
-                for (Element& el : sc.items) el.crisp = true;
-                // On the dark grey of the menu's own background, rather than bars made from the
-                // edges of two pieces of a picture.
-                sc.items.insert(sc.items.begin(), FillRect(viewLeft - 1, 0, (int)viewWidth + 3, 192, 0x202020));
+                Element card = Crop(0, 24, 15, 206, 113), list = Crop(0, 32, 128, 192, 169);
+                card.drop = list.drop = LAYER_BACKDROP;
+                sc = CleanMenu("launch-menu", { card, list }, viewWidth, 0x1c1c1c);
+                sc.extraRows[0] = 296 + 1 - 192;
+                sc.redrawSkip[0] = 1 << 3;
+                sc.redrawUnscroll[0] = 2; // (the list scrolls as the cursor goes down it)
                 return;
             }
             Only(sc, "launch-menu", 0);
@@ -191,6 +190,16 @@ public:
                     }
                 }
             }
+            return;
+        }
+        if (!strcmp(sc.name, "pokedex-list"))
+        {
+            // Black's Pokedex list is on the touch screen; the top one only has the title and
+            // the SEEN / OBTAINED counts (rows 0-50) above an empty grid (Black 2's list runs on
+            // from one screen into the other, which pickSceneBw2 shows as one column). The
+            // counts above the list, as large as fits the view's height.
+            sc = Stack("pokedex-list", { Crop(0, 0, 0, 256, 51), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
+            for (Element& el : sc.items) el.crisp = true;
             return;
         }
         if (!strcmp(sc.name, "start-menu") && screens)

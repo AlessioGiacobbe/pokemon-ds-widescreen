@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Start menus redone for the wide screen.** Black 2, White 2, Black and White: the list and
+  the saved game's cards side by side across the whole view on the menu's dark grey, the
+  buttons and cards without the Poke Ball picture behind them (it showed cut up and blended
+  into them), the lower card closed off cleanly, and the whole list always shown with the
+  highlight moving down it (Black's list scrolled the card away). SoulSilver and HeartGold:
+  the touch screen's menu at full height with its blue carried to the edges instead of black
+  bars. The screens are drawn again from the game's backgrounds for this
+  (`belowscreen.h`, `Scene::redrawSkip`, `Scene::redrawUnscroll`).
+- **The opening movie of Black and White (and Black 2 and White 2) has plain black bars** beside
+  it instead of streaks of its edge colours.
+- **Black and White's Pokédex list:** the SEEN / OBTAINED counts above the list, large,
+  instead of both screens as a thin column.
+- **SoulSilver and HeartGold: SAVE** shows its screen whole from the start (for a second or
+  two it was cut to the start menu's panel at the right edge).
 - **Switch: new names, without "ssrecomp".** The games' folders and programs are now
   `/switch/pokemon-<game>-wide/pokemon-<game>-wide.nro` (black2, white2, black, white,
   soulsilver, heartgold) and the downloads `pokemon-…-wide-switch.zip`. The settings file beside

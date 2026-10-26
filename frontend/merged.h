@@ -154,6 +154,16 @@ struct Scene
     // Rows of each screen drawn on below its last line (belowscreen.h), which its pieces may
     // show: the screen images then have 192 + extraRows rows.
     int extraRows[2] = { 0, 0 };
+    // A screen drawn again from its background layers (belowscreen.h, RenderScreenRows), all of
+    // its rows and those below it, without the layers named here (bit n for background n) and
+    // without blending between layers; its sprites as the game drew them. -1: as the game drew
+    // it. For a menu's buttons and cards without the picture behind them, and without that
+    // picture blended into them (the pieces then leave out LAYER_BACKDROP).
+    int redrawSkip[2] = { -1, -1 };
+    // With redrawSkip: the background whose vertical scroll is undone in that drawing (all the
+    // layers drawn move with it), so that a list the game scrolls is always shown whole, from
+    // its top, its highlight moving down it; the sprites move with it. -1: as scrolled.
+    int redrawUnscroll[2] = { -1, -1 };
 };
 
 
@@ -409,6 +419,41 @@ inline Scene Stack(const char* name, std::vector<Element> crops, bool horizontal
             y += e.sh * scale;
         }
         e.crisp = scale == 1.0f;
+        sc.items.push_back(e);
+    }
+    return sc;
+}
+
+// A menu made of a few pieces of the screens (a list, a card) laid out side by side across the
+// whole view, on a plain colour: every piece at one scale, as large as fits the view's width and
+// height with the given gap between pieces and margin around them, their tops level, the group
+// in the middle. Each piece's drop names the layer behind it on its screen (the game's
+// decoration), which is left out, so the pieces stand on the plain colour whole and with clean
+// edges instead of cut out of a picture. Text and outlines are drawn with nearest pixels.
+inline Scene CleanMenu(const char* name, std::vector<Element> pieces, float viewWidth, uint32_t fill,
+    float gap = 8, float margin = 8)
+{
+    float w = gap * (pieces.empty() ? 0 : pieces.size() - 1), h = 0;
+    for (const Element& e : pieces)
+    {
+        w += e.sw;
+        h = std::max(h, (float)e.sh);
+    }
+    const float room = viewWidth - 2 * margin;
+    float scale = std::min((room - gap * (pieces.size() - 1)) / (w - gap * (pieces.size() - 1)),
+                           (192.0f - 2 * margin) / h);
+    float x = 128 - (w - gap * (pieces.size() - 1)) * scale / 2 - gap * (pieces.size() - 1) / 2;
+    const float y = 96 - h * scale / 2;
+    Scene sc;
+    sc.name = name;
+    sc.items.push_back(FillRect(128 - viewWidth / 2 - 1, -1, (int)viewWidth + 3, 194, fill));
+    for (Element e : pieces)
+    {
+        e.scale = scale;
+        e.dx = x;
+        e.dy = y;
+        e.crisp = true;
+        x += e.sw * scale + gap;
         sc.items.push_back(e);
     }
     return sc;

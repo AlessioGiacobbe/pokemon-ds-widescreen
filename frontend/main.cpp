@@ -2348,22 +2348,33 @@ int main(int argc, char** argv)
             only("trainer-card", 1);  // likewise
         else if (funcWatch.Ran(bw2.startMain, 2) && !funcWatch.Ran(bw2.startContinue, 2))
         {
-            // The start menu: its list (x 33-223 of the top screen) beside the saved game's
-            // cards (x 23-233 of the bottom one), without the margins at their sides, so that
-            // both come out larger than the two whole screens would, over the screens' own
-            // dark grey. (After CONTINUE, the screens with the C-Gear's questions are shown
-            // whole, below.)
-            // The list goes on below the screen (the DS shows the eighth entry cut in half), and
-            // so does the card of the saved game: both are drawn on below the screens
-            // (belowscreen.h) as far as fills the height of a wide view.
-            const int extra = viewWidth > 300 ? std::clamp((int)(420.0f * 192.0f / viewWidth) - 192, 0, 64) : 0;
-            sc = Stack("launch-menu", { Crop(0, 28, 0, 200, 192 + extra), Crop(1, 18, 0, 220, 192 + extra) }, true, viewWidth);
-            sc.extraRows[0] = sc.extraRows[1] = extra;
-            // (Text and outlines: nearest pixels, not smoothed into a blur at three times the size.)
-            for (Element& el : sc.items) el.crisp = true;
-            sc.bgScreen = 1;
-            sc.bgX = 2;
-            sc.bgY = 2;
+            // The start menu: its list (the top screen) beside the saved game's cards (the
+            // bottom one), across the whole view on the dark grey of the menu's own background
+            // (merged.h, CleanMenu): the list's buttons without the Poke Ball and stripes behind
+            // them (BG3), the cards without the stripes (BG2). The list goes on below the screen
+            // (the DS shows its eighth entry cut in half), and so does the lower card: both are
+            // drawn on below the screens (belowscreen.h). (After CONTINUE, the screens with the
+            // C-Gear's questions are shown whole, below.)
+            // The list: eight entries 24 rows apart from row 16 (x 33-223), the last one below
+            // the screen. The cards: the saved game's (rows 15-114) and the key system's (from
+            // row 117), which runs off the bottom of the screen and is never drawn further: it
+            // is cut below its text and closed with the saved game's card's bottom edge.
+            const int extra = 16;
+            Element list = Crop(0, 32, 15, 194, 193);        // x 32-225, rows 15-207
+            Element cards = Crop(1, 22, 14, 214, 166);       // x 22-235, rows 14-179
+            Element closing = Crop(1, 22, 109, 214, 6);      // rows 109-114: a card's bottom edge
+            list.drop = cards.drop = closing.drop = LAYER_BACKDROP;
+            sc = CleanMenu("launch-menu", { list, cards }, viewWidth, 0x1c1c1c);
+            const Element& c = sc.items.back();
+            closing.scale = c.scale;
+            closing.dx = c.dx;
+            closing.dy = c.dy + c.sh * c.scale;
+            closing.crisp = true;
+            sc.items.push_back(closing);
+            sc.extraRows[0] = extra;
+            sc.redrawSkip[0] = 1 << 3;   // the list without the Poke Ball and stripes (BG3)
+            sc.redrawUnscroll[0] = 2;     // the list whole, also when the game has scrolled it
+            sc.redrawSkip[1] = 1 << 2;   // the cards without the stripes (BG2)
         }
         else if (funcWatch.Ran(bw2.nameEntry, 2))
             // The keyboard, below the question it answers ("Your name?", in the message box at
@@ -2415,10 +2426,27 @@ int main(int argc, char** argv)
             if (shownAlone >= 0)
             {
                 only("one-screen", shownAlone);
-                sc.bgScreen = shownAlone;
+                // Soft bars from its edges where those are plain (a logo on white or black);
+                // beside a picture (the opening's painted movie) they would be streaks of its
+                // edge colours: black bars there, as around any film.
+                bool plainEdges = true;
+                if (screens && screens[shownAlone].pixels)
+                    for (int side = 0; side < 2 && plainEdges; side++)
+                    {
+                        int lo = 255 * 3, hi = 0;
+                        for (int y = 0; y < 192; y++)
+                        {
+                            const uint32_t c = screens[shownAlone].pixels[y * 256 + (side ? 255 : 0)];
+                            const int l = ((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF);
+                            lo = std::min(lo, l);
+                            hi = std::max(hi, l);
+                        }
+                        plainEdges = hi - lo <= 90;
+                    }
+                sc.bgScreen = plainEdges ? shownAlone : -1;
                 sc.bgX = 0;
                 sc.bgY = 0;
-                sc.softBars = true;
+                sc.softBars = plainEdges;
                 return sc;
             }
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
@@ -2500,6 +2528,22 @@ int main(int argc, char** argv)
             return sc;
         }
         auto startMenu = [&]() {
+            // (SAVE chosen: its screen, the saved game's orange card, is up on the touch screen
+            // while the start menu's task still runs, for a second or two before the save's own
+            // functions do: that screen whole, not cut to the menu's panel.)
+            if (screens && screens[1].pixels)
+            {
+                auto orange = [&](int x, int y) {
+                    const uint32_t c = screens[1].pixels[y * 256 + x];
+                    const int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+                    return r > 200 && g > 100 && g < 190 && b < 110;
+                };
+                if (orange(40, 20) && orange(20, 60) && orange(236, 20))
+                {
+                    only("save", 1);
+                    return;
+                }
+            }
             only("start-menu", 0);
             // On a wide view the panel stands at the right edge, mostly beside the overworld.
             const float menuScale = viewWidth >= 300 ? 0.8f : 0.75f;
@@ -2518,6 +2562,16 @@ int main(int argc, char** argv)
             spreadFrames = 0;
         if (focus.manualFlip)
             only("manual", focus.wantBottom ? 0 : 1);
+        else if (appActive("MainMenu") && viewWidth >= 300)
+        {
+            // The start menu (CONTINUE with the saved game, NEW GAME, ...) is all on the touch
+            // screen; the top one is black. That screen at full height, its plain blue continued
+            // to the view's edges instead of black bars.
+            only("launch-menu", 1);
+            sc.bgScreen = 1;
+            sc.bgX = 2;
+            sc.bgY = 96;
+        }
         else if (appActive("PokemonSummary"))
         {
             // The page's card is one tall card split across the screens; its two halves stand
@@ -4969,8 +5023,8 @@ int main(int argc, char** argv)
             // added, two of each in turn (the pipeline shows one while the next is made).
             for (int s = 0; s < 2; s++)
             {
-                const int extra = scene.extraRows[s];
-                if (extra <= 0 || !screenImages[s].pixels) continue;
+                const int extra = std::max(scene.extraRows[s], 0), skip = scene.redrawSkip[s];
+                if ((extra <= 0 && skip < 0) || !screenImages[s].pixels) continue;
                 static std::vector<uint32_t> tallPx[2][2];
                 static std::vector<uint8_t> tallFlags[2][2];
                 std::vector<uint32_t>& px = tallPx[s][frame & 1];
@@ -4980,7 +5034,59 @@ int main(int argc, char** argv)
                 memcpy(px.data(), screenImages[s].pixels, 256 * 192 * 4);
                 if (screenImages[s].flags) memcpy(fl.data(), screenImages[s].flags, 256 * 192);
                 const int unitNum = s == 0 ? topUnit : 1 - topUnit;
-                if (!RenderBelowScreen(*nds, unitNum, extra, px.data() + 256 * 192))
+                if (skip >= 0)
+                {
+                    // Drawn again without the layers left out (and the list's scroll undone);
+                    // the sprites kept as they were (moved with the scroll).
+                    int unscroll = 0;
+                    if (scene.redrawUnscroll[s] >= 0)
+                    {
+                        auto& r2d = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
+                        unscroll = r2d.LineScroll[unitNum][0][scene.redrawUnscroll[s] & 3][1] & 511;
+                        if (unscroll >= 256) unscroll -= 512;
+                    }
+                    std::vector<uint32_t> again((size_t)256 * (192 + extra));
+                    std::vector<uint8_t> againFlags((size_t)256 * (192 + extra));
+                    if (RenderScreenRows(*nds, unitNum, 0, 192 + extra, again.data(), againFlags.data(), skip, unscroll))
+                    {
+                        const size_t n = again.size();
+                        // The sprites seen at each place of the unscrolled list (the saved game's
+                        // character on Black's card, scrolled off the top of the screen as the
+                        // cursor goes down the list, is shown as it was last seen).
+                        static std::vector<uint32_t> spriteSeen[2];
+                        static std::vector<uint8_t> spriteSeenFlags[2];
+                        if (spriteSeen[s].size() != n)
+                        {
+                            spriteSeen[s].assign(n, 0);
+                            spriteSeenFlags[s].assign(n, 0);
+                        }
+                        for (size_t i = 0; i < n; i++)
+                        {
+                            // (A sprite drawn at row y shows at row y + unscroll.)
+                            const long src = (long)i - (long)unscroll * 256;
+                            if (src >= 0 && src < 256 * 192)
+                            {
+                                const bool sprite = LayerClass(fl[src]) == LAYER_OBJ;
+                                spriteSeenFlags[s][i] = sprite ? fl[src] : 0;
+                                spriteSeen[s][i] = px[src];
+                                if (!sprite) continue;
+                                again[i] = px[src];
+                                againFlags[i] = fl[src];
+                            }
+                            else if (spriteSeenFlags[s][i])
+                            {
+                                again[i] = spriteSeen[s][i];
+                                againFlags[i] = spriteSeenFlags[s][i];
+                            }
+                        }
+                        for (size_t i = 0; i < n; i++)
+                        {
+                            px[i] = again[i];
+                            fl[i] = againFlags[i];
+                        }
+                    }
+                }
+                else if (!RenderBelowScreen(*nds, unitNum, extra, px.data() + 256 * 192, fl.data() + 256 * 192))
                     for (int r = 0; r < extra; r++) // (the last line, repeated)
                         memcpy(px.data() + 256 * (192 + r), screenImages[s].pixels + 256 * 191, 256 * 4);
                 screenImages[s].pixels = px.data();
