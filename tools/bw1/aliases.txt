@@ -20,7 +20,8 @@
 # are the second of each of Black's three pairs of 16-byte functions after the move-forgetting
 # screen (aletheia's "BallWindow"), as Black 2's three pairs follow its move-forgetting screen,
 # just before the fades. ShinkaDemo_Main: the evolution scene's main function, SHINKA_DEMO_Main
-# in aletheia too.
+# in aletheia too. BtlvBGauge_Create, _SlideTask, _Delete: the bar of Poke Balls at a trainer
+# battle's start (Black's BTLV_B_GAUGE_*PartyBallBar, the same three roles in the same order).
 # StartMenu_Continue is Black's STARTMENU_StateConnectPrompt: the same C-Gear question as Black
 # 2's (message, YES / NO; B gives a second "is that OK?" YES / NO whose YES leaves the C-Gear
 # off; skipped at once when the C-Gear has not been obtained), so the shared code answers it
@@ -57,6 +58,9 @@ BtlvCore_WaitLevelUpWin      BTLV_CORE_UpdateBallWindowOpen       ov093  021eadb
 BtlvCore_WaitLevelUpStats    BTLV_CORE_UpdateBallWindowRefresh    ov093  021eadd4  position
 BtlvCore_WaitCloseLevelUpWin BTLV_CORE_UpdateBallWindowClose      ov093  021eadf4  position
 ShinkaDemo_Main              SHINKA_DEMO_Main                     ov195  022040e0  position
+BtlvBGauge_Create            BTLV_B_GAUGE_CreatePartyBallBar      ov094  02208dac  role
+BtlvBGauge_SlideTask         BTLV_B_GAUGE_TaskPartyBallBar        ov094  022090b4  role
+BtlvBGauge_Delete            BTLV_B_GAUGE_DeletePartyBallBar      ov094  02209068  role
 Flake_Main                   WEATHER_SNOW_Run                     ov025  021ee888  exact
 Flake_FadeIn                 WEATHER_SNOW_BeginParticles          ov025  021ee798  align0.98
 Flake_FadeOut                WEATHER_SNOW_EndFade                 ov025  021ee8ec  exact

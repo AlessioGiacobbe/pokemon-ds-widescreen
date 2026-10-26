@@ -1968,6 +1968,9 @@ int main(int argc, char** argv)
         std::vector<int> levelUpWin; // the level-up window in a battle (BtlvCore_Wait*LevelUp*)
         int battleTarget = -1;       // choosing a move's target (double, triple, rotation battles)
         int evolution = -1;          // the evolution scene, which the battle fades out into
+        // The bar of Poke Balls (each side's party) that slides in as a trainer battle starts,
+        // across the places of the HP boxes: made, its task each frame, removed.
+        int ballBarCreate = -1, ballBarTask = -1, ballBarDelete = -1;
         std::vector<int> weatherObj; // the weathers with particles (see Scene::weatherObj)
     } bw2;
     // Black 2's question on every start, whether to launch the C-Gear (see where keys are sent).
@@ -2016,6 +2019,9 @@ int main(int argc, char** argv)
         bw2.saveWrite = bw2Find("CARD_WaitBackupAsync");
         bw2.battleTarget = bw2Find("BtlvCore_WaitTargetSelect");
         bw2.evolution = bw2Find("ShinkaDemo_Main");
+        bw2.ballBarCreate = bw2Find("BtlvBGauge_Create");
+        bw2.ballBarTask = bw2Find("BtlvBGauge_SlideTask");
+        bw2.ballBarDelete = bw2Find("BtlvBGauge_Delete");
         for (const char* f : { "BtlvCore_WaitLevelUpWin", "BtlvCore_WaitLevelUpStats", "BtlvCore_WaitCloseLevelUpWin" })
             bw2.levelUpWin.push_back(bw2Find(f));
         // The weathers with particles, each running in its own overlay (75: snow, 76: rain, 77:
@@ -2161,7 +2167,11 @@ int main(int argc, char** argv)
                 return n * 20 > (x1 - x0) * (y1 - y0);
             };
             const bool boxesShown = (foes2D >= 1 || mine2D >= 1) && foes2D < 9 && mine2D < 9
-                && (lit(0, 4, 124, 70) || lit(136, 78, 256, 147)) && !funcWatch.Ran(bw2.evolution, 2);
+                && (lit(0, 4, 124, 70) || lit(136, 78, 256, 147)) && !funcWatch.Ran(bw2.evolution, 2)
+                // (Nor while the bars of Poke Balls are up as a trainer battle starts: they cross
+                // the boxes' places, and moving those cut the bars into pieces. The battle keeps
+                // the screen's own places then, before the boxes come in.)
+                && !(funcWatch.Ran(bw2.ballBarTask, 3) || funcWatch.LastFrame(bw2.ballBarCreate) > funcWatch.LastFrame(bw2.ballBarDelete));
             // ... or the top screen darkened or whitened (master brightness): the holes would show
             // the wide arena at full brightness through it.
             const auto& topGpu = topUnitOf() == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;

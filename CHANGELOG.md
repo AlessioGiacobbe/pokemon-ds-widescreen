@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Trainer battles' start (Black 2, White 2, Black, White): the bars of Poke Balls** that slide
+  in for each side's party are shown whole: the HP boxes' places stay put while they are up,
+  instead of the bars being cut where the boxes' pieces are moved to the view's edges.
 - **Start menus redone for the wide screen.** Black 2, White 2, Black and White: the list and
   the saved game's cards side by side across the whole view on the menu's dark grey, the
   buttons and cards without the Poke Ball picture behind them (it showed cut up and blended
