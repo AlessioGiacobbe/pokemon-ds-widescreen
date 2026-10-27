@@ -23,6 +23,20 @@
   glow, street lamps light the ground around them, fireflies drift over tall grass and woods,
   and the rest of the world takes on deeper night colours. Text boxes and menus are not
   changed. Kept in the settings as `night_fx`. (From Johto Online.)
+- **AUTOSAVE (pause menu, every game, on by default):** the game carries on where it was left.
+  Every 5 minutes on the overworld, soon after each save the game writes, and when the game is
+  quit, a snapshot of the console is written beside the save (`<save>.resume`, the one before
+  kept as `<save>.resume.bak`); the next start carries on from it instead of booting. It is only
+  used while it holds the same save as the save file, so an in-game save made after it (or a
+  save file swapped in) is never rolled back: then the game boots as usual. Turn it off to boot
+  the game normally. Kept in the settings as `autosave`. (From Johto Online.)
+- **MUSIC (pause menu, SoulSilver and HeartGold):** your own songs in place of the game's tunes.
+  Put MP3 files in a `songs` folder beside the save, with a `songs.txt` listing
+  `<music number> = <file>` per line (the game's music numbers: 1028 is Route 29, for example;
+  `#` starts a comment). While a listed tune plays, the game's music is left out and the song
+  loops in its place, with short fades; sound effects, cries and jingles stay the game's own.
+  ORIGINAL in the menu goes back to the game's music. Kept in the settings as `music`. (From
+  Johto Online.)
 - **Black and White battles: catching and levelling up.** A thrown Poke Ball is shown whole
   as it lands and shakes (it was cut in two, its other half at the view's right edge: it lands
   where the player's HP box is, whose place was still being moved while the box was put away),

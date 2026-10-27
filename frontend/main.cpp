@@ -57,6 +57,10 @@
 #endif
 #include "battlewide.h"
 #include "voidfill.h"
+#include "resume.h" // AUTOSAVE: resume points
+#define DR_MP3_IMPLEMENTATION
+#include "songs.h" // MUSIC: the player's own songs in place of the game's (SoulSilver, HeartGold)
+namespace melonDS { extern u16 ssr_SpuHearMute; } // SPU.cpp: channels left out of what is heard
 #include "worldblocks.h" // SoulSilver and HeartGold: the far map and night effects
 #include "belowscreen.h"
 #include "recomp_rt.h"
@@ -1253,6 +1257,12 @@ struct Settings
     // NIGHT EFFECTS (SoulSilver, HeartGold): glowing windows and lamps, pools of lamp light,
     // fireflies and night colours outdoors in the evening and at night (frontend/nightfx.h).
     bool nightFx = true;
+    // AUTOSAVE: resume points beside the save (frontend/resume.h); the game carries on from the
+    // newest at the next start.
+    bool autosave = true;
+    // MUSIC (SoulSilver, HeartGold): the player's own songs (frontend/songs.h), when there are
+    // any, in place of the game's tunes.
+    bool newSongs = true;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1317,6 +1327,8 @@ struct Settings
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v != "0";
             else if (k == "night_fx") nightFx = v != "0";
+            else if (k == "autosave") autosave = v != "0";
+            else if (k == "music") newSongs = v != "original";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1352,6 +1364,8 @@ struct Settings
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
+        f << "autosave=" << (autosave ? 1 : 0) << "\n";
+        f << "music=" << (newSongs ? "new" : "original") << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -2076,6 +2090,44 @@ int main(int argc, char** argv)
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
+    }
+    // AUTOSAVE (resume.h): at the start, the newest resume point that holds this save carries
+    // the game on from where it was. Not in tests unless asked for (SSR_AUTOSAVE=1), nor with
+    // a snapshot given, lockstep or no saving.
+    // MUSIC (songs.h): the player's own songs, from the songs folder beside the save (an MP3
+    // file for each piece of the game's music listed in songs.txt). SoulSilver and HeartGold.
+    SongPlayer songs;
+    static std::string songsDir;
+    songsDir = dir + "/songs/";
+    if (soulSilverRom && songs.Load([](const std::string& name) { return ReadFile(songsDir + name); }))
+        fprintf(stderr, "[songs] a list of songs in %s\n", songsDir.c_str());
+    Resume::Point resume;
+    resume.path = opt.save + ".resume";
+    char gameCode[4] = {};
+    if (nds->GetNDSCart() && nds->GetNDSCart()->GetROMLength() > 0x10) memcpy(gameCode, nds->GetNDSCart()->GetROM() + 0x0C, 4);
+    const uint32_t resumeFlags = bw2map.on ? 1 : 0;
+    const bool resumeOk = !ref && !opt.noSave && !opt.save.empty() && opt.stateLoad.empty() && (!opt.headless || getenv("SSR_AUTOSAVE"));
+    uint32_t resumeWrittenAt = 0, saveChangedAt = 0;
+    if (resumeOk && cfg.autosave)
+    {
+        Resume::Header h;
+        bool broken = false;
+        if (resume.Load(*nds, resumeFlags, gameCode, h, broken))
+        {
+            rc_reset();
+            SetClock(*nds, opt.headless); // (now, not when the snapshot was made)
+            fprintf(stderr, "[autosave] carried on from %s (%lld s old)\n", resume.path.c_str(), (long long)(time(nullptr) - h.time));
+        }
+        else if (broken)
+        {
+            // Half loaded: started again from the beginning, as without it.
+            fprintf(stderr, "[autosave] the resume point could not be loaded; starting the game\n");
+            nds->Reset();
+            nds->SetupDirectBoot("game.nds");
+            SetClock(*nds, opt.headless);
+            nds->Start();
+            rc_reset();
+        }
     }
     Scene lastKnownBw2;
     uint32_t lastKnownBw2Frame = 0;
@@ -3368,6 +3420,7 @@ int main(int argc, char** argv)
     // Set each frame: the overworld is on the screen, drawn wide (the emulation reads it).
     std::atomic<bool> farMapNow { false };
     bool fieldWide = false;
+    bool calmField = false; // the overworld (or its menu) is running: AUTOSAVE's resume points
     uint64_t nightFxSerial = ~0ull;
     if (soulSilverRom && nds->GetNDSCart())
     {
@@ -3519,7 +3572,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_FARMAP, M_NIGHTFX, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_FARMAP, M_NIGHTFX, M_AUTOSAVE, M_MUSIC, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3574,6 +3627,10 @@ int main(int argc, char** argv)
             // (SoulSilver and HeartGold.)
             { "FAR MAP", !soulSilverRom ? "-" : cfg.farMap ? "ON" : "OFF" },
             { "NIGHT EFFECTS", !soulSilverRom ? "-" : cfg.nightFx ? "ON" : "OFF" },
+            // ON: carries on where the game was left at the next start (see resume.h).
+            { "AUTOSAVE", cfg.autosave ? "ON" : "OFF" },
+            // (SoulSilver and HeartGold, with songs listed in songs/songs.txt beside the save.)
+            { "MUSIC", !songs.Any() ? "-" : cfg.newSongs ? "YOUR SONGS" : "ORIGINAL" },
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -4366,6 +4423,12 @@ int main(int argc, char** argv)
             case M_NIGHTFX:
                 if (soulSilverRom) cfg.nightFx = !cfg.nightFx;
                 break;
+            case M_AUTOSAVE:
+                cfg.autosave = !cfg.autosave;
+                break;
+            case M_MUSIC:
+                if (songs.Any()) cfg.newSongs = !cfg.newSongs;
+                break;
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
@@ -4611,6 +4674,7 @@ int main(int argc, char** argv)
             static const char* farEnv = getenv("SSR_FARMAP"); // (tests)
             farMapNow = soulSilverRom && wantWide && zoomable && (farEnv ? atoi(farEnv) != 0 : cfg.farMap);
             fieldWide = soulSilverRom && wantWide && zoomable;
+            calmField = zoomable;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;
@@ -4993,6 +5057,43 @@ int main(int argc, char** argv)
             got = emuGot;
             // (Silent while the C-Gear's question is answered unseen.)
             if (cgearHidden && got > 0) std::fill(audioBuf.begin(), audioBuf.begin() + (size_t)got * 2, (int16_t)0);
+            if (songs.Any())
+            {
+                // MUSIC (songs.h): the game's music now (sSoundWork.currentSeqNo), a jingle on (its
+                // wait after a fanfare), and whether its music channels sound (SOUNDxCNT busy).
+                auto readRam = [&](uint32_t a) { u32 v; memcpy(&v, &nds->MainRAM[a & nds->MainRAMMask & ~3u], 4); return v; };
+                const uint32_t soundWork = 0x02111958;
+                const int seq = (int)(readRam(soundWork + 0xBEBFC) & 0xFFFF);
+                const bool jingle = (readRam(soundWork + 0xBEC00) >> 16 & 0xFFFF) != 0;
+                bool busy = false, effects = false;
+                for (int i = 0; i < 16; i++)
+                    if (nds->SPU.Read32(0x04000400 + 16 * i) >> 31)
+                    {
+                        busy |= (SongPlayer::MusicChannels >> i & 1) != 0;
+                        effects |= (SongPlayer::EffectChannels >> i & 1) != 0;
+                    }
+                static const bool songLog = getenv("SSR_SONGS_LOG") != nullptr;
+                static int lastSeq = -1;
+                if (songLog && (seq != lastSeq || frame % 120 == 0)) fprintf(stderr, "[songs] frame %u: music %d, busy %d, jingle %d, mute %04x\n", frame, seq, (int)busy, (int)jingle, songs.Mute());
+                lastSeq = seq;
+                songs.Update(cfg.newSongs && !opt.lockstep, seq, busy, effects, jingle, frame);
+                melonDS::ssr_SpuHearMute = songs.Mute();
+                // Faster than normal (fast forward), only the first emulated frame's sound is
+                // kept, which is far shorter than the time that goes by; songs go on at their own
+                // pace, so the sound sent is as long as that time (the game's part padded with
+                // silence). Otherwise they stutter and slow down.
+                static uint64_t soundAt = 0;
+                const uint64_t at = SDL_GetPerformanceCounter();
+                if (speed > 1 && got > 0 && !opt.headless && soundAt)
+                {
+                    const int room = std::min<int>(24000, (int)audioBuf.size() / 2);
+                    const int n = std::clamp((int)((at - soundAt) * 48000 / SDL_GetPerformanceFrequency()), got, room);
+                    std::fill(audioBuf.begin() + got * 2, audioBuf.begin() + n * 2, (int16_t)0);
+                    got = n;
+                }
+                soundAt = at;
+                if (got > 0) songs.Mix(audioBuf.data(), got);
+            }
         }
         else if (pendingJob.valid)
         {
@@ -5321,6 +5422,9 @@ int main(int argc, char** argv)
             if (queued < 48000 / 4 && !audioOut.empty())
                 SDL_QueueAudio(audio, audioOut.data(), (Uint32)(audioOut.size() * 2));
         }
+        // (Tests: SSR_AUDIO_DUMP=<file> writes what is heard there, 48 kHz stereo 16-bit.)
+        static FILE* audioDump = getenv("SSR_AUDIO_DUMP") ? fopen(getenv("SSR_AUDIO_DUMP"), "wb") : nullptr;
+        if (audioDump && got > 0) fwrite(audioBuf.data(), 4, got, audioDump);
         if (opt.audioStats && got > 0)
         {
             for (int i = 0; i < got * 2; i++)
@@ -5544,6 +5648,15 @@ int main(int argc, char** argv)
             if (!WriteSnapshot(*nds, opt.stateSave, scriptClock)) fprintf(stderr, "snapshot failed\n");
         }
 
+        // AUTOSAVE (resume.h): a resume point every 5 minutes on the overworld, and 2 seconds
+        // after the game has written its save (once it is back on the overworld).
+        if (Host::SaveIsDirty) saveChangedAt = frame;
+        if (resumeOk && cfg.autosave && calmField && !paused &&
+            (frame - resumeWrittenAt >= 5 * 60 * 60 || (saveChangedAt > resumeWrittenAt && frame - saveChangedAt >= 120)))
+        {
+            if (resume.Write(*nds, resumeFlags, frame, gameCode)) fprintf(stderr, "[autosave] resume point at frame %u\n", frame);
+            resumeWrittenAt = frame;
+        }
         if (!opt.noSave && frame % 120 == 0) FlushSave(opt.save);
         if (opt.frames && scriptClock >= opt.frames) running = false;
         if (opt.stopAt && frame >= opt.stopAt)
@@ -5565,6 +5678,12 @@ int main(int argc, char** argv)
     };
     exitStep("saving");
     if (!opt.noSave) FlushSave(opt.save);
+    // (And where the game was left, for the next start: once it has been played a little.)
+    if (resumeOk && cfg.autosave && frame > 600)
+    {
+        resume.Write(*nds, resumeFlags, frame, gameCode);
+        resume.Finish();
+    }
     if (!opt.headless)
     {
         if (!singleScreenRom) cfg.layout = LayoutName(layout.mode); // the automatic choice is not the player's setting
