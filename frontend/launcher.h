@@ -207,7 +207,8 @@ inline bool NroIcon(const std::string& nro, std::vector<unsigned char>& jpeg)
 
 // The game's larger picture, from the first of: <list folder>/icons/<game code>.jpg or .png (e.g.
 // icons/IREO.jpg), a picture with the ROM's name (Black 2.nds: Black 2.jpg or .png), icon.jpg in
-// the game's folder, or the Homebrew Menu icon of a one-game program (.nro) in its folder. The
+// the game's folder, or the Homebrew Menu icon of a one-game program (.nro) in its folder (not in
+// the list's own folder: that one is the all-games program, whose icon is no game's). The
 // downloads hold none: these are the player's own.
 inline void FindArt(Game& g, const std::string& listFolder)
 {
@@ -216,6 +217,7 @@ inline void FindArt(Game& g, const std::string& listFolder)
     for (const std::string& path : { listFolder + "/icons/" + g.code + ".jpg", listFolder + "/icons/" + g.code + ".png",
                                      base + ".jpg", base + ".png", g.folder + "/icon.jpg" })
         if (ReadFile(path, data) && LoadArt(data.data(), data.size(), g.art)) return;
+    if (g.folder == listFolder) return;
     if (DIR* d = opendir(g.folder.c_str()))
     {
         std::vector<std::string> nros;
@@ -322,7 +324,7 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
         const int ns = Canvas::TextWidth(name, s) <= tile ? s : std::max(1, s - 1);
         c.Text(x + (tile - Canvas::TextWidth(name, ns)) / 2, y + tile + 3 * s, name, ns, sel ? 0xFFFFFFFF : 0xFFC8D0E0);
         std::string sub = !g.known ? "NOT PLAYABLE" : g.hasSave ? "SAVE FOUND" : "NEW GAME";
-        if (!g.where.empty() && g.known) sub = g.where;
+        if (!g.where.empty() && g.known) sub = (g.hasSave ? "SAVE " : "NEW ") + g.where; // e.g. SAVE IN BLACK2
         const int ss = std::max(1, s * 2 / 3);
         c.Text(x + (tile - Canvas::TextWidth(sub, ss)) / 2, y + tile + 12 * s, sub, ss, !g.known ? 0xFFE07A6A : sel ? 0xFFDDE6FF : 0xFF8FA0C0);
     }

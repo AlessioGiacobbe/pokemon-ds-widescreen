@@ -281,6 +281,11 @@ bool Start(int& argc, char**& argv)
         {
             // Each game's picture, if the player has one (Launcher::FindArt).
             for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
+            // A game with no picture of its own takes one another copy of it has (the icon of its
+            // one-game program, say).
+            for (Launcher::Game& g : games)
+                for (const Launcher::Game& other : games)
+                    if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
             chosen = PickGame(games, chosen);
             if (chosen < 0) return false;
             if (FILE* f = fopen(lastPath.c_str(), "w"))
