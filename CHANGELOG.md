@@ -13,6 +13,16 @@
 - **FOCUS BLUR (pause menu, OFF / LIGHT / STRONG):** the world softens towards the edges of the
   view while the middle around the player stays sharp, like a model ("tilt-shift"). Text boxes
   and menus stay sharp. Kept in the settings as `blur`. (From Johto Online.)
+- **FAR MAP (pause menu, SoulSilver and HeartGold, on by default):** the wide or zoomed-out
+  view no longer runs out of land: the map blocks around the ones the game has loaded are drawn
+  too (ground, buildings, trees and scrolling water), with the people standing on the
+  neighbouring maps. They are only drawn, the game never sees them. Kept in the settings as
+  `far_map`. (From Johto Online.)
+- **NIGHT EFFECTS (pause menu, SoulSilver and HeartGold, on by default):** outdoors in the
+  evening and at night (by the game's clock), lit windows and lamps keep their warm colours and
+  glow, street lamps light the ground around them, fireflies drift over tall grass and woods,
+  and the rest of the world takes on deeper night colours. Text boxes and menus are not
+  changed. Kept in the settings as `night_fx`. (From Johto Online.)
 - **Black and White battles: catching and levelling up.** A thrown Poke Ball is shown whole
   as it lands and shakes (it was cut in two, its other half at the view's right edge: it lands
   where the player's HP box is, whose place was still being moved while the box was put away),

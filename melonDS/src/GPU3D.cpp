@@ -37,6 +37,7 @@ void WideWait();
 // the frame is submitted again for the widescreen picture, which shows more of the scene.
 u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
 void WideOnFlush(GPU3D& g);
+void WideRunExtra(GPU3D& g);
 void WideOnRender(GPU& gpu, bool showingInterp);
 void WideWaitForTextures();
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
@@ -1012,6 +1013,14 @@ void GPU3D::SubmitPolygon() noexcept
         memcpy(raw.Viewport, Viewport, sizeof(raw.Viewport));
         raw.NumConsecutivePolygons = NumConsecutivePolygons;
         raw.StripStart = LastStripPolygon == nullptr;
+    }
+    // (Extra geometry for the wide picture is only recorded, see WideState::Extra.)
+    if (Wide.Capturing) return;
+    if (Wide.Owner == this && !InReplay && (TexParam >> 30))
+    {
+        std::array<s32, 17>& anim = Wide.TexAnim[TexParam & 0x3FFFFFFF];
+        anim[0] = (s32)TexParam;
+        memcpy(&anim[1], TexMatrix, 64);
     }
 
     Vertex *v0, *v1, *v2, *v3;
@@ -2574,6 +2583,12 @@ void GPU3D::VBlank() noexcept
                 // while the 3D image is being captured into video memory.
                 InterpPending = false;
                 InterpShowReal = false;
+                if (Wide.Owner == this)
+                {
+                    // (Extra geometry for the wide picture, see WideState::Extra.)
+                    if (Wide.Extra) WideRunExtra(*this);
+                    Wide.TexAnim.clear();
+                }
                 if (InterpolationEnabled || Wide.Owner == this)
                 {
                     const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;

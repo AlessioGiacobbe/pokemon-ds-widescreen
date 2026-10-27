@@ -57,6 +57,7 @@
 #endif
 #include "battlewide.h"
 #include "voidfill.h"
+#include "worldblocks.h" // SoulSilver and HeartGold: the far map and night effects
 #include "belowscreen.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -1246,6 +1247,12 @@ struct Settings
     // FOCUS BLUR: 0 off, 1 light, 2 strong; the world softens towards the view's edges
     // (frontend/focusblur.h).
     int blur = 0;
+    // FAR MAP (SoulSilver, HeartGold): the map blocks around the ones the game has loaded,
+    // drawn into the widescreen world (frontend/worldblocks.h).
+    bool farMap = true;
+    // NIGHT EFFECTS (SoulSilver, HeartGold): glowing windows and lamps, pools of lamp light,
+    // fireflies and night colours outdoors in the evening and at night (frontend/nightfx.h).
+    bool nightFx = true;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1308,6 +1315,8 @@ struct Settings
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), 60, 150);
             else if (k == "void_fill") voidFill = v != "0";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
+            else if (k == "far_map") farMap = v != "0";
+            else if (k == "night_fx") nightFx = v != "0";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1341,6 +1350,8 @@ struct Settings
         f << "zoom=" << zoom << "\n";
         f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
         f << "blur=" << blur << "\n";
+        f << "far_map=" << (farMap ? 1 : 0) << "\n";
+        f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -3346,6 +3357,25 @@ int main(int argc, char** argv)
     FocusBlur focusBlur;
     uint64_t focusBlurSerial = ~0ull;
     int focusBlurLevel = 0;
+    // FAR MAP and NIGHT EFFECTS (from Johto Online): SoulSilver's and HeartGold's map blocks
+    // around the loaded ones, drawn into the widescreen world when a frame's 3D is flushed
+    // (inside the emulated frame, with that frame's camera; worldblocks.h), and the night
+    // over it (nightfx.h). The ROM is the cartridge's copy.
+    WorldBlocks worldBlocks;
+    NightFx nightFx;
+    std::vector<NightFly> fireflies;
+    std::vector<NightLight> lamps;
+    // Set each frame: the overworld is on the screen, drawn wide (the emulation reads it).
+    std::atomic<bool> farMapNow { false };
+    bool fieldWide = false;
+    uint64_t nightFxSerial = ~0ull;
+    if (soulSilverRom && nds->GetNDSCart())
+    {
+        worldBlocks.SetRom(nds->GetNDSCart()->GetROM(), nds->GetNDSCart()->GetROMLength());
+        melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
+            if (farMapNow.load(std::memory_order_relaxed)) worldBlocks.Build(*nds, commands);
+        };
+    }
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
 
@@ -3489,7 +3519,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_FARMAP, M_NIGHTFX, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3541,6 +3571,9 @@ int main(int argc, char** argv)
             { "WORLD ZOOM", std::to_string(cfg.zoom) + "%" },
             { "VOID FILL", cfg.voidFill ? "ON" : "OFF" },
             { "FOCUS BLUR", cfg.blur == 2 ? "STRONG" : cfg.blur == 1 ? "LIGHT" : "OFF" },
+            // (SoulSilver and HeartGold.)
+            { "FAR MAP", !soulSilverRom ? "-" : cfg.farMap ? "ON" : "OFF" },
+            { "NIGHT EFFECTS", !soulSilverRom ? "-" : cfg.nightFx ? "ON" : "OFF" },
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -4327,6 +4360,12 @@ int main(int argc, char** argv)
             case M_BLUR:
                 cfg.blur = (cfg.blur + (dir < 0 ? 2 : 1)) % 3;
                 break;
+            case M_FARMAP:
+                if (soulSilverRom) cfg.farMap = !cfg.farMap;
+                break;
+            case M_NIGHTFX:
+                if (soulSilverRom) cfg.nightFx = !cfg.nightFx;
+                break;
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
@@ -4569,6 +4608,9 @@ int main(int argc, char** argv)
                                               : (fieldActive() || menuReturn > 0) && !scene.edgeFill;
             static const int zoomEnv = getenv("SSR_ZOOM") ? atoi(getenv("SSR_ZOOM")) : 0; // (tests: the settings are not read headless)
             melonDS::Wide.Zoom = wantWide && zoomable ? (zoomEnv ? zoomEnv : cfg.zoom) / 100.0f : 1.0f;
+            static const char* farEnv = getenv("SSR_FARMAP"); // (tests)
+            farMapNow = soulSilverRom && wantWide && zoomable && (farEnv ? atoi(farEnv) != 0 : cfg.farMap);
+            fieldWide = soulSilverRom && wantWide && zoomable;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;
@@ -4648,6 +4690,30 @@ int main(int argc, char** argv)
                         focusBlurLevel = blurLevel;
                     }
                     wideImage.blur = &focusBlur;
+                }
+                static const char* nightEnv = getenv("SSR_NIGHTFX"); // (tests)
+                if (fieldWide && (nightEnv ? atoi(nightEnv) != 0 : cfg.nightFx) && worldBlocks.Outdoors(*nds))
+                {
+                    // Evening and night by the game's clock (outdoors: interiors look the same at
+                    // any hour). SSR_NIGHT_HOUR sets the hour for tests.
+                    int year, month, day, hour, minute, second;
+                    nds->RTC.GetDateTime(year, month, day, hour, minute, second);
+                    static const char* hourEnv = getenv("SSR_NIGHT_HOUR");
+                    if (hourEnv) hour = atoi(hourEnv), minute = 0;
+                    const float strength = NightStrength(hour, minute);
+                    if (strength > 0)
+                    {
+                        if (melonDS::Wide.FrontSerial != nightFxSerial)
+                        {
+                            fireflies.clear();
+                            worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
+                            lamps.clear();
+                            worldBlocks.Lights(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, lamps);
+                            nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies, lamps);
+                            nightFxSerial = melonDS::Wide.FrontSerial;
+                        }
+                        wideImage.fx = &nightFx;
+                    }
                 }
                 // Fades: the game darkens or whitens its screen with the master brightness
                 // register, or with a brightness effect on the 3D layer.
@@ -5520,6 +5586,7 @@ int main(int argc, char** argv)
     melonDS::WideGpuStop();
     if (!WideGpuMarker.empty()) remove(WideGpuMarker.c_str());
     melonDS::Wide.Owner = nullptr;
+    melonDS::Wide.Extra = nullptr;
 #ifdef SSR_GPU3D
     // The graphics chip's renderer ends its thread and its OpenGL objects while EGL is still
     // up (SDL_Quit below can take it down).

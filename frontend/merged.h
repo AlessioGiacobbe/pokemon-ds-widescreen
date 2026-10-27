@@ -15,6 +15,7 @@
 #include <vector>
 #include <SDL.h>
 #include "focusblur.h"
+#include "nightfx.h"
 
 // Layer classes, derived from the 2D renderer's per-pixel flags.
 enum : uint8_t
@@ -195,6 +196,8 @@ struct WideImage
     // Focus blur (focusblur.h), when on: a blurred layer blended over the world, under the
     // game's fades like the world.
     const FocusBlur* blur = nullptr;
+    // Night effects (nightfx.h), when on: the world multiplied by one layer and another added.
+    const NightFx* fx = nullptr;
 };
 
 struct ScreenImage
@@ -675,6 +678,14 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     {
         FocusBlurBake(widePx, wide->w, wide->h, *wide->blur, wideBlurred);
         widePx = wideBlurred.data();
+    }
+    std::vector<uint32_t> wideNight;
+    if (widePx && wide->fx && wide->fx->W > 0)
+    {
+        NightFxBake(widePx, wide->w, wide->h, *wide->fx, wideNight);
+        // (The top byte stays the picture's: where nothing was drawn is still known.)
+        for (size_t i = 0; i < wideNight.size(); i++) wideNight[i] = (wideNight[i] & 0xFFFFFF) | (widePx[i] & 0xFF000000);
+        widePx = wideNight.data();
     }
     std::vector<int> wcol;
     if (useWide)

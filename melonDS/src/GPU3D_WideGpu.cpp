@@ -1,6 +1,7 @@
 // ssrecomp: the widescreen view's polygons drawn by the graphics chip. See GPU3D_WideGpu.h.
 #include <chrono>
 #include "GPU3D_WideGpu.h"
+#include "GPU3D_Wide.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -399,6 +400,49 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         return e->Offset;
     };
 
+    // A texture from the frontend (Wide.ExternalTextures, the far map's people) for a polygon
+    // whose texture parameters name one: its place in the atlas, copied there now if needed
+    // (as DecodeTexture's texels), or ~0u. Without the atlas such polygons are not drawn.
+    auto external = [&](const Polygon* poly) -> u32 {
+        if (!texturing || (poly->TexParam & 0x1FF0F000) != Wide.ExternalTexParam) return ~0u;
+        const u32 index = poly->TexParam & 0xFFF;
+        if (!f.AtlasOn || index >= Wide.ExternalTextures.size()) return ~0u;
+        const WideState::ExternalTexture& t = Wide.ExternalTextures[index];
+        if (t.W <= 0 || t.H <= 0 || (t.W & (t.W - 1)) || (t.H & (t.H - 1)) || t.Texels.size() != (size_t)t.W * t.H) return ~0u;
+        const u64 key = (u64)(Wide.ExternalTexParam + index) | (0xFFFFFFFFull << 32);
+        auto it = at.Entries.find(key);
+        if (it != at.Entries.end() && it->second.Valid) return it->second.Offset;
+        const u32 size = (u32)t.Texels.size();
+        WideGpuAtlas::Entry* e;
+        if (it != at.Entries.end())
+            e = &it->second;
+        else
+        {
+            if (at.Used + size > WideGpuAtlas::Capacity)
+            {
+                at.Full = true;
+                return ~0u;
+            }
+            e = &at.Entries[key];
+            e->Offset = at.Used;
+            e->Size = size;
+            at.Used += size;
+        }
+        e->Tex0 = e->Tex1 = e->Pal0 = e->Pal1 = 0; // (not in the DS's memory: never changes)
+        for (u32 i = 0; i < size; i++)
+        {
+            const u32 v = t.Texels[i];
+            const u32 colour = ((v & 63) >> 1) | (((v >> 8) & 63) >> 1) << 5 | (((v >> 16) & 63) >> 1) << 10;
+            at.Texels[e->Offset + i] = colour | ((v >> 24) & 31) << 16;
+        }
+        e->Valid = true;
+        at.Uploads.push_back({ e->Offset, e->Size });
+        return e->Offset;
+    };
+    // Texture parameters with an external texture's size, no repeating (clamped), and a
+    // format, so that the shader samples it.
+    auto log2Size = [](int n) { u32 k = 0; while ((8 << k) < n && k < 7) k++; return k; };
+
     // A polygon's triangles (a fan), appended to the vertices.
     auto add = [&](const Polygon* poly) {
         const u32 index = (u32)f.Polygons.size();
@@ -407,7 +451,16 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         p.TexParam = poly->TexParam;
         p.TexPalette = poly->TexPalette;
         p.Flags = (poly->WBuffer ? 1 : 0) | (texturing && ((poly->TexParam >> 26) & 0x7) ? 2 : 0);
-        if (f.AtlasOn && (p.Flags & 2))
+        if (!(p.Flags & 2) && texturing && (poly->TexParam & 0x1FF0F000) == Wide.ExternalTexParam)
+        {
+            const u32 offset = external(poly);
+            if (offset == ~0u) return;
+            const WideState::ExternalTexture& t = Wide.ExternalTextures[poly->TexParam & 0xFFF];
+            p.TexParam = (7u << 26) | (log2Size(t.H) << 23) | (log2Size(t.W) << 20);
+            p.TexPalette = offset;
+            p.Flags |= 2 | 4;
+        }
+        else if (f.AtlasOn && (p.Flags & 2))
         {
             const u32 offset = atlasOffset(poly->TexParam, poly->TexPalette);
             if (offset != ~0u)
@@ -454,6 +507,7 @@ void WideGpuBuild(const GPU& gpu, Polygon* const* list, u32 count, int W, int H,
         const u32 polyAlpha = (poly->Attr >> 16) & 31;
         if ((polyAlpha != 31 && polyAlpha != 0) || g.RenderAlphaRef >= 31) return false;
         const u32 format = texturing ? (poly->TexParam >> 26) & 7 : 0;
+        if (texturing && (poly->TexParam & 0x1FF0F000) == Wide.ExternalTexParam) return false; // (see-through texels)
         return format == 0 || ((format == 2 || format == 3 || format == 4) && !(poly->TexParam & (1u << 29)));
     };
 
