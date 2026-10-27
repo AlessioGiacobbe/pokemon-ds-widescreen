@@ -2288,6 +2288,12 @@ int main(int argc, char** argv)
                 // The question (the top screen's message box) above the name and the keyboard.
                 sc = Stack("naming", { Crop(0, 0, 144, 256, 48), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
             else if (ran(pt.evolution) || ran(pt.eggHatch)) alone("evolution", 0);
+            else if (ran(pt.starter))
+            {
+                // The briefcase on the grass, in 3D: widened like the world.
+                only("starter", 0);
+                sc.wide = wideView;
+            }
             else return false;
             return true;
         };
