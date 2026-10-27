@@ -1883,6 +1883,7 @@ int main(int argc, char** argv)
     uint32_t battleStripUntil = 0;
     // The button chosen in a battle strip (see the input handling before the frame runs).
     int battleSel = 0;
+    bool battleFightOnly = false; // the command panel has FIGHT alone (gen4BattleInput)
     // Per application, the overlay that holds its code when no other application's code is
     // there (-1 otherwise), and per section the frames on which it has run since it started
     // running (see where it is counted).
@@ -2077,7 +2078,9 @@ int main(int argc, char** argv)
         auto blue = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return bl > 150 && r < 110 && g > 90 && g < 200 && bl > r + 60; };
         auto red = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return r > 180 && g < 120 && bl < 120; };
         auto orange = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return r > 180 && g > 110 && g < 200 && bl < 110; };
-        const bool cmd = red(128, 60) && orange(40, 160) && blue(128, 166);
+        // (Platinum's first battle has FIGHT alone: no Bag, no running, no party yet.)
+        battleFightOnly = pt.on && red(128, 60) && !orange(40, 160) && !blue(128, 166) && !blue(40, 166);
+        const bool cmd = (red(128, 60) && orange(40, 160) && blue(128, 166)) || battleFightOnly;
         const bool moves = !cmd && blue(40, 166) && blue(128, 166) && blue(216, 166);
         const bool idle = AutoFocus::Blank(screens[1].pixels) || (!blue(128, 166) && !red(128, 60));
         battleUnknown = (cmd || moves || idle) ? 0 : battleUnknown + 1;
@@ -2167,9 +2170,12 @@ int main(int argc, char** argv)
                 const Cut* cut = pt.on ? ptCuts : cuts;
                 const float cellW = (innerW - 2 * gap) / 3;
                 button(cut[0], innerX, rowY, 2 * cellW + gap, 0);                           // FIGHT
-                button(cut[1], innerX, row2Y, cellW, 0);                                    // BAG
-                button(cut[2], innerX + 2 * (cellW + gap), row2Y, innerW - 2 * (cellW + gap), 0); // POKeMON
-                button(cut[3], innerX + cellW + gap, row2Y, cellW, 0);                      // RUN
+                if (!battleFightOnly)
+                {
+                    button(cut[1], innerX, row2Y, cellW, 0);                                    // BAG
+                    button(cut[2], innerX + 2 * (cellW + gap), row2Y, innerW - 2 * (cellW + gap), 0); // POKeMON
+                    button(cut[3], innerX + cellW + gap, row2Y, cellW, 0);                      // RUN
+                }
                 // The party: the balls on the touch screen's top row (a ball for each
                 // Pokemon, a grey dot for an empty place; sprites, taken without their
                 // background), three over three.
@@ -4784,7 +4790,7 @@ int main(int argc, char** argv)
                 // Empty move slots are skipped: theirs is a plain grey where a move's name is white.
                 const u32* screenImagesPrev = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
                 auto usable = [&](int i) {
-                    if (cmd) return true;
+                    if (cmd) return !battleFightOnly || i == 0;
                     uint32_t c = screenImagesPrev[(movY[i] - 14) * 256 + movX[i]];
                     // (Platinum's moves are on a pale yellow panel.)
                     if (pt.on) return ((c >> 16) & 0xFF) > 200 && ((c >> 8) & 0xFF) > 200 && (c & 0xFF) > 140;
