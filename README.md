@@ -82,7 +82,8 @@ pair.
 
 **Using the list:** the D-pad or a stick moves between games, **A** plays,
 **+** goes back to the Homebrew Menu. It opens on the game you played last.
-**QUIT** in the pause menu (+ and − together) saves and comes back to the list.
+**QUIT** in the pause menu (+ and − together) saves and comes back to the list
+(started from a forwarder it closes instead; start it again to pick another).
 With only one game found there is no list: it starts straight away.
 
 **Saves:** each game keeps its save under its own name (`black2.sav`,
