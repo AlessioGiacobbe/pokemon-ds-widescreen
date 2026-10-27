@@ -37,6 +37,11 @@
   loops in its place, with short fades; sound effects, cries and jingles stay the game's own.
   ORIGINAL in the menu goes back to the game's music. Kept in the settings as `music`. (From
   Johto Online.)
+- **FRAME RATE and VSYNC (pause menu, computer):** FRAME RATE UNLIMITED draws the world again
+  between the game's frames, as many pictures as there is time for, for displays faster than
+  60 Hz (the game keeps its own pace; with the world drawn by the processor, the computer's
+  default). VSYNC shows each picture at the display's refresh, so it never tears. Kept in the
+  settings as `fps_unlimited` and `vsync`. (From Johto Online.)
 - **Black and White battles: catching and levelling up.** A thrown Poke Ball is shown whole
   as it lands and shakes (it was cut in two, its other half at the view's right edge: it lands
   where the player's HP box is, whose place was still being moved while the box was put away),

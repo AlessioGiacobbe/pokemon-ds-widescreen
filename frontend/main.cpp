@@ -1263,6 +1263,12 @@ struct Settings
     // MUSIC (SoulSilver, HeartGold): the player's own songs (frontend/songs.h), when there are
     // any, in place of the game's tunes.
     bool newSongs = true;
+    // FRAME RATE (computer, from Johto Online): UNLIMITED draws more pictures of the world than
+    // the game makes, between its frames, as many as there is time for (for displays faster
+    // than 60 Hz); the game keeps its own pace. VSYNC shows each picture at the display's
+    // refresh (no tearing).
+    bool fpsUnlimited = false;
+    bool vsync = false;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1329,6 +1335,8 @@ struct Settings
             else if (k == "night_fx") nightFx = v != "0";
             else if (k == "autosave") autosave = v != "0";
             else if (k == "music") newSongs = v != "original";
+            else if (k == "fps_unlimited") fpsUnlimited = v == "1";
+            else if (k == "vsync") vsync = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1366,6 +1374,8 @@ struct Settings
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "autosave=" << (autosave ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
+        f << "fps_unlimited=" << (fpsUnlimited ? 1 : 0) << "\n";
+        f << "vsync=" << (vsync ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -1742,6 +1752,15 @@ int main(int argc, char** argv)
     focus.Init();
     layout.swapped = focus.Swapped();
 
+    // VSYNC: presenting a picture waits for the display's refresh. With FRAME RATE UNLIMITED
+    // that paces the pictures between the game's frames to the display; the game's own frames
+    // keep their clock (a present waits at most one refresh).
+    auto applyVSync = [&]() {
+#if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(__SWITCH__)
+        if (renderer && SDL_RenderSetVSync(renderer, cfg.vsync ? 1 : 0) != 0)
+            fprintf(stderr, "VSync %s: %s\n", cfg.vsync ? "on" : "off", SDL_GetError());
+#endif
+    };
     auto applySmooth = [&]() {
         for (int i = 0; i < 2; i++)
             if (tex[i]) SDL_SetTextureScaleMode(tex[i], cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
@@ -1825,6 +1844,7 @@ int main(int argc, char** argv)
         for (int i = 0; i < 2; i++)
             tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 192);
         applySmooth();
+        applyVSync();
         SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
 
         SDL_AudioSpec want;
@@ -3572,7 +3592,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_FARMAP, M_NIGHTFX, M_AUTOSAVE, M_MUSIC, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_FARMAP, M_NIGHTFX, M_AUTOSAVE, M_MUSIC, M_FPSMAX, M_VSYNC, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3631,6 +3651,14 @@ int main(int argc, char** argv)
             { "AUTOSAVE", cfg.autosave ? "ON" : "OFF" },
             // (SoulSilver and HeartGold, with songs listed in songs/songs.txt beside the save.)
             { "MUSIC", !songs.Any() ? "-" : cfg.newSongs ? "YOUR SONGS" : "ORIGINAL" },
+#ifdef __SWITCH__
+            { "FRAME RATE", "-" },
+            { "VSYNC", "-" },
+#else
+            // (UNLIMITED: with the world drawn by the processor, and not with SSR_PIPELINE.)
+            { "FRAME RATE", cfg.fpsUnlimited ? "UNLIMITED" : "60" },
+            { "VSYNC", cfg.vsync ? "ON" : "OFF" },
+#endif
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -3822,7 +3850,10 @@ int main(int argc, char** argv)
         fprintf(stderr, "[pipeline] %s\n", pipelined ? "on: each frame is shown while the next one is emulated" : "could not start");
     }
 
-    auto drawFrame = [&](DrawJob& j) {
+    // FRAME RATE UNLIMITED: brings a job's world picture up to date with a picture between the
+    // game's frames (set in the main loop, where the picture is taken); false if it cannot.
+    std::function<bool(DrawJob&)> betweenRefresh;
+    auto showJob = [&](DrawJob& j) {
         // (The widened battle picture, from what was grabbed after the frame: made here, beside
         // the next frame's emulation.)
         if (j.battleRender)
@@ -3919,12 +3950,56 @@ int main(int argc, char** argv)
         if (ms - fpsSince >= 1000)
         {
             shownFps = (int)(presented * 1000 / (ms - fpsSince));
+            static const bool fpsLog = getenv("SSR_FPS_LOG") != nullptr; // (tests)
+            if (fpsLog) fprintf(stderr, "[fps] %d pictures a second\n", shownFps);
             presented = 0;
             fpsSince = ms;
         }
 
+    };
+    auto drawFrame = [&](DrawJob& j) {
+        showJob(j);
         nextTick += (uint64_t)(frameTime * perfFreq);
         uint64_t now = SDL_GetPerformanceCounter();
+        if (cfg.fpsUnlimited && melonDS::Wide.Between && j.merged && betweenRefresh && (now < nextTick || getenv("SSR_BETWEEN_SHOTS")))
+        {
+            // FRAME RATE UNLIMITED: until the game's next frame is due, the world is drawn again
+            // at later moments between this picture and the next and shown, as often as there
+            // is time for. The game itself keeps to its own pace.
+            const uint64_t from = now, span = (uint64_t)(frameTime * perfFreq);
+            // What one costs (an average, kept from frame to frame, that drifts down while none
+            // fits so that a slow one does not stop them for good) and a millisecond to spare:
+            // the game's next frame must not start late.
+            static uint64_t cost = 0;
+            const uint64_t spare = perfFreq / 1000;
+            const bool shot = j.wantShot;
+            const uint32_t shotFrame = j.frameNo;
+            // (Tests: SSR_BETWEEN_SHOTS=1 also writes the pictures between, as frame * 10 + n.)
+            static const bool betweenShots = getenv("SSR_BETWEEN_SHOTS") != nullptr;
+            int betweenN = 0;
+            j.wantShot = false;
+            for (;;)
+            {
+                const uint64_t t0 = SDL_GetPerformanceCounter();
+                // (With the test's pictures, two evenly spaced, however long they take.)
+                const bool forced = betweenShots && shot;
+                if (forced ? betweenN >= 2 : t0 + cost + spare >= nextTick)
+                {
+                    if (!forced) cost -= cost / 32;
+                    break;
+                }
+                const float at = forced ? (betweenN + 1) / 3.0f : (float)((double)(t0 + cost - from) / span); // where it is when it is on the screen
+                if (!melonDS::WideDrawBetween(nds->GPU, at) || !betweenRefresh(j)) break;
+                j.wantShot = shot && betweenShots;
+                j.frameNo = shotFrame * 10 + ++betweenN;
+                showJob(j);
+                const uint64_t took = SDL_GetPerformanceCounter() - t0;
+                cost = cost ? (cost * 3 + took) / 4 : took;
+            }
+            j.wantShot = shot;
+            j.frameNo = shotFrame;
+            now = SDL_GetPerformanceCounter();
+        }
         if (now < nextTick)
         {
             // Sleep for most of the wait and spin for the last part of a millisecond:
@@ -4429,6 +4504,15 @@ int main(int argc, char** argv)
             case M_MUSIC:
                 if (songs.Any()) cfg.newSongs = !cfg.newSongs;
                 break;
+#ifndef __SWITCH__
+            case M_FPSMAX:
+                cfg.fpsUnlimited = !cfg.fpsUnlimited;
+                break;
+            case M_VSYNC:
+                cfg.vsync = !cfg.vsync;
+                applyVSync();
+                break;
+#endif
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
@@ -4671,6 +4755,8 @@ int main(int argc, char** argv)
                                               : (fieldActive() || menuReturn > 0) && !scene.edgeFill;
             static const int zoomEnv = getenv("SSR_ZOOM") ? atoi(getenv("SSR_ZOOM")) : 0; // (tests: the settings are not read headless)
             melonDS::Wide.Zoom = wantWide && zoomable ? (zoomEnv ? zoomEnv : cfg.zoom) / 100.0f : 1.0f;
+            // FRAME RATE UNLIMITED: what drawing pictures between the game's frames needs is kept.
+            melonDS::Wide.Between = cfg.fpsUnlimited && wantWide && !opt.headless && !pipelined;
             static const char* farEnv = getenv("SSR_FARMAP"); // (tests)
             farMapNow = soulSilverRom && wantWide && zoomable && (farEnv ? atoi(farEnv) != 0 : cfg.farMap);
             fieldWide = soulSilverRom && wantWide && zoomable;
@@ -4807,6 +4893,13 @@ int main(int argc, char** argv)
                         now & 1, scene.name, (now >> 1) & 1, (now >> 2) & 1, wideImage.fadeMode, wideImage.fade);
                 last = now;
             }
+        };
+        betweenRefresh = [&](DrawJob& j) {
+            if (scene.edgeFill || j.wide.placed || j.battleRender) return false;
+            takeWideImage();
+            if (!wideImage.pixels || wideImage.placed) return false;
+            j.wide = wideImage;
+            return true;
         };
         if (!paused)
         {

@@ -60,8 +60,15 @@ struct WideState
     const u32* Front = nullptr;
     int FrontW = 0, FrontH = 0;
     u64 FrontSerial = 0;      // changes whenever Front does
+    // FRAME RATE UNLIMITED: keeps what drawing pictures between the game's frames needs.
+    bool Between = false;
 };
 extern WideState Wide;
+class GPU;
+// Draws the world again at fraction `s` (0 to 1) of the way from the picture in Front to the
+// one shown at the next frame, and puts it in Front: for showing more pictures than the game
+// makes, between its frames. False when there is nothing to draw between.
+bool WideDrawBetween(GPU& gpu, float s);
 
 // Blocks until the widescreen picture being drawn in the background is finished (the frontend
 // calls it before shutting down).

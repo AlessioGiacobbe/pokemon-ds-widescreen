@@ -169,6 +169,18 @@ struct WideAccess
     static inline std::vector<Polygon*> ListReal, ListInterp;
     static inline u32 NumReal = 0, NumInterp = 0;
     static inline bool Dirty = false, NeedReal = false, PendingPublish = false;
+    // FRAME RATE UNLIMITED (DrawBetween, from Johto Online): the flush the lists were built
+    // from, that of the picture being drawn (Back) and of the one shown, and how far each is
+    // between that flush's frame before and itself (1: the flush's own picture, 0.5: halfway).
+    static inline u64 ListFlush = 0, BackFlush = 0, ShownFlush = 0;
+    static inline bool BackInterp = false;
+    static inline float ShownT = 1;
+    // The last two frames' recorded polygons as they were at the last flush, and room for the
+    // lists of a picture between them.
+    static inline std::vector<GPU3D::RawPolygon> PairPrev, PairCur;
+    static inline std::vector<Vertex> VtxBetween;
+    static inline std::vector<Polygon> PolyBetween;
+    static inline std::vector<Polygon*> ListBetween;
     // The three pictures that take turns (see WideState::Front): drawn into Bufs[Next], which is
     // then published, and Next moves on.
     static inline WideBuffer Bufs[3];
@@ -506,7 +518,7 @@ struct WideAccess
     // previous frame; `matched` then counts the polygons found in both frames. The
     // horizontal clip coordinate is multiplied by xnum/xden.
     static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 xden, Vertex* vram, Polygon* pram,
-        Polygon** list, u32& numPolys, u32& matched, u32 polyLimit = 2048, u32 vertLimit = 6144, s64 ynum = 0)
+        Polygon** list, u32& numPolys, u32& matched, u32 polyLimit = 2048, u32 vertLimit = 6144, s64 ynum = 0, s32 t256 = 128)
     {
         SubmitPolygonLimit = polyLimit;
         SubmitVertexLimit = vertLimit;
@@ -708,13 +720,28 @@ struct WideAccess
                     {
                         Vertex& v = g.TempVertexBuffer[i];
                         const Vertex& p = prev->Vertices[i];
-                        for (int c = 0; c < 4; c++) v.Position[c] = (s32)(((s64)v.Position[c] + p.Position[c]) / 2);
-                        for (int c = 0; c < 3; c++) v.Color[c] = (v.Color[c] + p.Color[c]) / 2;
-                        for (int c = 0; c < 2; c++)
+                        if (t256 == 128)
                         {
-                            // Texture coordinates that jump (wrapping animations) are left at their new value.
-                            int d = v.TexCoords[c] - p.TexCoords[c];
-                            if (d > -512 && d < 512) v.TexCoords[c] = (s16)((v.TexCoords[c] + p.TexCoords[c]) / 2);
+                            for (int c = 0; c < 4; c++) v.Position[c] = (s32)(((s64)v.Position[c] + p.Position[c]) / 2);
+                            for (int c = 0; c < 3; c++) v.Color[c] = (v.Color[c] + p.Color[c]) / 2;
+                            for (int c = 0; c < 2; c++)
+                            {
+                                // Texture coordinates that jump (wrapping animations) are left at their new value.
+                                int d = v.TexCoords[c] - p.TexCoords[c];
+                                if (d > -512 && d < 512) v.TexCoords[c] = (s16)((v.TexCoords[c] + p.TexCoords[c]) / 2);
+                            }
+                        }
+                        else
+                        {
+                            // (Pictures between the game's frames at other moments, see DrawBetween:
+                            // t256 of 256 of the way from the frame before.)
+                            for (int c = 0; c < 4; c++) v.Position[c] = (s32)(p.Position[c] + (((s64)v.Position[c] - p.Position[c]) * t256) / 256);
+                            for (int c = 0; c < 3; c++) v.Color[c] = p.Color[c] + ((v.Color[c] - p.Color[c]) * t256) / 256;
+                            for (int c = 0; c < 2; c++)
+                            {
+                                int d = v.TexCoords[c] - p.TexCoords[c];
+                                if (d > -512 && d < 512) v.TexCoords[c] = (s16)(p.TexCoords[c] + (d * t256) / 256);
+                            }
                         }
                     }
                 }
@@ -849,6 +876,17 @@ struct WideAccess
         {
             Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices, ynum);
             if (zoom == 1) ExtendToEdges(ListInterp.data(), NumInterp, view);
+        }
+        ListFlush++;
+        if (Wide.Between)
+        {
+            PairPrev = g.RawPrevious;
+            PairCur = g.RawCurrent;
+        }
+        else if (!PairCur.empty())
+        {
+            PairPrev.clear();
+            PairCur.clear();
         }
         Dirty = true;
     }
@@ -1050,6 +1088,61 @@ struct WideAccess
         }
     }
 
+    // FRAME RATE UNLIMITED (from Johto Online): draws the world again at fraction `s` (0 to 1)
+    // of the way from the picture shown to the one being drawn for the next frame, and shows it
+    // (Front). Only drawn by the processor here (not the graphics chip's renderers, which keep
+    // their own turns of pictures). False when there is nothing to draw between.
+    static bool DrawBetween(GPU& gpu, float s)
+    {
+        if (PairCur.empty() || PairPrev.empty() || !PendingPublish || !Wide.Front || s <= 0 || s >= 1) return false;
+        if (WideGpuCurrent || DrawingOnGL || DrawingOnWideGpu) return false;
+#ifdef OGLRENDERER_ENABLED
+        if (GLThreadRenderer::Current) return false;
+#endif
+        if (Wide.FrontW != Wide.Width || Wide.FrontH != Wide.Height) return false;
+        // The picture shown is (flush, t) and so is the next one; in between is the same flush
+        // further on, or the next flush from its start (its frame before is the one shown).
+        const float tB = BackInterp ? 0.5f : 1.0f;
+        float t;
+        if (BackFlush != ListFlush) return false;
+        if (ShownFlush == BackFlush) t = ShownT + (tB - ShownT) * s;
+        else if (ShownFlush + 1 == BackFlush && ShownT >= 1) t = tB * s;
+        else return false;
+        if (t <= 0 || t >= 1) return false;
+        Wait();
+        if (VtxBetween.empty())
+        {
+            VtxBetween.resize(MaxVertices);
+            PolyBetween.resize(MaxPolygons);
+            ListBetween.resize(MaxPolygons);
+        }
+        GPU3D& g = gpu.GPU3D;
+        const float view = Wide.ViewWidth < 256 ? 256 : Wide.ViewWidth;
+        const float zoom = Wide.Zoom > 0 ? Wide.Zoom : 1;
+        const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view * zoom + 0.5f), ynum = (s64)(4096.0f * zoom + 0.5f);
+        u32 n = 0, matched = 0;
+        g.RawPrevious.swap(PairPrev);
+        g.RawCurrent.swap(PairCur);
+        Replay(g, true, xnum, xden, VtxBetween.data(), PolyBetween.data(), ListBetween.data(), n, matched, MaxPolygons, MaxVertices, ynum,
+            std::clamp((s32)(t * 256), 1, 255));
+        g.RawPrevious.swap(PairPrev);
+        g.RawCurrent.swap(PairCur);
+        if (!n || matched * 2 < PairCur.size()) return false;
+        if (zoom == 1) ExtendToEdges(ListBetween.data(), n, view);
+        // Into the third of the pictures that take turns: Bufs[Next] holds the next frame's.
+        const int next = Next;
+        Next = (Next + 1) % 3;
+        Draw(gpu, ListBetween.data(), n);
+        Wait();
+        const WideBuffer& b = Bufs[Next];
+        Wide.Front = b.Pixels;
+        Wide.FrontW = b.W;
+        Wide.FrontH = b.H;
+        Wide.FrontSerial++;
+        Next = next;
+        return true;
+    }
+
     // Called where the 3D renderer draws a frame. The image drawn here belongs to the
     // display frame after this one, like the 3D renderer's own, so it is published one
     // call later.
@@ -1074,6 +1167,8 @@ struct WideAccess
         {
             Publish();
             PendingPublish = false;
+            ShownFlush = BackFlush;
+            ShownT = BackInterp ? 0.5f : 1.0f;
         }
         if (Wide.Width <= 0 || Wide.Height <= 0) return;
         if (showingInterp && NumInterp)
@@ -1082,6 +1177,8 @@ struct WideAccess
             NeedReal = true;
             Dirty = false;
             PendingPublish = true;
+            BackFlush = ListFlush;
+            BackInterp = true;
         }
         else if (Dirty || NeedReal || Wide.FrontW != Wide.Width || Wide.FrontH != Wide.Height)
         {
@@ -1089,6 +1186,8 @@ struct WideAccess
             NeedReal = false;
             Dirty = false;
             PendingPublish = true;
+            BackFlush = ListFlush;
+            BackInterp = false;
         }
     }
 
@@ -1796,6 +1895,7 @@ void WideRunExtra(GPU3D& g)
     }
 }
 void WideOnRender(GPU& gpu, bool showingInterp) { WideAccess::OnRender(gpu, showingInterp); }
+bool WideDrawBetween(GPU& gpu, float s) { return WideAccess::DrawBetween(gpu, s); }
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched)
 {
