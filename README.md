@@ -10,8 +10,7 @@
 | **Pokémon Black 2 and White 2** | ✅ out now | [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
 | **Pokémon SoulSilver and HeartGold** | ✅ out now | [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
 | **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
-| **All six games in one program** (choose the game when it starts) | 🆕 next release | `pokemon-ds-wide-switch.zip` |
-| **All six games in one zip** (one program per game) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v1) |
+| **All six games in one** (one program, choose the game when it starts) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 Every download is free of the games themselves: you bring your own ROM, and
@@ -35,9 +34,10 @@ DS game, presented the way it should look on a Switch.
 
 ## Installing (any of the games)
 
-1. Download the game's zip (table above), or the one with all six games, and
-   unzip it to the root of the SD card. It makes a folder for each game in
-   `/switch/`; a game whose ROM you don't put in its folder just isn't used.
+1. Download the game's zip (table above) and unzip it to the root of the SD
+   card. It makes a folder for each game in `/switch/`; a game whose ROM you
+   don't put in its folder just isn't used. (For the download with all six
+   games in one program, see [below](#all-the-games-in-one-program).)
 2. Copy your own ROM into the game's folder, as the only `.nds` file there.
 3. **Hold R while starting any game** to open the Homebrew Menu, then pick the
    game (started from the album there is not enough memory). **QUIT** in the
@@ -57,7 +57,7 @@ own entry, so sys-clk (below) can have its own settings for it.
 
 ### All the games in one program
 
-`pokemon-ds-wide-switch.zip` is one program for all six games, with a grid to
+`pokemon-ds-wide-all-switch.zip` is one program for all six games, with a grid to
 choose from when it starts. Each game is shown with the icon from its ROM, or
 with a picture of your own: put it in `/switch/pokemon-ds-wide/icons/` named
 after the game's code (`IRBO` Black, `IRAO` White, `IREO` Black 2, `IRDO`
@@ -71,10 +71,12 @@ PNG, square). A game in a one-game folder shows that program's HOME Menu icon.
 3. Hold R while starting any game, pick **Pokemon DS Widescreen**, then the
    game. **CHANGE GAME** in the pause menu saves and goes back to the list.
 
-Already using the one-game folders? Leave them as they are and put no ROM in
-`/switch/pokemon-ds-wide/`: the list then shows the games in your other
-`/switch/` folders, each played with the save already in its folder. With
-only one ROM in the folder there is no list: that game starts straight away.
+Already using the one-game folders? Leave them as they are: the list also
+shows the games in your other `/switch/` folders, each played with the save
+already in its folder (the same save its one-game program uses, so you can
+start a game either way). A game in both places is listed twice, each with
+its own save, and says which folder it is in. With a single game found there
+is no list: it starts straight away.
 
 ---
 

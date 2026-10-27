@@ -34,6 +34,8 @@ struct Game
     uint32_t icon[32 * 32] = {}; // ARGB, transparent where the icon is
     // A larger picture for the game, if the player has one (FindArt): ARGB, Art x Art pixels.
     std::vector<uint32_t> art;
+    // Set when the same game is also in another folder: this one's folder, shown under it.
+    std::string where;
 };
 
 // The size the larger pictures are kept at (the tiles of the list at 720 lines).
@@ -317,7 +319,8 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
         if (name.rfind("POKEMON ", 0) == 0) name = name.substr(8);
         const int ns = Canvas::TextWidth(name, s) <= tile ? s : std::max(1, s - 1);
         c.Text(x + (tile - Canvas::TextWidth(name, ns)) / 2, y + tile + 3 * s, name, ns, sel ? 0xFFFFFFFF : 0xFFC8D0E0);
-        const std::string sub = !g.known ? "NOT PLAYABLE" : g.hasSave ? "SAVE FOUND" : "NEW GAME";
+        std::string sub = !g.known ? "NOT PLAYABLE" : g.hasSave ? "SAVE FOUND" : "NEW GAME";
+        if (!g.where.empty() && g.known) sub = g.where;
         const int ss = std::max(1, s * 2 / 3);
         c.Text(x + (tile - Canvas::TextWidth(sub, ss)) / 2, y + tile + 12 * s, sub, ss, !g.known ? 0xFFE07A6A : sel ? 0xFFDDE6FF : 0xFF8FA0C0);
     }

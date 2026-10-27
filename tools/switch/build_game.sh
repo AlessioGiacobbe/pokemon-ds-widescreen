@@ -19,7 +19,8 @@
 # all packs one program for all six games, with a list to choose the game from when it starts
 # (frontend/launcher.h): SoulSilver and HeartGold's tables (as hgss) and the Black games'
 # function tables (as bw) in one .nro, as build-sd/pokemon-ds-wide-switch.zip
-# (switch/pokemon-ds-wide/pokemon-ds-wide.nro). It holds nothing of the games either.
+# (switch/pokemon-ds-wide/pokemon-ds-wide.nro), as build-sd/pokemon-ds-wide-all-switch.zip: the
+# all-games release's download. It holds nothing of the games either.
 # SSR_SWITCH_ICON_ALL: its Homebrew Menu icon.
 #
 # The result is a folder laid out like the SD card, build-sd/switch/<game folder>/, with the
@@ -149,10 +150,10 @@ all)
     [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
     say "Compiling for the Switch"
     build SSR_SWITCH_JIT=1 SSR_SWITCH_GEN="$HERE/build-gen-tables" SSR_SWITCH_BUILD="$BUILD" \
-        SSR_SWITCH_ROMFS="$ROMFS" SSR_NRO_TITLE="Pokemon DS Widescreen" bash tools/switch/build.sh
+        SSR_SWITCH_ROMFS="$ROMFS" SSR_ALL_GAMES=ON SSR_NRO_TITLE="Pokemon DS Widescreen" bash tools/switch/build.sh
     mkdir -p build-sd/switch/pokemon-ds-wide
     cp "$BUILD/ssrecomp.nro" build-sd/switch/pokemon-ds-wide/pokemon-ds-wide.nro
-    ZIP=pokemon-ds-wide-switch.zip
+    ZIP=pokemon-ds-wide-all-switch.zip
     rm -f "build-sd/$ZIP"
     (cd build-sd && python3 -c "
 import sys, zipfile
@@ -171,8 +172,8 @@ print('zip holds:', ', '.join(names))
     cat <<EOF
 
 Copy build-sd/switch to the root of the SD card, then your ROMs into /switch/pokemon-ds-wide/ (any
-names; English Black, White, Black 2, White 2; SoulSilver and HeartGold US). With no ROM there, it
-offers the games in the other folders of /switch (the one-game downloads), each with its own save.
+names; English Black, White, Black 2, White 2; SoulSilver and HeartGold US). Its list also shows
+the games in the other folders of /switch (the one-game downloads), each with the save in its folder.
 On the Switch, hold R while starting any game and choose Pokemon DS Widescreen.
 The zip holds only the program, ready to share: nothing of the games.
 EOF

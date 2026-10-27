@@ -136,9 +136,10 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected)
     return result;
 }
 
-// The games to choose from: rom.nds or the ROMs in the program's folder (and its roms/ folder)
-// if there are any, else those in the other folders of /switch (the one-game-per-folder
-// downloads before the all-games one), each played with the save in its own folder.
+// The games to choose from: rom.nds, or the ROMs in the program's folder (and its roms/ folder);
+// in the all-games program also those in the other folders of /switch (the one-game programs'
+// folders), each played with the save in its own folder, so that the two kinds of download share
+// a game's save.
 std::vector<Launcher::Game> FindGames(const std::string& dir, bool& ownFolder)
 {
     std::vector<Launcher::Game> games;
@@ -146,9 +147,9 @@ std::vector<Launcher::Game> FindGames(const std::string& dir, bool& ownFolder)
     ownFolder = true;
     if (Launcher::ReadGame(dir + "/rom.nds", dir, g)) return { g };
     Launcher::ScanFolder(dir, games);
-    if (games.empty())
+#ifdef SSR_ALL_GAMES
     {
-        ownFolder = false;
+        const size_t own = games.size();
         if (DIR* d = opendir("sdmc:/switch"))
         {
             while (dirent* e = readdir(d))
@@ -160,8 +161,21 @@ std::vector<Launcher::Game> FindGames(const std::string& dir, bool& ownFolder)
             }
             closedir(d);
         }
+        ownFolder = own > 0;
     }
+#endif
     Launcher::Sort(games);
+    // The same game in two folders (two ROMs, two saves): each says where it is.
+    for (size_t i = 0; i < games.size(); i++)
+        for (size_t j = 0; j < games.size(); j++)
+            if (i != j && games[i].code == games[j].code && games[i].folder != dir)
+            {
+                // (pokemon-black2-wide: IN BLACK2)
+                std::string name = games[i].folder.substr(games[i].folder.find_last_of('/') + 1);
+                if (name.rfind("pokemon-", 0) == 0) name = name.substr(8);
+                if (name.size() > 5 && name.compare(name.size() - 5, 5, "-wide") == 0) name.resize(name.size() - 5);
+                games[i].where = "IN " + name.substr(0, 14);
+            }
     return games;
 }
 

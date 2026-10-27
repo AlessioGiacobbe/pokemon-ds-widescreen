@@ -224,6 +224,13 @@ elseif(SSR_SWITCH)
     # Files put in the .nro's romfs (for the Black games' shared build, their function tables
     # made without a ROM: tools/switch/build_game.sh bw). Empty: none.
     set(SSR_SWITCH_ROMFS "" CACHE PATH "Folder whose files go in the .nro's romfs")
+    # The all-games program (tools/switch/build_game.sh all): its game list also shows the games
+    # in the other folders of /switch (the one-game programs' folders). The one-game programs
+    # only look in their own folder.
+    option(SSR_ALL_GAMES "Switch: the all-games program" OFF)
+    if(SSR_ALL_GAMES)
+        target_compile_definitions(ssrecomp PRIVATE SSR_ALL_GAMES)
+    endif()
     add_custom_target(ssrecomp_nro ALL
         COMMAND "${CMAKE_COMMAND}"
             "-DNACPTOOL=${SSR_NACPTOOL}" "-DELF2NRO=${SSR_ELF2NRO}"
