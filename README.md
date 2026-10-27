@@ -37,7 +37,7 @@ DS game, presented the way it should look on a Switch.
 1. Download the game's zip (table above) and unzip it to the root of the SD
    card. It makes a folder for each game in `/switch/`; a game whose ROM you
    don't put in its folder just isn't used. (For the download with all six
-   games in one program, see [below](#all-the-games-in-one-program).)
+   games in one program, see [below](#all-six-games-in-one-program).)
 2. Copy your own ROM into the game's folder, as the only `.nds` file there.
 3. **Hold R while starting any game** to open the Homebrew Menu, then pick the
    game (started from the album there is not enough memory). **QUIT** in the
@@ -55,28 +55,48 @@ choose to install a forwarder. Do it once per game; keep the game's folder
 where it is, as the forwarder starts the `.nro` in it. Each game then has its
 own entry, so sys-clk (below) can have its own settings for it.
 
-### All the games in one program
+---
 
-`pokemon-ds-wide-all-switch.zip` is one program for all six games, with a grid to
-choose from when it starts. Each game is shown with the icon from its ROM, or
-with a picture of your own: put it in `/switch/pokemon-ds-wide/icons/` named
-after the game's code (`IRBO` Black, `IRAO` White, `IREO` Black 2, `IRDO`
-White 2, `IPKE` HeartGold, `IPGE` SoulSilver), e.g. `icons/IREO.jpg` (JPEG or
-PNG, square). A game in a one-game folder shows that program's HOME Menu icon.
+## All six games in one program
+
+![The game list: Black, White, Black 2, White 2, HeartGold and SoulSilver in a grid, Black 2 chosen with its save found](docs/screenshots/all-games-launcher.png)
+
+`pokemon-ds-wide-all-switch.zip` is one program for all six games. It opens
+on a grid of your games, each showing whether it has a save yet; pick one and
+it starts. The separate downloads above are still there if you only want one
+pair.
+
+**Installing**
 
 1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`.
 2. Copy your ROMs into that folder (any names; a `roms` folder inside it works
-   too). Each game keeps its save there under its own name (`black2.sav`,
-   `soulsilver.sav` and so on).
+   too).
 3. Hold R while starting any game, pick **Pokemon DS Widescreen**, then the
-   game. **CHANGE GAME** in the pause menu saves and goes back to the list.
+   game.
 
-Already using the one-game folders? Leave them as they are: the list also
-shows the games in your other `/switch/` folders, each played with the save
-already in its folder (the same save its one-game program uses, so you can
-start a game either way). A game in both places is listed twice, each with
-its own save, and says which folder it is in. With a single game found there
-is no list: it starts straight away.
+**Using the list:** the D-pad or a stick moves between games, **A** plays,
+**+** goes back to the Homebrew Menu. It opens on the game you played last.
+**CHANGE GAME** in the pause menu (+ and − together) saves and comes back to
+the list. With only one game found there is no list: it starts straight away.
+
+**Saves:** each game keeps its save in the folder its ROM is in, under its own
+name (`black2.sav`, `white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`,
+`heartgold.sav`).
+
+**Already using the separate downloads?** Leave them as they are: the list
+also shows the games in your other `/switch/` folders, each played with the
+save already in its folder (the same save its own program uses, so you can
+start a game either way). A game in both places is listed twice, each with its
+own save, and says which folder it is in.
+
+**The pictures:** each game shows the icon from its ROM, or the HOME Menu icon
+of its separate program when that is installed. For your own, put a square
+JPEG or PNG in `/switch/pokemon-ds-wide/icons/` named after the game's code:
+`IRBO` Black, `IRAO` White, `IREO` Black 2, `IRDO` White 2, `IPKE` HeartGold,
+`IPGE` SoulSilver (e.g. `icons/IREO.jpg`).
+
+The pause-menu settings are shared by all the games in this program (the
+separate programs keep their own).
 
 ---
 
