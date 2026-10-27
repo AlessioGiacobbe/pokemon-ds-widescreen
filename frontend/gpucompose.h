@@ -189,35 +189,6 @@ private:
         if (wide.fadeMode == 2) k = 255 * (16 - wide.fade) / 16;
         SDL_SetTextureColorMod(tex, k, k, k);
         SDL_RenderCopy(R, tex, nullptr, nullptr);
-        if (wide.blur && wide.blur->W > 0)
-        {
-            // Focus blur: a blurred copy, clear in the middle, blended over the world.
-            const FocusBlur& fb = *wide.blur;
-            if (SDL_Texture* t = Make(BlurTex, fb.W, fb.H))
-            {
-                SDL_UpdateTexture(t, nullptr, fb.Layer.data(), fb.W * 4);
-                SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);
-                SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
-                SDL_SetTextureColorMod(t, k, k, k);
-                SDL_RenderCopy(R, t, nullptr, nullptr);
-            }
-        }
-        if (wide.fx && wide.fx->W > 0)
-        {
-            // Night effects: the world multiplied by one layer, then the other added, both
-            // stretched smoothly over it (under the game's fades, like the world).
-            const NightFx& fx = *wide.fx;
-            for (int layer = 0; layer < 2; layer++)
-            {
-                SDL_Texture* t = Make(FxTex[layer], fx.W, fx.H);
-                if (!t) continue;
-                SDL_UpdateTexture(t, nullptr, layer ? fx.Add.data() : fx.Mul.data(), fx.W * 4);
-                SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);
-                SDL_SetTextureBlendMode(t, layer ? SDL_BLENDMODE_ADD : SDL_BLENDMODE_MOD);
-                SDL_SetTextureColorMod(t, layer ? k : 255, layer ? k : 255, layer ? k : 255);
-                SDL_RenderCopy(R, t, nullptr, nullptr);
-            }
-        }
         if (wide.fadeMode == 1 && wide.fade)
         {
             SDL_SetRenderDrawBlendMode(R, SDL_BLENDMODE_BLEND);
@@ -398,7 +369,7 @@ private:
     SDL_Renderer* R;
     SDL_BlendMode Premultiplied;
     std::vector<Tex> Slots;
-    Tex WideTex, BlurTex, FxTex[2], EdgeTex[2], FillTex[2], NarrowTex[2], WeatherTex[2];
+    Tex WideTex, EdgeTex[2], FillTex[2], NarrowTex[2], WeatherTex[2];
     uint32_t Fill[16 * 192];
     std::vector<SDL_Rect> Spans;
     std::vector<uint32_t> Buf, WideFilled;

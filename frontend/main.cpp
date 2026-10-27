@@ -57,12 +57,6 @@
 #endif
 #include "battlewide.h"
 #include "platinum.h" // Pokemon Platinum: which of its screens is up
-#include "voidfill.h"
-#include "resume.h" // AUTOSAVE: resume points
-#define DR_MP3_IMPLEMENTATION
-#include "songs.h" // MUSIC: the player's own songs in place of the game's (SoulSilver, HeartGold)
-namespace melonDS { extern u16 ssr_SpuHearMute; } // SPU.cpp: channels left out of what is heard
-#include "worldblocks.h" // SoulSilver and HeartGold: the far map and night effects
 #include "belowscreen.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -1242,34 +1236,6 @@ struct Settings
     // Black, White, Black 2 and White 2: more of the map loaded around the player, so the wide
     // view does not run out of land at its sides (frontend/bw2map.h). Read when the game starts.
     bool wideMap = true;
-    // WORLD ZOOM, percent (one of ZoomSteps): above 100 the overworld is drawn larger, below it
-    // more of it is seen around the player. Only the 3D world is zoomed; text boxes and other
-    // 2D parts keep their size.
-    int zoom = 100;
-    // VOID FILL: ground the game has not loaded yet, beyond the DS's own view, shown as a soft
-    // haze in the colours of the ground beside it instead of black (frontend/voidfill.h).
-    bool voidFill = true;
-    // FOCUS BLUR: 0 off, 1 light, 2 strong; the world softens towards the view's edges
-    // (frontend/focusblur.h).
-    int blur = 0;
-    // FAR MAP (SoulSilver, HeartGold): the map blocks around the ones the game has loaded,
-    // drawn into the widescreen world (frontend/worldblocks.h).
-    bool farMap = true;
-    // NIGHT EFFECTS (SoulSilver, HeartGold): glowing windows and lamps, pools of lamp light,
-    // fireflies and night colours outdoors in the evening and at night (frontend/nightfx.h).
-    bool nightFx = true;
-    // AUTOSAVE: resume points beside the save (frontend/resume.h); the game carries on from the
-    // newest at the next start.
-    bool autosave = true;
-    // MUSIC (SoulSilver, HeartGold): the player's own songs (frontend/songs.h), when there are
-    // any, in place of the game's tunes.
-    bool newSongs = true;
-    // FRAME RATE (computer, from Johto Online): UNLIMITED draws more pictures of the world than
-    // the game makes, between its frames, as many as there is time for (for displays faster
-    // than 60 Hz); the game keeps its own pace. VSYNC shows each picture at the display's
-    // refresh (no tearing).
-    bool fpsUnlimited = false;
-    bool vsync = false;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1329,15 +1295,6 @@ struct Settings
             else if (k == "smooth") smooth = v == "1";
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_map") wideMap = v == "1";
-            else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), 60, 150);
-            else if (k == "void_fill") voidFill = v != "0";
-            else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
-            else if (k == "far_map") farMap = v != "0";
-            else if (k == "night_fx") nightFx = v != "0";
-            else if (k == "autosave") autosave = v != "0";
-            else if (k == "music") newSongs = v != "original";
-            else if (k == "fps_unlimited") fpsUnlimited = v == "1";
-            else if (k == "vsync") vsync = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1368,15 +1325,6 @@ struct Settings
         f << "smooth=" << (smooth ? 1 : 0) << "\n";
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_map=" << (wideMap ? 1 : 0) << "\n";
-        f << "zoom=" << zoom << "\n";
-        f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
-        f << "blur=" << blur << "\n";
-        f << "far_map=" << (farMap ? 1 : 0) << "\n";
-        f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
-        f << "autosave=" << (autosave ? 1 : 0) << "\n";
-        f << "music=" << (newSongs ? "new" : "original") << "\n";
-        f << "fps_unlimited=" << (fpsUnlimited ? 1 : 0) << "\n";
-        f << "vsync=" << (vsync ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -1753,15 +1701,6 @@ int main(int argc, char** argv)
     focus.Init();
     layout.swapped = focus.Swapped();
 
-    // VSYNC: presenting a picture waits for the display's refresh. With FRAME RATE UNLIMITED
-    // that paces the pictures between the game's frames to the display; the game's own frames
-    // keep their clock (a present waits at most one refresh).
-    auto applyVSync = [&]() {
-#if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(__SWITCH__)
-        if (renderer && SDL_RenderSetVSync(renderer, cfg.vsync ? 1 : 0) != 0)
-            fprintf(stderr, "VSync %s: %s\n", cfg.vsync ? "on" : "off", SDL_GetError());
-#endif
-    };
     auto applySmooth = [&]() {
         for (int i = 0; i < 2; i++)
             if (tex[i]) SDL_SetTextureScaleMode(tex[i], cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
@@ -1845,7 +1784,6 @@ int main(int argc, char** argv)
         for (int i = 0; i < 2; i++)
             tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 192);
         applySmooth();
-        applyVSync();
         SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
 
         SDL_AudioSpec want;
@@ -2116,44 +2054,6 @@ int main(int argc, char** argv)
         // Only these are watched (all functions for --trace-funcs).
         funcWatch.Attach(*nds, opt.traceFuncsAt.empty() ? bw2Names : std::vector<std::string>());
         fprintf(stderr, "[bw2] field %d, menu %d, bag %d, battle %d\n", bw2.field, bw2.fieldMenu, bw2.bag, bw2.battle);
-    }
-    // AUTOSAVE (resume.h): at the start, the newest resume point that holds this save carries
-    // the game on from where it was. Not in tests unless asked for (SSR_AUTOSAVE=1), nor with
-    // a snapshot given, lockstep or no saving.
-    // MUSIC (songs.h): the player's own songs, from the songs folder beside the save (an MP3
-    // file for each piece of the game's music listed in songs.txt). SoulSilver and HeartGold.
-    SongPlayer songs;
-    static std::string songsDir;
-    songsDir = dir + "/songs/";
-    if (soulSilverRom && songs.Load([](const std::string& name) { return ReadFile(songsDir + name); }))
-        fprintf(stderr, "[songs] a list of songs in %s\n", songsDir.c_str());
-    Resume::Point resume;
-    resume.path = opt.save + ".resume";
-    char gameCode[4] = {};
-    if (nds->GetNDSCart() && nds->GetNDSCart()->GetROMLength() > 0x10) memcpy(gameCode, nds->GetNDSCart()->GetROM() + 0x0C, 4);
-    const uint32_t resumeFlags = bw2map.on ? 1 : 0;
-    const bool resumeOk = !ref && !opt.noSave && !opt.save.empty() && opt.stateLoad.empty() && (!opt.headless || getenv("SSR_AUTOSAVE"));
-    uint32_t resumeWrittenAt = 0, saveChangedAt = 0;
-    if (resumeOk && cfg.autosave)
-    {
-        Resume::Header h;
-        bool broken = false;
-        if (resume.Load(*nds, resumeFlags, gameCode, h, broken))
-        {
-            rc_reset();
-            SetClock(*nds, opt.headless); // (now, not when the snapshot was made)
-            fprintf(stderr, "[autosave] carried on from %s (%lld s old)\n", resume.path.c_str(), (long long)(time(nullptr) - h.time));
-        }
-        else if (broken)
-        {
-            // Half loaded: started again from the beginning, as without it.
-            fprintf(stderr, "[autosave] the resume point could not be loaded; starting the game\n");
-            nds->Reset();
-            nds->SetupDirectBoot("game.nds");
-            SetClock(*nds, opt.headless);
-            nds->Start();
-            rc_reset();
-        }
     }
     Scene lastKnownBw2;
     uint32_t lastKnownBw2Frame = 0;
@@ -3528,31 +3428,6 @@ int main(int argc, char** argv)
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
     BattleWide battleWide;
-    // VOID FILL and FOCUS BLUR over the widescreen world (from Johto Online).
-    VoidFill voidFill;
-    FocusBlur focusBlur;
-    uint64_t focusBlurSerial = ~0ull;
-    int focusBlurLevel = 0;
-    // FAR MAP and NIGHT EFFECTS (from Johto Online): SoulSilver's and HeartGold's map blocks
-    // around the loaded ones, drawn into the widescreen world when a frame's 3D is flushed
-    // (inside the emulated frame, with that frame's camera; worldblocks.h), and the night
-    // over it (nightfx.h). The ROM is the cartridge's copy.
-    WorldBlocks worldBlocks;
-    NightFx nightFx;
-    std::vector<NightFly> fireflies;
-    std::vector<NightLight> lamps;
-    // Set each frame: the overworld is on the screen, drawn wide (the emulation reads it).
-    std::atomic<bool> farMapNow { false };
-    bool fieldWide = false;
-    bool calmField = false; // the overworld (or its menu) is running: AUTOSAVE's resume points
-    uint64_t nightFxSerial = ~0ull;
-    if (soulSilverRom && nds->GetNDSCart())
-    {
-        worldBlocks.SetRom(nds->GetNDSCart()->GetROM(), nds->GetNDSCart()->GetROMLength());
-        melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
-            if (farMapNow.load(std::memory_order_relaxed)) worldBlocks.Build(*nds, commands);
-        };
-    }
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
 
@@ -3696,7 +3571,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_FARMAP, M_NIGHTFX, M_AUTOSAVE, M_MUSIC, M_FPSMAX, M_VSYNC, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3745,24 +3620,6 @@ int main(int argc, char** argv)
             // starts, so a change waits for the next start.)
             { "WIDE MAP LOADING", !bw2map.Supported() ? "-" : std::string(cfg.wideMap ? "ON" : "OFF") +
                 (cfg.wideMap != bw2map.on ? " (NEXT START)" : "") },
-            { "WORLD ZOOM", std::to_string(cfg.zoom) + "%" },
-            { "VOID FILL", cfg.voidFill ? "ON" : "OFF" },
-            { "FOCUS BLUR", cfg.blur == 2 ? "STRONG" : cfg.blur == 1 ? "LIGHT" : "OFF" },
-            // (SoulSilver and HeartGold.)
-            { "FAR MAP", !soulSilverRom ? "-" : cfg.farMap ? "ON" : "OFF" },
-            { "NIGHT EFFECTS", !soulSilverRom ? "-" : cfg.nightFx ? "ON" : "OFF" },
-            // ON: carries on where the game was left at the next start (see resume.h).
-            { "AUTOSAVE", cfg.autosave ? "ON" : "OFF" },
-            // (SoulSilver and HeartGold, with songs listed in songs/songs.txt beside the save.)
-            { "MUSIC", !songs.Any() ? "-" : cfg.newSongs ? "YOUR SONGS" : "ORIGINAL" },
-#ifdef __SWITCH__
-            { "FRAME RATE", "-" },
-            { "VSYNC", "-" },
-#else
-            // (UNLIMITED: with the world drawn by the processor, and not with SSR_PIPELINE.)
-            { "FRAME RATE", cfg.fpsUnlimited ? "UNLIMITED" : "60" },
-            { "VSYNC", cfg.vsync ? "ON" : "OFF" },
-#endif
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn || pt.on ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -3954,10 +3811,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "[pipeline] %s\n", pipelined ? "on: each frame is shown while the next one is emulated" : "could not start");
     }
 
-    // FRAME RATE UNLIMITED: brings a job's world picture up to date with a picture between the
-    // game's frames (set in the main loop, where the picture is taken); false if it cannot.
-    std::function<bool(DrawJob&)> betweenRefresh;
-    auto showJob = [&](DrawJob& j) {
+    auto drawFrame = [&](DrawJob& j) {
         // (The widened battle picture, from what was grabbed after the frame: made here, beside
         // the next frame's emulation.)
         if (j.battleRender)
@@ -4054,56 +3908,12 @@ int main(int argc, char** argv)
         if (ms - fpsSince >= 1000)
         {
             shownFps = (int)(presented * 1000 / (ms - fpsSince));
-            static const bool fpsLog = getenv("SSR_FPS_LOG") != nullptr; // (tests)
-            if (fpsLog) fprintf(stderr, "[fps] %d pictures a second\n", shownFps);
             presented = 0;
             fpsSince = ms;
         }
 
-    };
-    auto drawFrame = [&](DrawJob& j) {
-        showJob(j);
         nextTick += (uint64_t)(frameTime * perfFreq);
         uint64_t now = SDL_GetPerformanceCounter();
-        if (cfg.fpsUnlimited && melonDS::Wide.Between && j.merged && betweenRefresh && (now < nextTick || getenv("SSR_BETWEEN_SHOTS")))
-        {
-            // FRAME RATE UNLIMITED: until the game's next frame is due, the world is drawn again
-            // at later moments between this picture and the next and shown, as often as there
-            // is time for. The game itself keeps to its own pace.
-            const uint64_t from = now, span = (uint64_t)(frameTime * perfFreq);
-            // What one costs (an average, kept from frame to frame, that drifts down while none
-            // fits so that a slow one does not stop them for good) and a millisecond to spare:
-            // the game's next frame must not start late.
-            static uint64_t cost = 0;
-            const uint64_t spare = perfFreq / 1000;
-            const bool shot = j.wantShot;
-            const uint32_t shotFrame = j.frameNo;
-            // (Tests: SSR_BETWEEN_SHOTS=1 also writes the pictures between, as frame * 10 + n.)
-            static const bool betweenShots = getenv("SSR_BETWEEN_SHOTS") != nullptr;
-            int betweenN = 0;
-            j.wantShot = false;
-            for (;;)
-            {
-                const uint64_t t0 = SDL_GetPerformanceCounter();
-                // (With the test's pictures, two evenly spaced, however long they take.)
-                const bool forced = betweenShots && shot;
-                if (forced ? betweenN >= 2 : t0 + cost + spare >= nextTick)
-                {
-                    if (!forced) cost -= cost / 32;
-                    break;
-                }
-                const float at = forced ? (betweenN + 1) / 3.0f : (float)((double)(t0 + cost - from) / span); // where it is when it is on the screen
-                if (!melonDS::WideDrawBetween(nds->GPU, at) || !betweenRefresh(j)) break;
-                j.wantShot = shot && betweenShots;
-                j.frameNo = shotFrame * 10 + ++betweenN;
-                showJob(j);
-                const uint64_t took = SDL_GetPerformanceCounter() - t0;
-                cost = cost ? (cost * 3 + took) / 4 : took;
-            }
-            j.wantShot = shot;
-            j.frameNo = shotFrame;
-            now = SDL_GetPerformanceCounter();
-        }
         if (now < nextTick)
         {
             // Sleep for most of the wait and spin for the last part of a millisecond:
@@ -4582,42 +4392,6 @@ int main(int argc, char** argv)
             case M_WIDEMAP:
                 if (bw2map.Supported()) cfg.wideMap = !cfg.wideMap;
                 break;
-            case M_ZOOM:
-            {
-                static const int steps[] = { 60, 70, 80, 90, 100, 115, 130, 150 };
-                const int n = (int)(sizeof(steps) / sizeof(steps[0]));
-                int i = 0;
-                while (i + 1 < n && steps[i] < cfg.zoom) i++;
-                cfg.zoom = steps[(i + (dir < 0 ? n - 1 : 1)) % n];
-                break;
-            }
-            case M_VOIDFILL:
-                cfg.voidFill = !cfg.voidFill;
-                break;
-            case M_BLUR:
-                cfg.blur = (cfg.blur + (dir < 0 ? 2 : 1)) % 3;
-                break;
-            case M_FARMAP:
-                if (soulSilverRom) cfg.farMap = !cfg.farMap;
-                break;
-            case M_NIGHTFX:
-                if (soulSilverRom) cfg.nightFx = !cfg.nightFx;
-                break;
-            case M_AUTOSAVE:
-                cfg.autosave = !cfg.autosave;
-                break;
-            case M_MUSIC:
-                if (songs.Any()) cfg.newSongs = !cfg.newSongs;
-                break;
-#ifndef __SWITCH__
-            case M_FPSMAX:
-                cfg.fpsUnlimited = !cfg.fpsUnlimited;
-                break;
-            case M_VSYNC:
-                cfg.vsync = !cfg.vsync;
-                applyVSync();
-                break;
-#endif
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
@@ -4860,18 +4634,6 @@ int main(int argc, char** argv)
                 (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20)));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
-            // WORLD ZOOM: the overworld only (battles keep their framing).
-            const bool zoomable = funcWatchOn ? (pt.on ? funcWatch.Ran(pt.field, 16) && !funcWatch.Ran(pt.battle, 2)
-                                                       : funcWatch.Ran(bw2.field, 16) && !funcWatch.Ran(bw2.battle, 2))
-                                              : (fieldActive() || menuReturn > 0) && !scene.edgeFill;
-            static const int zoomEnv = getenv("SSR_ZOOM") ? atoi(getenv("SSR_ZOOM")) : 0; // (tests: the settings are not read headless)
-            melonDS::Wide.Zoom = wantWide && zoomable ? (zoomEnv ? zoomEnv : cfg.zoom) / 100.0f : 1.0f;
-            // FRAME RATE UNLIMITED: what drawing pictures between the game's frames needs is kept.
-            melonDS::Wide.Between = cfg.fpsUnlimited && wantWide && !opt.headless && !pipelined;
-            static const char* farEnv = getenv("SSR_FARMAP"); // (tests)
-            farMapNow = soulSilverRom && wantWide && zoomable && (farEnv ? atoi(farEnv) != 0 : cfg.farMap);
-            fieldWide = soulSilverRom && wantWide && zoomable;
-            calmField = zoomable;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;
@@ -4926,56 +4688,6 @@ int main(int argc, char** argv)
                 wideImage.pixels = melonDS::Wide.Front;
                 wideImage.w = melonDS::Wide.FrontW;
                 wideImage.h = melonDS::Wide.FrontH;
-                // (Tests: the settings are not read headless.)
-                static const char* voidEnv = getenv("SSR_VOIDFILL");
-                static const char* blurEnv = getenv("SSR_BLUR");
-                if (voidEnv ? atoi(voidEnv) != 0 : cfg.voidFill)
-                {
-                    // The DS's own view: 256 of the view's base pixels across, all 192 down,
-                    // both scaled by the zoom. Its empty pixels are the game's own look (the
-                    // black around a room), which stays.
-                    const float zoom = melonDS::Wide.Zoom > 0 ? melonDS::Wide.Zoom : 1.0f;
-                    wideImage.pixels = voidFill.Apply(wideImage.pixels, wideImage.w, wideImage.h,
-                        std::min(1.0f, 256 * zoom / std::max(256.0f, melonDS::Wide.ViewWidth)), std::min(1.0f, zoom),
-                        melonDS::Wide.FrontSerial);
-                }
-                const int blurLevel = blurEnv ? std::clamp(atoi(blurEnv), 0, 2) : cfg.blur;
-                if (blurLevel)
-                {
-                    // Made again only for a new picture (the in-between frames and the
-                    // pause menu show the same one).
-                    if (melonDS::Wide.FrontSerial != focusBlurSerial || blurLevel != focusBlurLevel)
-                    {
-                        focusBlur.Build(wideImage.pixels, wideImage.w, wideImage.h, blurLevel);
-                        focusBlurSerial = melonDS::Wide.FrontSerial;
-                        focusBlurLevel = blurLevel;
-                    }
-                    wideImage.blur = &focusBlur;
-                }
-                static const char* nightEnv = getenv("SSR_NIGHTFX"); // (tests)
-                if (fieldWide && (nightEnv ? atoi(nightEnv) != 0 : cfg.nightFx) && worldBlocks.Outdoors(*nds))
-                {
-                    // Evening and night by the game's clock (outdoors: interiors look the same at
-                    // any hour). SSR_NIGHT_HOUR sets the hour for tests.
-                    int year, month, day, hour, minute, second;
-                    nds->RTC.GetDateTime(year, month, day, hour, minute, second);
-                    static const char* hourEnv = getenv("SSR_NIGHT_HOUR");
-                    if (hourEnv) hour = atoi(hourEnv), minute = 0;
-                    const float strength = NightStrength(hour, minute);
-                    if (strength > 0)
-                    {
-                        if (melonDS::Wide.FrontSerial != nightFxSerial)
-                        {
-                            fireflies.clear();
-                            worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
-                            lamps.clear();
-                            worldBlocks.Lights(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, lamps);
-                            nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies, lamps);
-                            nightFxSerial = melonDS::Wide.FrontSerial;
-                        }
-                        wideImage.fx = &nightFx;
-                    }
-                }
                 // Fades: the game darkens or whitens its screen with the master brightness
                 // register, or with a brightness effect on the 3D layer.
                 const auto& unit = wideUnit;
@@ -5004,13 +4716,6 @@ int main(int argc, char** argv)
                         now & 1, scene.name, (now >> 1) & 1, (now >> 2) & 1, wideImage.fadeMode, wideImage.fade);
                 last = now;
             }
-        };
-        betweenRefresh = [&](DrawJob& j) {
-            if (scene.edgeFill || j.wide.placed || j.battleRender) return false;
-            takeWideImage();
-            if (!wideImage.pixels || wideImage.placed) return false;
-            j.wide = wideImage;
-            return true;
         };
         if (!paused)
         {
@@ -5263,43 +4968,6 @@ int main(int argc, char** argv)
             got = emuGot;
             // (Silent while the C-Gear's question is answered unseen.)
             if (cgearHidden && got > 0) std::fill(audioBuf.begin(), audioBuf.begin() + (size_t)got * 2, (int16_t)0);
-            if (songs.Any())
-            {
-                // MUSIC (songs.h): the game's music now (sSoundWork.currentSeqNo), a jingle on (its
-                // wait after a fanfare), and whether its music channels sound (SOUNDxCNT busy).
-                auto readRam = [&](uint32_t a) { u32 v; memcpy(&v, &nds->MainRAM[a & nds->MainRAMMask & ~3u], 4); return v; };
-                const uint32_t soundWork = 0x02111958;
-                const int seq = (int)(readRam(soundWork + 0xBEBFC) & 0xFFFF);
-                const bool jingle = (readRam(soundWork + 0xBEC00) >> 16 & 0xFFFF) != 0;
-                bool busy = false, effects = false;
-                for (int i = 0; i < 16; i++)
-                    if (nds->SPU.Read32(0x04000400 + 16 * i) >> 31)
-                    {
-                        busy |= (SongPlayer::MusicChannels >> i & 1) != 0;
-                        effects |= (SongPlayer::EffectChannels >> i & 1) != 0;
-                    }
-                static const bool songLog = getenv("SSR_SONGS_LOG") != nullptr;
-                static int lastSeq = -1;
-                if (songLog && (seq != lastSeq || frame % 120 == 0)) fprintf(stderr, "[songs] frame %u: music %d, busy %d, jingle %d, mute %04x\n", frame, seq, (int)busy, (int)jingle, songs.Mute());
-                lastSeq = seq;
-                songs.Update(cfg.newSongs && !opt.lockstep, seq, busy, effects, jingle, frame);
-                melonDS::ssr_SpuHearMute = songs.Mute();
-                // Faster than normal (fast forward), only the first emulated frame's sound is
-                // kept, which is far shorter than the time that goes by; songs go on at their own
-                // pace, so the sound sent is as long as that time (the game's part padded with
-                // silence). Otherwise they stutter and slow down.
-                static uint64_t soundAt = 0;
-                const uint64_t at = SDL_GetPerformanceCounter();
-                if (speed > 1 && got > 0 && !opt.headless && soundAt)
-                {
-                    const int room = std::min<int>(24000, (int)audioBuf.size() / 2);
-                    const int n = std::clamp((int)((at - soundAt) * 48000 / SDL_GetPerformanceFrequency()), got, room);
-                    std::fill(audioBuf.begin() + got * 2, audioBuf.begin() + n * 2, (int16_t)0);
-                    got = n;
-                }
-                soundAt = at;
-                if (got > 0) songs.Mix(audioBuf.data(), got);
-            }
         }
         else if (pendingJob.valid)
         {
@@ -5664,9 +5332,6 @@ int main(int argc, char** argv)
             if (queued < 48000 / 4 && !audioOut.empty())
                 SDL_QueueAudio(audio, audioOut.data(), (Uint32)(audioOut.size() * 2));
         }
-        // (Tests: SSR_AUDIO_DUMP=<file> writes what is heard there, 48 kHz stereo 16-bit.)
-        static FILE* audioDump = getenv("SSR_AUDIO_DUMP") ? fopen(getenv("SSR_AUDIO_DUMP"), "wb") : nullptr;
-        if (audioDump && got > 0) fwrite(audioBuf.data(), 4, got, audioDump);
         if (opt.audioStats && got > 0)
         {
             for (int i = 0; i < got * 2; i++)
@@ -5890,15 +5555,6 @@ int main(int argc, char** argv)
             if (!WriteSnapshot(*nds, opt.stateSave, scriptClock)) fprintf(stderr, "snapshot failed\n");
         }
 
-        // AUTOSAVE (resume.h): a resume point every 5 minutes on the overworld, and 2 seconds
-        // after the game has written its save (once it is back on the overworld).
-        if (Host::SaveIsDirty) saveChangedAt = frame;
-        if (resumeOk && cfg.autosave && calmField && !paused &&
-            (frame - resumeWrittenAt >= 5 * 60 * 60 || (saveChangedAt > resumeWrittenAt && frame - saveChangedAt >= 120)))
-        {
-            if (resume.Write(*nds, resumeFlags, frame, gameCode)) fprintf(stderr, "[autosave] resume point at frame %u\n", frame);
-            resumeWrittenAt = frame;
-        }
         if (!opt.noSave && frame % 120 == 0) FlushSave(opt.save);
         if (opt.frames && scriptClock >= opt.frames) running = false;
         if (opt.stopAt && frame >= opt.stopAt)
@@ -5920,12 +5576,6 @@ int main(int argc, char** argv)
     };
     exitStep("saving");
     if (!opt.noSave) FlushSave(opt.save);
-    // (And where the game was left, for the next start: once it has been played a little.)
-    if (resumeOk && cfg.autosave && frame > 600)
-    {
-        resume.Write(*nds, resumeFlags, frame, gameCode);
-        resume.Finish();
-    }
     if (!opt.headless)
     {
         if (!singleScreenRom) cfg.layout = LayoutName(layout.mode); // the automatic choice is not the player's setting
@@ -5947,7 +5597,6 @@ int main(int argc, char** argv)
     melonDS::WideGpuStop();
     if (!WideGpuMarker.empty()) remove(WideGpuMarker.c_str());
     melonDS::Wide.Owner = nullptr;
-    melonDS::Wide.Extra = nullptr;
 #ifdef SSR_GPU3D
     // The graphics chip's renderer ends its thread and its OpenGL objects while EGL is still
     // up (SDL_Quit below can take it down).

@@ -8,46 +8,6 @@
   **QUIT** in the pause menu goes back to it. It also lists the games in the other
   `/switch/` folders (the one-game downloads), each played with the save in its folder, so
   nothing needs moving. The download comes with an empty `roms` folder for your ROMs. The one-game downloads stay as they are.
-- **WORLD ZOOM (pause menu, every game):** the overworld drawn larger (up to 150%) or smaller
-  (down to 60%, more of the world seen around the player). Only the world is zoomed: text
-  boxes, menus and battles keep their size. Kept in the settings as `zoom`. (An idea from
-  Johto Online.)
-- **VOID FILL (pause menu, on by default):** where the wide view reaches ground the game has not
-  loaded yet (mostly when zoomed out), it is filled with a soft haze in the colours of the ground
-  beside it instead of black. The black around a room indoors is the game's own look and stays.
-  Kept in the settings as `void_fill`. (From Johto Online.)
-- **FOCUS BLUR (pause menu, OFF / LIGHT / STRONG):** the world softens towards the edges of the
-  view while the middle around the player stays sharp, like a model ("tilt-shift"). Text boxes
-  and menus stay sharp. Kept in the settings as `blur`. (From Johto Online.)
-- **FAR MAP (pause menu, SoulSilver and HeartGold, on by default):** the wide or zoomed-out
-  view no longer runs out of land: the map blocks around the ones the game has loaded are drawn
-  too (ground, buildings, trees and scrolling water), with the people standing on the
-  neighbouring maps. They are only drawn, the game never sees them. Kept in the settings as
-  `far_map`. (From Johto Online.)
-- **NIGHT EFFECTS (pause menu, SoulSilver and HeartGold, on by default):** outdoors in the
-  evening and at night (by the game's clock), lit windows and lamps keep their warm colours and
-  glow, street lamps light the ground around them, fireflies drift over tall grass and woods,
-  and the rest of the world takes on deeper night colours. Text boxes and menus are not
-  changed. Kept in the settings as `night_fx`. (From Johto Online.)
-- **AUTOSAVE (pause menu, every game, on by default):** the game carries on where it was left.
-  Every 5 minutes on the overworld, soon after each save the game writes, and when the game is
-  quit, a snapshot of the console is written beside the save (`<save>.resume`, the one before
-  kept as `<save>.resume.bak`); the next start carries on from it instead of booting. It is only
-  used while it holds the same save as the save file, so an in-game save made after it (or a
-  save file swapped in) is never rolled back: then the game boots as usual. Turn it off to boot
-  the game normally. Kept in the settings as `autosave`. (From Johto Online.)
-- **MUSIC (pause menu, SoulSilver and HeartGold):** your own songs in place of the game's tunes.
-  Put MP3 files in a `songs` folder beside the save, with a `songs.txt` listing
-  `<music number> = <file>` per line (the game's music numbers: 1028 is Route 29, for example;
-  `#` starts a comment). While a listed tune plays, the game's music is left out and the song
-  loops in its place, with short fades; sound effects, cries and jingles stay the game's own.
-  ORIGINAL in the menu goes back to the game's music. Kept in the settings as `music`. (From
-  Johto Online.)
-- **FRAME RATE and VSYNC (pause menu, computer):** FRAME RATE UNLIMITED draws the world again
-  between the game's frames, as many pictures as there is time for, for displays faster than
-  60 Hz (the game keeps its own pace; with the world drawn by the processor, the computer's
-  default). VSYNC shows each picture at the display's refresh, so it never tears. Kept in the
-  settings as `fps_unlimited` and `vsync`. (From Johto Online.)
 - **Black and White battles: catching and levelling up.** A thrown Poke Ball is shown whole
   as it lands and shakes (it was cut in two, its other half at the view's right edge: it lands
   where the player's HP box is, whose place was still being moved while the box was put away),
