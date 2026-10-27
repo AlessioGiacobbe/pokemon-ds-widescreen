@@ -4189,14 +4189,16 @@ int main(int argc, char** argv)
             mouseDown = false;
         }
 
-        const bool mashing = opt.battleMash && appRunning("Battle");
+        // (A game that is not recompiled: its battle from its functions.)
+        const bool fwBattle = funcWatchOn && (funcWatch.Ran(bw2.battle, 2) || funcWatch.Ran(pt.battle, 2));
+        const bool mashing = opt.battleMash && (appRunning("Battle") || fwBattle);
         if (mashing && (frame / 12) % 2 == 0)
         {
             // A fights; if that wandered into the in-battle party or bag screen (e.g. by answering
             // Yes to "switch Pokemon?"), B backs out and declines the question that led there.
             // If B does not leave it (the lead fainted), move to the next Pokemon and send it out.
             static uint32_t submenuSeen = 0, submenuSince = 0;
-            if (sectionActive("OVY_8"))
+            if (sectionActive("OVY_8") || (pt.on && (funcWatch.Ran(pt.battleBag, 2) || funcWatch.Ran(pt.battleParty, 2))))
             {
                 if (!submenuSince || frame - submenuSeen > 24) submenuSince = frame;
                 submenuSeen = frame;
