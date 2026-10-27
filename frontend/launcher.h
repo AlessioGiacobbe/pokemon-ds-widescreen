@@ -231,11 +231,13 @@ inline void FindArt(Game& g, const std::string& listFolder)
     }
 }
 
-// The ROMs in a folder and in its roms/ folder; their saves go in the folder itself.
-inline void ScanFolder(const std::string& folder, std::vector<Game>& out)
+// The ROMs in a folder (and in its roms/ folder, with subfolder); their saves go in the folder
+// itself.
+inline void ScanFolder(const std::string& folder, std::vector<Game>& out, bool subfolder = true)
 {
-    for (const std::string& dir : { folder, folder + "/roms" })
+    for (const std::string& dir : { folder, subfolder ? folder + "/roms" : std::string() })
     {
+        if (dir.empty()) continue;
         DIR* d = opendir(dir.c_str());
         if (!d) continue;
         std::vector<std::string> names;

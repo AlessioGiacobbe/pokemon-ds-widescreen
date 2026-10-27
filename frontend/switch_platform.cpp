@@ -146,8 +146,11 @@ std::vector<Launcher::Game> FindGames(const std::string& dir, bool& ownFolder)
     Launcher::Game g;
     ownFolder = true;
     if (Launcher::ReadGame(dir + "/rom.nds", dir, g)) return { g };
+#ifndef SSR_ALL_GAMES
+    // (A one-game program: its own folder only, as always.)
+    Launcher::ScanFolder(dir, games, false);
+#else
     Launcher::ScanFolder(dir, games);
-#ifdef SSR_ALL_GAMES
     {
         const size_t own = games.size();
         if (DIR* d = opendir("sdmc:/switch"))
@@ -247,6 +250,14 @@ bool Start(int& argc, char**& argv)
         return false;
     }
     int chosen = 0;
+#ifndef SSR_ALL_GAMES
+    // The one-game programs have no game list (only the all-games download does).
+    if (games.size() > 1)
+    {
+        ShowMessage("  More than one .nds file in\n  " + dir + "\n  Rename the one to play to rom.nds.");
+        return false;
+    }
+#else
     if (games.size() > 1)
     {
         // The list starts on the game played last.
@@ -280,6 +291,7 @@ bool Start(int& argc, char**& argv)
             g_canChange = true;
         }
     }
+#endif
     const Launcher::Game& game = games[chosen];
     const std::string rom = game.rom, gameDir = game.folder;
     char code[5] = {};
