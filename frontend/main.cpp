@@ -2322,6 +2322,7 @@ int main(int argc, char** argv)
             // click shows it).
             only("top", 0);
             sc.wide = wideView;
+            sc.weatherObj = pt.Weather(funcWatch, 4); // rain, snow, ...: repeated to the view's edges
             if (wideView && funcWatch.Ran(pt.startMenu, 2))
             {
                 // The X menu (its box x 154-253, y 0-181 of the top screen) stands against the
