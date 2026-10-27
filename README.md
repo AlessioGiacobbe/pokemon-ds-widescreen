@@ -13,8 +13,11 @@
 | **All six games in one** (one program, choose the game when it starts) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
-Every download is free of the games themselves: you bring your own ROM, and
-the program reads what it needs from it when the game starts.
+**Which one?** The **all six games** download is one program: start it and
+pick the game from a list. The other downloads are one program per game, if
+you only want one pair. Every download is free of the games themselves: you
+bring your own ROMs, and the program reads what it needs from them when the
+game starts.
 
 ## What is it?
 
@@ -32,12 +35,14 @@ DS game, presented the way it should look on a Switch.
 | 3D world | 4:3 at DS resolution | 16:9 at 720p, drawn by the Switch's graphics chip, skies and scenery carried to the edges |
 | Frame rate | the game's own 30 fps 3D | 60 fps, with in-between frames |
 
-## Installing (any of the games)
+## Installing a separate download
+
+(For the all six games download, see
+[All six games in one program](#all-six-games-in-one-program) instead.)
 
 1. Download the game's zip (table above) and unzip it to the root of the SD
    card. It makes a folder for each game in `/switch/`; a game whose ROM you
-   don't put in its folder just isn't used. (For the download with all six
-   games in one program, see [below](#all-six-games-in-one-program).)
+   don't put in its folder just isn't used.
 2. Copy your own ROM into the game's folder, as the only `.nds` file there.
 3. **Hold R while starting any game** to open the Homebrew Menu, then pick the
    game (started from the album there is not enough memory). **QUIT** in the
@@ -50,8 +55,9 @@ emulator or a flash cart, copy your save in under that name.
 [sphaira](https://github.com/ITotalJustice/sphaira) (a Homebrew Menu you can
 use instead of the usual one) you can install a forwarder for each game: an
 icon on the Switch's HOME Menu that starts it directly, with no holding R. In
-sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`) and
-choose to install a forwarder. Do it once per game; keep the game's folder
+sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`, or
+**Pokemon DS Widescreen** for the all six games download) and choose to install
+a forwarder. Do it once per game; keep the game's folder
 where it is, as the forwarder starts the `.nro` in it. Each game then has its
 own entry, so sys-clk (below) can have its own settings for it.
 
@@ -85,10 +91,10 @@ in `/switch/pokemon-ds-wide/` for a ROM in `roms/`, or in a separate
 download's folder for a ROM there.
 
 **Already using the separate downloads?** Leave them as they are: the list
-also shows the games in your other `/switch/` folders, each played with the
-save already in its folder (the same save its own program uses, so you can
-start a game either way). A game in both places is listed twice, each with its
-own save, and says which folder it is in.
+also shows the games in their folders and plays each with the save already
+there, so you don't need to move anything. If the same game is in both places
+it is listed twice, each copy with its own save, and the label under it says
+which folder it is in.
 
 **The pictures:** each game shows the icon from its ROM, or the HOME Menu icon
 of its separate program when that is installed. For your own, put a square
