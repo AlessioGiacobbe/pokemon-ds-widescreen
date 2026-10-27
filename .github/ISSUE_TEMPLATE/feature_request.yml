@@ -1,5 +1,5 @@
 name: Feature request
-description: An idea or something you'd like the game or setup to do.
+description: An idea or something you'd like the games to do on the Switch.
 labels: [enhancement]
 body:
   - type: textarea
@@ -15,16 +15,18 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: system
+    id: games
     attributes:
-      label: Which systems is it for?
+      label: Which games is it for?
       multiple: true
       options:
-        - Windows
-        - Linux
-        - Steam Deck / SteamOS
-        - Android
-        - All
+        - Black
+        - White
+        - Black 2
+        - White 2
+        - HeartGold
+        - SoulSilver
+        - All of them
   - type: checkboxes
     id: checks
     attributes:

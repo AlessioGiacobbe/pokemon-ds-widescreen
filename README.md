@@ -204,8 +204,7 @@ a Switch OLED in handheld mode. The full list of changes is in
   City and Route 16), parts of the neighbouring map pop in and out at the sides
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
-- Switch only for now. Bug reports: attach `game.log` from the game's folder,
-  and a save state from the pause menu if you can.
+- Switch only for now. Found a bug? See [Reporting a bug](#reporting-a-bug).
 
 ## What's next
 
@@ -230,6 +229,29 @@ the SoulSilver and HeartGold one (the SoulSilver ROM only gives the addresses
 in its tables; none of its code goes in). The full instructions, and the other
 builds, are in the
 [original project's README](docs/original-ssrecomp-README.md#nintendo-switch-experimental).
+
+## Reporting a bug
+
+Open an issue with the **Bug report** form
+([Issues](../../issues/new/choose) > New issue > Bug report). It asks for the
+game, your ROM's version and the **`game.log`** file, which says what the
+program did:
+
+1. **Find it:** `game.log` is in the game's folder on the SD card:
+   `/switch/pokemon-ds-wide/` for the all-games download, otherwise the game's
+   own folder (e.g. `/switch/pokemon-black2-wide/`). It is written again each
+   time the game starts, so copy it straight after the problem.
+2. **Get it onto a computer:** put the SD card in a card reader; or, leaving
+   it in the Switch, use Hekate's **Tools > USB Tools > SD Card** (or DBI's MTP
+   mode) to see the card on the computer over USB; or an FTP app such as ftpd
+   over Wi-Fi.
+3. **Add it to the form:** drag the file into the `game.log` box.
+
+A photo or short video of the screen helps too. Please never attach your ROM.
+A white or black screen when a game starts usually means the ROM isn't one the
+program plays: an English copy of Black, White, Black 2 or White 2 (US or
+Europe), or the English US copy of SoulSilver or HeartGold, unchanged (no
+patches, translations, randomizers or trimming).
 
 ## Support
 
