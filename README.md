@@ -212,30 +212,11 @@ a Switch OLED in handheld mode. The full list of changes is in
 - **Native Switch ports**: the dream, hopefully for all of them. Optimistic,
   but we're aiming for it.
 
-## Building it yourself
-
-On Linux or Windows with WSL2 (Ubuntu 24.04), with git, CMake, Ninja, Python 3
-and devkitPro's Switch toolchain (`sudo dkp-pacman -S switch-dev switch-sdl2`,
-or Docker, which then uses devkitPro's `devkitpro/devkita64` image):
-
-    tools/switch/build_game.sh bw
-
-makes the Black 2 and White 2 zip and the Black and White one in `build-sd/`
-(no ROM needed), and
-
-    tools/switch/build_game.sh hgss your-soulsilver-us.nds
-
-the SoulSilver and HeartGold one (the SoulSilver ROM only gives the addresses
-in its tables; none of its code goes in). The full instructions, and the other
-builds, are in the
-[original project's README](docs/original-ssrecomp-README.md#nintendo-switch-experimental).
-
 ## Reporting a bug
 
-Open an issue with the **Bug report** form
-([Issues](../../issues/new/choose) > New issue > Bug report). It asks for the
-game, your ROM's version and the **`game.log`** file, which says what the
-program did:
+Open a **[bug report](https://github.com/mamesj/pokemon-ds-widescreen-switch/issues/new?template=bug_report.yml)**
+(you need to be signed in to GitHub). The form asks for the game, your ROM's
+version and the **`game.log`** file, which says what the program did:
 
 1. **Find it:** `game.log` is in the game's folder on the SD card:
    `/switch/pokemon-ds-wide/` for the all-games download, otherwise the game's
