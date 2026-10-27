@@ -59,8 +59,8 @@ public:
             if (dst.w <= 0 || dst.h <= 0 || el.sw <= 0 || el.sh <= 0) continue;
             if (el.screen < 0)
             {
-                SDL_SetRenderDrawBlendMode(R, SDL_BLENDMODE_NONE);
-                SDL_SetRenderDrawColor(R, (el.keys[0] >> 16) & 0xFF, (el.keys[0] >> 8) & 0xFF, el.keys[0] & 0xFF, 255);
+                SDL_SetRenderDrawBlendMode(R, el.alpha == 255 ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(R, (el.keys[0] >> 16) & 0xFF, (el.keys[0] >> 8) & 0xFF, el.keys[0] & 0xFF, el.alpha);
                 SDL_RenderFillRect(R, &dst);
                 continue;
             }

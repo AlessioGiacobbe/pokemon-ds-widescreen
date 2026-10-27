@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Battle buttons are easier to read:** the chosen command or move has a thick white
+  outline and the others are shaded, so you can always see what A will press (the red outline
+  was lost around the red FIGHT button).
 - **One program for all six games (Switch):** the all-games download
   (`pokemon-ds-wide-all-switch.zip`) is now a single program that shows a grid of your games when it starts, each with the icon from its ROM (or
   your own picture in `icons/`, or the HOME Menu icon of a one-game program beside it), and

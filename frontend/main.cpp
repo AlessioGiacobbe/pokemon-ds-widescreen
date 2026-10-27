@@ -2120,9 +2120,9 @@ int main(int argc, char** argv)
             // of battleSel).
             std::vector<size_t> outlined;
             // The buttons fill the half: FIGHT, BAG and RUN from its left (after the message
-            // box) and POKeMON to the right edge of the view, their outlines on it; the
-            // moves the same width.
-            const float innerX = panelX + pad, innerW = panelW - pad - 10 / 8.0f;
+            // box) and POKeMON to the right edge of the view, the chosen one's outline on it;
+            // the moves the same width.
+            const float innerX = panelX + pad, innerW = panelW - pad - 16 / 8.0f;
             const float rowH = (panelH - 2 * pad - gap) / 2, rowY = panelY + pad, row2Y = rowY + rowH + gap;
             // A button cut from the touch screen (sx, sy, sw x sh) drawn dw wide and rowH
             // high: its label (lx0..lx1, everything that is not plain) stays as it is, and
@@ -2205,17 +2205,33 @@ int main(int argc, char** argv)
                     button(c, innerX + (i & 1) * (cellW + gap), (i >> 1) ? row2Y : rowY, (i & 1) ? innerW - cellW - gap : cellW, LAYER_BG2);
                 }
             }
-            // The chosen button is outlined in red. (The game's own cursor is not used by
-            // the panel; the keys that would bring up its red corners do not reach the game.)
+            // The chosen button is outlined in white and the others are shaded, so that the
+            // choice shows at a glance on any of the buttons (a red outline was lost around the
+            // red FIGHT button, and a thin one was hard to see on a TV). (The game's own cursor
+            // is not used by the panel; the keys that would bring up its red corners do not
+            // reach the game.)
+            std::vector<Element> shades;
             for (size_t k = 0; k < outlined.size(); k++)
             {
+                const bool chosen = (int)k == battleSel;
                 Element& el = sc.items[outlined[k]];
                 el.border = true;
-                el.borderColor = (int)k == battleSel ? 0xF04040 : 0x101218;
-                // (One width for all: outlines are drawn outside the buttons, and a thicker
-                // one would stick out past the edges of the buttons above or below it.)
-                el.borderWidth = 10;
+                el.borderColor = chosen ? 0xFFFFFF : 0x101218;
+                // (Outlines are drawn outside the buttons: 2 base pixels fits in the gap of 4
+                // between buttons and the panel's margins.)
+                el.borderWidth = chosen ? 16 : 6;
+                if (!chosen)
+                {
+                    // (A translucent black over the whole button, its backing's size: the
+                    // pieces themselves overlap, and made translucent they would show stripes.)
+                    Element shade = el;
+                    shade.border = false;
+                    shade.keys[0] = 0x000000;
+                    shade.alpha = 120;
+                    shades.push_back(shade);
+                }
             }
+            sc.items.insert(sc.items.end(), shades.begin(), shades.end());
         }
         else if (viewWidth < 300 || battleUnknown >= 20)
         {

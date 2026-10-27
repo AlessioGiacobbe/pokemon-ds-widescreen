@@ -892,8 +892,22 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                 {
                     int xa = x0, xb = x0 + w;
                     if (r > 0) RoundedRowExtent(x0, y0, w, h, r, y, xa, xb);
-                    for (int x = std::max(0, xa); x < std::min(outW, xb); x++)
-                        out[(size_t)y * outW + x] = 0xFF000000 | el.keys[0];
+                    if (el.alpha == 255)
+                        for (int x = std::max(0, xa); x < std::min(outW, xb); x++)
+                            out[(size_t)y * outW + x] = 0xFF000000 | el.keys[0];
+                    else
+                    {
+                        // (Translucent: a shade over what is below, e.g. a button not chosen.)
+                        const uint32_t al = el.alpha, ia = 255 - al, c = el.keys[0];
+                        for (int x = std::max(0, xa); x < std::min(outW, xb); x++)
+                        {
+                            uint32_t& d = out[(size_t)y * outW + x];
+                            const uint32_t r = (((d >> 16) & 0xFF) * ia + ((c >> 16) & 0xFF) * al) / 255;
+                            const uint32_t g = (((d >> 8) & 0xFF) * ia + ((c >> 8) & 0xFF) * al) / 255;
+                            const uint32_t b = ((d & 0xFF) * ia + (c & 0xFF) * al) / 255;
+                            d = 0xFF000000 | (r << 16) | (g << 8) | b;
+                        }
+                    }
                 }
                 continue;
             }
