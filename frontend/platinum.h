@@ -15,6 +15,17 @@
 
 struct PtFuncs
 {
+    // The names of Platinum's application layouts (pickSceneBw2), which stay up while the
+    // application fades out and change at once between two of them with both screens black.
+    static bool AppScene(const char* n)
+    {
+        static const char* const names[] = { "party", "bag", "summary", "options", "journal", "move-reminder",
+            "pokedex", "trainer-card", "pc-box", "map", "naming" };
+        for (const char* m : names)
+            if (!strcmp(n, m)) return true;
+        return false;
+    }
+
     bool on = false;
     int field = -1;          // the overworld, every frame
     int startMenu = -1;      // the X menu (and the applications started from it)

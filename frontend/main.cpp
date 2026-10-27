@@ -2100,6 +2100,9 @@ int main(int argc, char** argv)
                 bw2.weatherObj.push_back(bw2Find((std::string(w) + phase).c_str()));
         bw1.Init(opt.rom, funcWatch, bw2Names, opt.config); // Pokemon Black and White: their own functions too
         pt.Init(opt.rom, funcWatch, bw2Names);              // Pokemon Platinum: its own functions
+        // (Platinum has functions with Black 2's names, StartMenu_Main and CARD_WaitBackupAsync
+        // among them: Black 2's layouts must not pick them up.)
+        if (pt.on) bw2 = Bw2Funcs();
         bw1.battleButtons = cfg.battleButtons;
         {
             char code[5] = {};
@@ -2343,6 +2346,45 @@ int main(int argc, char** argv)
         };
         // The edges of the view the bottom screen fills when it stands against the right edge.
         const float viewLeft = 128 - viewWidth / 2, viewRight = 128 + viewWidth / 2;
+        // Platinum's screens other than battles and the overworld (frontend/platinum.h). False
+        // for a screen it has no layout for.
+        auto ptApp = [&]() {
+            auto ran = [&](int f) { return funcWatch.Ran(f, 2); };
+            // One screen at full height, the bars beside it in colours from its edges.
+            auto alone = [&](const char* name, int screen) {
+                only(name, screen);
+                sc.softBars = true;
+            };
+            if (ran(pt.party))
+            {
+                // The top screen; the touch screen only has Poke Balls. (Its edges are bands of
+                // blue that would turn to streaks: one blue beside it instead.)
+                only("party", 0);
+                sc.bgScreen = 0;
+                sc.bgX = 1;
+                sc.bgY = 140;
+            }
+            else if (ran(pt.bag)) alone("bag", 0);       // the touch screen: the pockets, which LEFT and RIGHT reach
+            else if (ran(pt.summary)) alone("summary", 0);
+            else if (ran(pt.options)) alone("options", 0);
+            else if (ran(pt.journal)) alone("journal", 0);
+            else if (ran(pt.moveReminder)) alone("move-reminder", 0);
+            else if (ran(pt.townMap)) alone("map", 0);   // the touch screen: a zoom button
+            else if (ran(pt.dex))
+                // The list or a page above, its buttons and tabs on the touch screen.
+                sc = Stack("pokedex", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+            else if (ran(pt.trainerCard))
+                // The card and its badges.
+                sc = Stack("trainer-card", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+            else if (ran(pt.box))
+                sc = Stack("pc-box", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+            else if (ran(pt.naming))
+                // The question (the top screen's message box) above the name and the keyboard.
+                sc = Stack("naming", { Crop(0, 0, 144, 256, 48), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
+            else if (ran(pt.evolution) || ran(pt.eggHatch)) alone("evolution", 0);
+            else return false;
+            return true;
+        };
         if (cgearHidden)
         {
             // CONTINUE, while the C-Gear's question is answered unseen (see where keys are
@@ -2371,15 +2413,8 @@ int main(int argc, char** argv)
                 sc.edgeFill = true;
             }
         }
-        else if (pt.on && (funcWatch.Ran(pt.party, 2) || funcWatch.Ran(pt.bag, 2) || funcWatch.Ran(pt.summary, 2) ||
-                           funcWatch.Ran(pt.options, 2) || funcWatch.Ran(pt.moveReminder, 2) || funcWatch.Ran(pt.journal, 2)))
-            // Platinum's party, Bag, summary, options, journal: all on the top screen (the touch
-            // screen only has the party's Poke Balls or the Bag's pockets, which the buttons
-            // reach as well).
-            only("menu", 0);
-        else if (pt.on && (funcWatch.Ran(pt.dex, 2) || funcWatch.Ran(pt.trainerCard, 2) || funcWatch.Ran(pt.box, 2)))
-            // The Pokedex, the trainer card (the badges below) and the PC's boxes use both.
-            sc = Stack("both", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+        else if (pt.on && ptApp())
+            ; // Platinum's other screens (ptApp, above)
         else if (pt.on && funcWatch.Ran(pt.field, 16))
         {
             // The overworld, the X menu and anything else over it on the top screen, the
@@ -3729,7 +3764,7 @@ int main(int argc, char** argv)
             { "VSYNC", cfg.vsync ? "ON" : "OFF" },
 #endif
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
-            { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
+            { "BATTLE BUTTONS", !funcWatchOn || pt.on ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
@@ -4518,6 +4553,7 @@ int main(int argc, char** argv)
                 break;
 #endif
             case M_BATTLEBUTTONS:
+                if (pt.on) break; // (Platinum's buttons stand beside the message box, as SoulSilver's.)
                 if (funcWatchOn && bw1.on) cfg.battleButtons = (cfg.battleButtons + (dir < 0 ? 2 : 1)) % 3;
                 else if (funcWatchOn) cfg.battleButtons = cfg.battleButtons == 2 ? 0 : 2; // CORNER, PANEL
                 bw1.battleButtons = cfg.battleButtons;
@@ -4819,13 +4855,14 @@ int main(int argc, char** argv)
             static uint32_t lastWideScene = 0;
             if (funcWatchOn && scene.wide) lastWideScene = frame;
             const bool bw2KeepWide = funcWatchOn && (scene.wide || (lastWideScene && frame - lastWideScene < 300) ||
-                funcWatch.Ran(bw2.battle, 2));
+                funcWatch.Ran(bw2.battle, 2) || funcWatch.Ran(pt.battle, 2));
             const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (funcWatchOn ? bw2KeepWide :
                 (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20)));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
             // WORLD ZOOM: the overworld only (battles keep their framing).
-            const bool zoomable = funcWatchOn ? funcWatch.Ran(bw2.field, 16) && !funcWatch.Ran(bw2.battle, 2)
+            const bool zoomable = funcWatchOn ? (pt.on ? funcWatch.Ran(pt.field, 16) && !funcWatch.Ran(pt.battle, 2)
+                                                       : funcWatch.Ran(bw2.field, 16) && !funcWatch.Ran(bw2.battle, 2))
                                               : (fieldActive() || menuReturn > 0) && !scene.edgeFill;
             static const int zoomEnv = getenv("SSR_ZOOM") ? atoi(getenv("SSR_ZOOM")) : 0; // (tests: the settings are not read headless)
             melonDS::Wide.Zoom = wantWide && zoomable ? (zoomEnv ? zoomEnv : cfg.zoom) / 100.0f : 1.0f;
@@ -5292,6 +5329,40 @@ int main(int argc, char** argv)
 #endif
         if (!holdScript) scriptClock++;
 
+        // Test aid: SSR_PEEK="name=0xADDR>off>off;..." prints, every SSR_PEEK_EVERY frames (60), a
+        // word of the console's memory, following pointers (each > reads the word at the address
+        // so far and adds the offset after it), for test scripts that follow the game's state.
+        static const char* peekSpec = getenv("SSR_PEEK");
+        if (peekSpec && frame % (getenv("SSR_PEEK_EVERY") ? (uint32_t)atoi(getenv("SSR_PEEK_EVERY")) : 60u) == 0)
+        {
+            auto word = [&](uint32_t a) -> uint32_t {
+                if (a < 0x02000000 || a >= 0x03000000) return 0;
+                uint32_t v;
+                memcpy(&v, &nds->MainRAM[a & nds->MainRAMMask], 4);
+                return v;
+            };
+            std::string line = "[peek] " + std::to_string(frame);
+            std::stringstream specs(peekSpec);
+            std::string item;
+            while (std::getline(specs, item, ';'))
+            {
+                const size_t eq = item.find('=');
+                std::string name = eq == std::string::npos ? item : item.substr(0, eq);
+                std::string expr = eq == std::string::npos ? item : item.substr(eq + 1);
+                std::stringstream parts(expr);
+                std::string part;
+                uint32_t addr = 0;
+                bool first = true;
+                while (std::getline(parts, part, '>'))
+                {
+                    const uint32_t v = (uint32_t)strtoul(part.c_str(), nullptr, 0);
+                    addr = first ? v : word(addr) + v;
+                    first = false;
+                }
+                line += " " + name + "=" + std::to_string((int32_t)word(addr));
+            }
+            fprintf(stderr, "%s\n", line.c_str());
+        }
         if (opt.traceFuncsAt.count(frame))
         {
             char name[64];
@@ -5383,8 +5454,9 @@ int main(int argc, char** argv)
                 static uint32_t lastAppFrame = 0;
                 static const char* const appScenes[] = { "bag", "summary", "phone", "pc-box", "map", "pokedex",
                     "pokedex-list", "pokedex-page", "mart", "naming" };
+                // (Platinum's own: frontend/platinum.h.)
                 const bool isApp = std::any_of(std::begin(appScenes), std::end(appScenes),
-                    [&](const char* n) { return !strcmp(picked.name, n); });
+                    [&](const char* n) { return !strcmp(picked.name, n); }) || (pt.on && PtFuncs::AppScene(picked.name));
                 const bool generic = !strcmp(picked.name, "top") || !strcmp(picked.name, "bottom") || !strcmp(picked.name, "spread");
                 if (isApp)
                 {
@@ -5420,10 +5492,11 @@ int main(int argc, char** argv)
             }
             // The start menu, the layouts of the applications opened from it, and the plain
             // bottom screen (the party).
-            auto menuScene = [](const char* n) {
+            auto menuScene = [&](const char* n) {
                 static const char* const names[] = { "start-menu", "bottom", "bag", "summary", "phone", "pc-box", "map",
                     "pokedex", "pokedex-list", "pokedex-page", "mart", "naming" };
-                return std::any_of(std::begin(names), std::end(names), [&](const char* m) { return !strcmp(n, m); });
+                return std::any_of(std::begin(names), std::end(names), [&](const char* m) { return !strcmp(n, m); }) ||
+                    (pt.on && PtFuncs::AppScene(n));
             };
             static std::string shownName, pendingName;
             static int pending = 0;
