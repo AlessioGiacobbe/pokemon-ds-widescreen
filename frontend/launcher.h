@@ -57,6 +57,7 @@ inline const KnownGame* Known(const std::string& code)
         { "IRDO", "Pokemon White 2", "white2.sav" },
         { "IPKE", "Pokemon HeartGold", "heartgold.sav" },
         { "IPGE", "Pokemon SoulSilver", "soulsilver.sav" },
+        { "CPUE", "Pokemon Platinum", "platinum.sav" },
     };
     for (const KnownGame& g : games)
         if (code == g.code) return &g;
@@ -64,10 +65,10 @@ inline const KnownGame* Known(const std::string& code)
 }
 inline int Order(const std::string& code)
 {
-    static const char* order[] = { "IRBO", "IRAO", "IREO", "IRDO", "IPKE", "IPGE" };
-    for (int i = 0; i < 6; i++)
+    static const char* order[] = { "IRBO", "IRAO", "IREO", "IRDO", "IPKE", "IPGE", "CPUE" };
+    for (int i = 0; i < 7; i++)
         if (code == order[i]) return i;
-    return 6;
+    return 7;
 }
 
 inline bool EndsWithNds(const std::string& name)

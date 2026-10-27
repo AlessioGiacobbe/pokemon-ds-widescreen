@@ -8,6 +8,7 @@
 #   tools/switch/build_game.sh hgss       your-soulsilver-us.nds
 #   tools/switch/build_game.sh white      your-white-us-or-europe.nds
 #   tools/switch/build_game.sh all        your-soulsilver-us.nds
+#   tools/switch/build_game.sh platinum
 #
 # bw needs no ROM: one program for Black 2, White 2, Black and White that reads what it needs
 # from the player's ROM when it starts, packed as build-sd/pokemon-black2-white2-wide-switch.zip and
@@ -16,7 +17,12 @@
 # the addresses in its tables (tools/soulsilver/tables_only.py); none of its code goes in.
 #   tools/switch/build_game.sh black      your-black-us-or-europe.nds
 #
-# all packs one program for all six games, with a list to choose the game from when it starts
+# platinum needs no ROM either: one program for Pokemon Platinum (English) with its function table
+# inside (tools/platinum/CPUE.txt, made by tools/platinum/funcmap.py from a build of the
+# pokeplatinum decompilation: addresses and names only), packed as
+# build-sd/pokemon-platinum-wide-switch.zip.
+#
+# all packs one program for all the games, with a list to choose the game from when it starts
 # (frontend/launcher.h): SoulSilver and HeartGold's tables (as hgss) and the Black games'
 # function tables (as bw) in one .nro, as build-sd/pokemon-ds-wide-switch.zip
 # (switch/pokemon-ds-wide/pokemon-ds-wide.nro), as build-sd/pokemon-ds-wide-all-switch.zip: the
@@ -62,10 +68,10 @@ case "$GAME" in
     white2) FOLDER=pokemon-white2-wide; NRO=pokemon-white2-wide.nro ;;
     black) FOLDER=pokemon-black-wide; NRO=pokemon-black-wide.nro ;;
     white) FOLDER=pokemon-white-wide; NRO=pokemon-white-wide.nro ;;
-    bw|hgss|all) FOLDER=; NRO= ;;
-    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|all|black2|white2|black|white your-rom.nds (or bw, no ROM)" ;;
+    bw|hgss|all|platinum) FOLDER=; NRO= ;;
+    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|all|black2|white2|black|white your-rom.nds (or bw or platinum, no ROM)" ;;
 esac
-if [ "$GAME" != bw ]; then
+if [ "$GAME" != bw ] && [ "$GAME" != platinum ]; then
     [ -n "$ROM" ] || fail "give your ROM: tools/switch/build_game.sh $GAME your-rom.nds"
     [ -f "$ROM" ] || fail "no such file: $ROM"
     ROM="$(cd "$(dirname "$ROM")" && pwd)/$(basename "$ROM")"
@@ -145,6 +151,7 @@ all)
     python3 tools/soulsilver/tables_only.py gen build-gen-tables
     ROMFS="$HERE/$BUILD/romfs"
     bw_tables "$ROMFS"
+    cp tools/platinum/CPUE.txt "$ROMFS/funcs/CPUE.txt"
     icon="${SSR_SWITCH_ICON_ALL:-${SSR_SWITCH_ICON:-}}"
     rm -f "$BUILD/icon.jpg"
     [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
@@ -268,6 +275,44 @@ a White 2 ROM into /switch/pokemon-white2-wide/, a Black ROM into /switch/pokemo
 White ROM into /switch/pokemon-white-wide/ (English, US or Europe; any copy of each works).
 On the Switch, hold R while starting any game and choose it in the Homebrew Menu.
 The zips hold only these programs, ready to share: nothing of the games.
+EOF
+    exit 0
+    ;;
+platinum)
+    # One program for Pokemon Platinum (English), its function table in its romfs (addresses and
+    # names, made without a ROM: the program reads the few bytes the table needs from the
+    # player's ROM). Nothing of the game is in it, so it can be shared.
+    BUILD=build-switch-platinum
+    ROMFS="$HERE/$BUILD/romfs"
+    mkdir -p "$ROMFS/funcs"
+    cp tools/platinum/CPUE.txt "$ROMFS/funcs/CPUE.txt"
+    rm -f "$BUILD/icon.jpg"
+    icon="${SSR_SWITCH_ICON_PLATINUM:-${SSR_SWITCH_ICON:-}}"
+    [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
+    say "Compiling for the Switch"
+    build SSR_SWITCH_BUILD="$BUILD" SSR_NRO_TITLE="Pokemon Platinum" SSR_SWITCH_ROMFS="$ROMFS" bash tools/bw2/build_switch.sh
+    mkdir -p build-sd/switch/pokemon-platinum-wide
+    cp "$BUILD/ssrecomp.nro" build-sd/switch/pokemon-platinum-wide/pokemon-platinum-wide.nro
+    ZIP=pokemon-platinum-wide-switch.zip
+    rm -f "build-sd/$ZIP"
+    (cd build-sd && python3 -c "
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
+    z.write('switch/pokemon-platinum-wide/pokemon-platinum-wide.nro')
+" "$ZIP")
+    # (Only the program: no ROM, save or save state.)
+    python3 -c "
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+if names != ['switch/pokemon-platinum-wide/pokemon-platinum-wide.nro']: sys.exit('unexpected files in the zip: %s' % names)
+print('zip holds:', ', '.join(names))
+" "build-sd/$ZIP"
+    say "Done: $HERE/build-sd/$ZIP"
+    cat <<EOF
+
+Copy build-sd/switch to the root of the SD card, then a Platinum ROM (English) into
+/switch/pokemon-platinum-wide/. On the Switch, hold R while starting any game and choose it in the
+Homebrew Menu. The zip holds only the program, ready to share: nothing of the game.
 EOF
     exit 0
     ;;

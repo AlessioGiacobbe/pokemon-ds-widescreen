@@ -63,7 +63,8 @@ bool RomfsReady()
 }
 
 // Whether this build plays a game: SoulSilver and HeartGold need the program's own tables, the
-// Black games a function table (the player's own funcs.txt beside the game, or the build's).
+// Black games and Platinum a function table (the player's own funcs.txt beside the game, or the
+// build's).
 bool Playable(const Launcher::Game& g)
 {
     if (!g.known) return false;
@@ -254,7 +255,7 @@ bool Start(int& argc, char**& argv)
     if (games.empty())
     {
         ShowMessage("  No game found. Copy your ROMs (Pokemon Black, White, Black 2 or White 2 in\n"
-                    "  English; SoulSilver or HeartGold US) into\n  " + romsDir);
+                    "  English; SoulSilver or HeartGold US; Platinum in English) into\n  " + romsDir);
         return false;
     }
     int chosen = 0;
@@ -346,7 +347,8 @@ bool Start(int& argc, char**& argv)
                             "    Pokemon Black 2 (IREO), Pokemon White 2 (IRDO), Pokemon Black (IRBO)\n"
                             "    and Pokemon White (IRAO), US and Europe;\n"
                             "    Pokemon SoulSilver (IPGE) and Pokemon HeartGold (IPKE), US, with the\n"
-                            "    SoulSilver and HeartGold download.\n"
+                            "    SoulSilver and HeartGold download;\n"
+                            "    Pokemon Platinum (CPUE), with the Platinum download.\n"
                             "  Other languages put the game's code in other places.");
                 return false;
             }
