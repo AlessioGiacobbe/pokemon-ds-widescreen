@@ -5,7 +5,7 @@
 - **One program for all six games (Switch):** the all-games download
   (`pokemon-ds-wide-all-switch.zip`) is now a single program that shows a grid of your games when it starts, each with the icon from its ROM (or
   your own picture in `icons/`, or the HOME Menu icon of a one-game program beside it), and
-  **CHANGE GAME** in the pause menu goes back to it. It also lists the games in the other
+  **QUIT** in the pause menu goes back to it. It also lists the games in the other
   `/switch/` folders (the one-game downloads), each played with the save in its folder, so
   nothing needs moving. The one-game downloads stay as they are.
 - **WORLD ZOOM (pause menu, every game):** the overworld drawn larger (up to 150%) or smaller

@@ -261,16 +261,24 @@ bool Start(int& argc, char**& argv)
         }
         for (size_t i = 0; i < games.size(); i++)
             if (games[i].rom == last) chosen = (int)i;
-        // Each game's picture, if the player has one (Launcher::FindArt).
-        for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
-        chosen = PickGame(games, chosen);
-        if (chosen < 0) return false;
-        if (FILE* f = fopen(lastPath.c_str(), "w"))
+        if (testRun)
         {
-            fprintf(f, "%s\n", games[chosen].rom.c_str());
-            fclose(f);
+            // (A test run, test.txt, plays the game played last without the list: no one is there.)
+            fprintf(stderr, "[switch] test run: %s, without the game list\n", games[chosen].rom.c_str());
         }
-        g_canChange = true;
+        else
+        {
+            // Each game's picture, if the player has one (Launcher::FindArt).
+            for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
+            chosen = PickGame(games, chosen);
+            if (chosen < 0) return false;
+            if (FILE* f = fopen(lastPath.c_str(), "w"))
+            {
+                fprintf(f, "%s\n", games[chosen].rom.c_str());
+                fclose(f);
+            }
+            g_canChange = true;
+        }
     }
     const Launcher::Game& game = games[chosen];
     const std::string rom = game.rom, gameDir = game.folder;
@@ -642,8 +650,8 @@ void Finish()
 {
     JitStarted(); // (an ordinary exit: the JIT did start)
     if (g_boosted) SetCpuBoost(false);
-    // CHANGE GAME in the pause menu: the Homebrew Menu's loader starts the program again, which
-    // shows the game list.
+    // QUIT in the pause menu, for a game chosen from the game list: the Homebrew Menu's loader
+    // starts the program again, which shows the list.
     if (g_changeGame && !g_self.empty())
     {
         const std::string cmd = g_self.find(' ') == std::string::npos ? g_self : "\"" + g_self + "\"";

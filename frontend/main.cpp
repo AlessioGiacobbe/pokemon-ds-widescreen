@@ -3607,10 +3607,7 @@ int main(int argc, char** argv)
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
-        M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT,
-#ifdef __SWITCH__
-        M_CHANGEGAME, // (last: only there when the game was chosen from the game list)
-#endif
+        M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
@@ -3697,9 +3694,6 @@ int main(int argc, char** argv)
             { "RESET GAME", "" },
             { "QUIT", "" },
         };
-#ifdef __SWITCH__
-        if (SwitchPlatform::CanChangeGame()) menu.items.push_back({ "CHANGE GAME", "" });
-#endif
     };
     buildMenu();
 
@@ -4597,15 +4591,13 @@ int main(int argc, char** argv)
                 swallowMenuButtons = true;
                 break;
             case M_QUIT:
-                running = false;
-                break;
 #ifdef __SWITCH__
-            case M_CHANGEGAME:
-                // (Saved and closed as with QUIT; then the program starts again with the list.)
-                SwitchPlatform::ChangeGame();
+                // A game chosen from the game list goes back to the list (the program starts
+                // again once this one has saved and closed); + there goes to the Homebrew Menu.
+                if (SwitchPlatform::CanChangeGame()) SwitchPlatform::ChangeGame();
+#endif
                 running = false;
                 break;
-#endif
             default:
                 break;
             }

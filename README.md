@@ -76,8 +76,8 @@ pair.
 
 **Using the list:** the D-pad or a stick moves between games, **A** plays,
 **+** goes back to the Homebrew Menu. It opens on the game you played last.
-**CHANGE GAME** in the pause menu (+ and − together) saves and comes back to
-the list. With only one game found there is no list: it starts straight away.
+**QUIT** in the pause menu (+ and − together) saves and comes back to the list.
+With only one game found there is no list: it starts straight away.
 
 **Saves:** each game keeps its save in the folder its ROM is in, under its own
 name (`black2.sav`, `white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`,

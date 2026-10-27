@@ -13,8 +13,8 @@ namespace SwitchPlatform
 // false, after saying why on the screen, when the game cannot start.
 bool Start(int& argc, char**& argv);
 
-// Whether the game was chosen from the game list (several games found), so that the pause menu
-// can go back to it; ChangeGame then makes the program start again with the list once it ends.
+// Whether the game was chosen from the game list (several games found), so that QUIT in the pause
+// menu goes back to it; ChangeGame then makes the program start again with the list once it ends.
 bool CanChangeGame();
 void ChangeGame();
 
