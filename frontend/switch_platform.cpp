@@ -243,10 +243,18 @@ bool Start(int& argc, char**& argv)
     // The game: the only one there is, or the one chosen from the list (launcher.h).
     bool ownFolder = true;
     std::vector<Launcher::Game> games = FindGames(dir, ownFolder);
+#ifdef SSR_ALL_GAMES
+    // The all-games download comes with an empty roms folder; made here too, in case it was lost
+    // in copying, so that the message below points somewhere that is there.
+    mkdir((dir + "/roms").c_str(), 0777);
+    const std::string romsDir = dir + "/roms/";
+#else
+    const std::string romsDir = dir + "/";
+#endif
     if (games.empty())
     {
         ShowMessage("  No game found. Copy your ROMs (Pokemon Black, White, Black 2 or White 2 in\n"
-                    "  English; SoulSilver or HeartGold US) into\n  " + dir + "/");
+                    "  English; SoulSilver or HeartGold US) into\n  " + romsDir);
         return false;
     }
     int chosen = 0;

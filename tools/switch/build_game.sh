@@ -151,27 +151,31 @@ all)
     say "Compiling for the Switch"
     build SSR_SWITCH_JIT=1 SSR_SWITCH_GEN="$HERE/build-gen-tables" SSR_SWITCH_BUILD="$BUILD" \
         SSR_SWITCH_ROMFS="$ROMFS" SSR_ALL_GAMES=ON SSR_NRO_TITLE="Pokemon DS Widescreen" bash tools/switch/build.sh
-    mkdir -p build-sd/switch/pokemon-ds-wide
+    mkdir -p build-sd/switch/pokemon-ds-wide/roms
     cp "$BUILD/ssrecomp.nro" build-sd/switch/pokemon-ds-wide/pokemon-ds-wide.nro
     ZIP=pokemon-ds-wide-all-switch.zip
     rm -f "build-sd/$ZIP"
+    # The program and an empty roms folder, so that it is plain where the ROMs go.
     (cd build-sd && python3 -c "
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
-    for p in sys.argv[2:]: z.write(p)
-" "$ZIP" switch/pokemon-ds-wide/pokemon-ds-wide.nro)
+    z.write('switch/pokemon-ds-wide/pokemon-ds-wide.nro')
+    d = zipfile.ZipInfo('switch/pokemon-ds-wide/roms/')
+    d.external_attr = (0o40755 << 16) | 0x10  # a folder, for Unix and Windows unzippers
+    z.writestr(d, '')
+" "$ZIP")
     # (Only the program: no ROM, save, save state or generated code.)
     python3 -c "
 import sys, zipfile
 names = zipfile.ZipFile(sys.argv[1]).namelist()
-if names != ['switch/pokemon-ds-wide/pokemon-ds-wide.nro']: sys.exit('unexpected files in the zip: %s' % names)
+if names != ['switch/pokemon-ds-wide/pokemon-ds-wide.nro', 'switch/pokemon-ds-wide/roms/']: sys.exit('unexpected files in the zip: %s' % names)
 print('zip holds:', ', '.join(names))
 " "build-sd/$ZIP"
     say "Done: $HERE/build-sd/$ZIP"
     ls -l build-sd/switch/pokemon-ds-wide "build-sd/$ZIP"
     cat <<EOF
 
-Copy build-sd/switch to the root of the SD card, then your ROMs into /switch/pokemon-ds-wide/ (any
+Copy build-sd/switch to the root of the SD card, then your ROMs into /switch/pokemon-ds-wide/roms/ (any
 names; English Black, White, Black 2, White 2; SoulSilver and HeartGold US). Its list also shows
 the games in the other folders of /switch (the one-game downloads), each with the save in its folder.
 On the Switch, hold R while starting any game and choose Pokemon DS Widescreen.

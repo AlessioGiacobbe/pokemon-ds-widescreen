@@ -7,7 +7,7 @@
   your own picture in `icons/`, or the HOME Menu icon of a one-game program beside it), and
   **QUIT** in the pause menu goes back to it. It also lists the games in the other
   `/switch/` folders (the one-game downloads), each played with the save in its folder, so
-  nothing needs moving. The one-game downloads stay as they are.
+  nothing needs moving. The download comes with an empty `roms` folder for your ROMs. The one-game downloads stay as they are.
 - **WORLD ZOOM (pause menu, every game):** the overworld drawn larger (up to 150%) or smaller
   (down to 60%, more of the world seen around the player). Only the world is zoomed: text
   boxes, menus and battles keep their size. Kept in the settings as `zoom`. (An idea from

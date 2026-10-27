@@ -68,9 +68,9 @@ pair.
 
 **Installing**
 
-1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`.
-2. Copy your ROMs into that folder (any names; a `roms` folder inside it works
-   too).
+1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`
+   with an empty `roms` folder inside.
+2. Copy your ROMs into `/switch/pokemon-ds-wide/roms/` (any names).
 3. Hold R while starting any game, pick **Pokemon DS Widescreen**, then the
    game.
 
@@ -79,9 +79,10 @@ pair.
 **QUIT** in the pause menu (+ and − together) saves and comes back to the list.
 With only one game found there is no list: it starts straight away.
 
-**Saves:** each game keeps its save in the folder its ROM is in, under its own
-name (`black2.sav`, `white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`,
-`heartgold.sav`).
+**Saves:** each game keeps its save under its own name (`black2.sav`,
+`white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`, `heartgold.sav`):
+in `/switch/pokemon-ds-wide/` for a ROM in `roms/`, or in a separate
+download's folder for a ROM there.
 
 **Already using the separate downloads?** Leave them as they are: the list
 also shows the games in your other `/switch/` folders, each played with the
