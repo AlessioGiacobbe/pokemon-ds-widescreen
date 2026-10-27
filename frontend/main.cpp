@@ -2313,6 +2313,10 @@ int main(int argc, char** argv)
                 sc.edgeFill = true;
             }
         }
+        else if (pt.on && funcWatch.Ran(pt.saving, 8) && lastKnownBw2Frame)
+            // Platinum writing its save: for a few seconds nothing else runs, not even the
+            // overworld; the layout that was up stays.
+            return lastKnownBw2;
         else if (pt.on && ptApp())
             ; // Platinum's other screens (ptApp, above)
         else if (pt.on && funcWatch.Ran(pt.field, 16))

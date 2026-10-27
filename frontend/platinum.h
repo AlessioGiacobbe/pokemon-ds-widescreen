@@ -44,6 +44,7 @@ struct PtFuncs
     int battle = -1;         // any battle
     int battleInput = -1;    // the battle waiting for a command or a move on the touch screen
     int battleBag = -1, battleParty = -1; // the Bag and the party in a battle (touch screen)
+    int saving = -1;         // the save being written (several seconds, nothing else running)
     // The weathers with particles (sprites over the world): each one's task, every frame while
     // it lasts (pokeplatinum's src/overlay005/ov5_021D5EB8.c, its table of weathers: rain, heavy
     // rain, thunderstorm, snow, heavy snow, blizzard, ashfall, sandstorm, hail, spirits and two
@@ -91,6 +92,7 @@ struct PtFuncs
         battleInput = find("BattleSystem_MenuInput");
         battleBag = find("BattleBagTask_Tick");
         battleParty = find("BattlePartyTask_Tick");
+        saving = find("SaveData_CardSave_Main");
         for (const char* w : { "ov5_021D7658", "ov5_021D9FF8", "ov5_021D9F0C", "ov5_021D79F0", "ov5_021D7E54", "ov5_021D8FF8",
                                "ov5_021DA244", "ov5_021D8D08", "ov5_021D9464", "ov5_021DA8A0", "ov5_021D823C", "ov5_021D8948" })
             weather.push_back(find(w));
