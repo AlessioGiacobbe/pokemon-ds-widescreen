@@ -280,7 +280,7 @@ struct WideAccess
     // previous frame; `matched` then counts the polygons found in both frames. The
     // horizontal clip coordinate is multiplied by xnum/xden.
     static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 xden, Vertex* vram, Polygon* pram,
-        Polygon** list, u32& numPolys, u32& matched, u32 polyLimit = 2048, u32 vertLimit = 6144)
+        Polygon** list, u32& numPolys, u32& matched, u32 polyLimit = 2048, u32 vertLimit = 6144, s64 ynum = 0)
     {
         SubmitPolygonLimit = polyLimit;
         SubmitVertexLimit = vertLimit;
@@ -494,7 +494,8 @@ struct WideAccess
                 }
             }
 
-            if (xnum != xden)
+            if (!ynum) ynum = xden;
+            if (xnum != xden || ynum != xden)
             {
                 // A quad that exactly fills the DS's view (its corners on the corners of the
                 // view, at one depth) is a layer drawn in front of the camera on purpose: the
@@ -534,7 +535,11 @@ struct WideAccess
                 }
                 else
                     for (int i = 0; i < nverts; i++)
+                    {
                         g.TempVertexBuffer[i].Position[0] = (s32)((s64)g.TempVertexBuffer[i].Position[0] * xnum / xden);
+                        // (WORLD ZOOM: the vertical one too)
+                        if (ynum != xden) g.TempVertexBuffer[i].Position[1] = (s32)((s64)g.TempVertexBuffer[i].Position[1] * ynum / xden);
+                    }
             }
 
             g.PolygonMode = cur.PolygonMode;
@@ -608,15 +613,16 @@ struct WideAccess
             }
         }
         float view = Wide.ViewWidth < 256 ? 256 : Wide.ViewWidth;
-        const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view + 0.5f);
+        const float zoom = Wide.Zoom > 0 ? Wide.Zoom : 1;
+        const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view * zoom + 0.5f), ynum = (s64)(4096.0f * zoom + 0.5f);
         u32 matched;
-        Replay(g, false, xnum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, MaxPolygons, MaxVertices);
-        ExtendToEdges(ListReal.data(), NumReal, view);
+        Replay(g, false, xnum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, MaxPolygons, MaxVertices, ynum);
+        if (zoom == 1) ExtendToEdges(ListReal.data(), NumReal, view); // (its strips are those of the unzoomed view)
         NumInterp = 0;
         if (g.InterpPending)
         {
-            Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices);
-            ExtendToEdges(ListInterp.data(), NumInterp, view);
+            Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices, ynum);
+            if (zoom == 1) ExtendToEdges(ListInterp.data(), NumInterp, view);
         }
         Dirty = true;
     }

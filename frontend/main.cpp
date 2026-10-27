@@ -1235,6 +1235,10 @@ struct Settings
     // Black, White, Black 2 and White 2: more of the map loaded around the player, so the wide
     // view does not run out of land at its sides (frontend/bw2map.h). Read when the game starts.
     bool wideMap = true;
+    // WORLD ZOOM, percent (one of ZoomSteps): above 100 the overworld is drawn larger, below it
+    // more of it is seen around the player. Only the 3D world is zoomed; text boxes and other
+    // 2D parts keep their size.
+    int zoom = 100;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1294,6 +1298,7 @@ struct Settings
             else if (k == "smooth") smooth = v == "1";
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_map") wideMap = v == "1";
+            else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), 60, 150);
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1324,6 +1329,7 @@ struct Settings
         f << "smooth=" << (smooth ? 1 : 0) << "\n";
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_map=" << (wideMap ? 1 : 0) << "\n";
+        f << "zoom=" << zoom << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -3467,7 +3473,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3516,6 +3522,7 @@ int main(int argc, char** argv)
             // starts, so a change waits for the next start.)
             { "WIDE MAP LOADING", !bw2map.Supported() ? "-" : std::string(cfg.wideMap ? "ON" : "OFF") +
                 (cfg.wideMap != bw2map.on ? " (NEXT START)" : "") },
+            { "WORLD ZOOM", std::to_string(cfg.zoom) + "%" },
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -4287,6 +4294,15 @@ int main(int argc, char** argv)
             case M_WIDEMAP:
                 if (bw2map.Supported()) cfg.wideMap = !cfg.wideMap;
                 break;
+            case M_ZOOM:
+            {
+                static const int steps[] = { 60, 70, 80, 90, 100, 115, 130, 150 };
+                const int n = (int)(sizeof(steps) / sizeof(steps[0]));
+                int i = 0;
+                while (i + 1 < n && steps[i] < cfg.zoom) i++;
+                cfg.zoom = steps[(i + (dir < 0 ? n - 1 : 1)) % n];
+                break;
+            }
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
@@ -4524,6 +4540,11 @@ int main(int argc, char** argv)
                 (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20)));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
+            // WORLD ZOOM: the overworld only (battles keep their framing).
+            const bool zoomable = funcWatchOn ? funcWatch.Ran(bw2.field, 16) && !funcWatch.Ran(bw2.battle, 2)
+                                              : (fieldActive() || menuReturn > 0) && !scene.edgeFill;
+            static const int zoomEnv = getenv("SSR_ZOOM") ? atoi(getenv("SSR_ZOOM")) : 0; // (tests: the settings are not read headless)
+            melonDS::Wide.Zoom = wantWide && zoomable ? (zoomEnv ? zoomEnv : cfg.zoom) / 100.0f : 1.0f;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;

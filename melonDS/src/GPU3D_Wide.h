@@ -20,6 +20,10 @@ struct WideState
     GPU3D* Owner = nullptr;   // the console whose scene is drawn wide; nullptr turns it off
     int Width = 0, Height = 0; // size to draw at, set by the frontend
     float ViewWidth = 256;    // width of the view in DS pixels (256 = no extra width)
+    // WORLD ZOOM: above 1 the world is drawn larger (less of it), below 1 smaller (more of it
+    // seen around the player). The polygons' clip coordinates are scaled, so the picture stays
+    // sharp; layers drawn to fill the view (weather backdrops, covers) keep filling it.
+    float Zoom = 1;
 
     // The image that belongs to the frame the 2D renderer has just output: XRGB, with
     // the top byte 0 where no polygon was drawn. Three buffers take turns, so it stays as it
