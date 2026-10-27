@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **WORLD ZOOM (pause menu, every game):** the overworld drawn larger (up to 150%) or smaller
+  (down to 60%, more of the world seen around the player). Only the world is zoomed: text
+  boxes, menus and battles keep their size. Kept in the settings as `zoom`. (An idea from
+  Johto Online.)
+- **VOID FILL (pause menu, on by default):** where the wide view reaches ground the game has not
+  loaded yet (mostly when zoomed out), it is filled with a soft haze in the colours of the ground
+  beside it instead of black. The black around a room indoors is the game's own look and stays.
+  Kept in the settings as `void_fill`. (From Johto Online.)
+- **FOCUS BLUR (pause menu, OFF / LIGHT / STRONG):** the world softens towards the edges of the
+  view while the middle around the player stays sharp, like a model ("tilt-shift"). Text boxes
+  and menus stay sharp. Kept in the settings as `blur`. (From Johto Online.)
 - **Black and White battles: catching and levelling up.** A thrown Poke Ball is shown whole
   as it lands and shakes (it was cut in two, its other half at the view's right edge: it lands
   where the player's HP box is, whose place was still being moved while the box was put away),

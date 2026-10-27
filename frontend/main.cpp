@@ -56,6 +56,7 @@
 #include "glcontext.h"
 #endif
 #include "battlewide.h"
+#include "voidfill.h"
 #include "belowscreen.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -1239,6 +1240,12 @@ struct Settings
     // more of it is seen around the player. Only the 3D world is zoomed; text boxes and other
     // 2D parts keep their size.
     int zoom = 100;
+    // VOID FILL: ground the game has not loaded yet, beyond the DS's own view, shown as a soft
+    // haze in the colours of the ground beside it instead of black (frontend/voidfill.h).
+    bool voidFill = true;
+    // FOCUS BLUR: 0 off, 1 light, 2 strong; the world softens towards the view's edges
+    // (frontend/focusblur.h).
+    int blur = 0;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
@@ -1299,6 +1306,8 @@ struct Settings
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_map") wideMap = v == "1";
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), 60, 150);
+            else if (k == "void_fill") voidFill = v != "0";
+            else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "auto_detail") autoDetail = v != "0";
             else if (k == "buttons") byLabel = v != "positions";
@@ -1330,6 +1339,8 @@ struct Settings
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_map=" << (wideMap ? 1 : 0) << "\n";
         f << "zoom=" << zoom << "\n";
+        f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
+        f << "blur=" << blur << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
@@ -3330,6 +3341,11 @@ int main(int argc, char** argv)
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
     BattleWide battleWide;
+    // VOID FILL and FOCUS BLUR over the widescreen world (from Johto Online).
+    VoidFill voidFill;
+    FocusBlur focusBlur;
+    uint64_t focusBlurSerial = ~0ull;
+    int focusBlurLevel = 0;
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
 
@@ -3473,7 +3489,7 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
+        M_SMOOTH, M_WIDE, M_WIDEMAP, M_ZOOM, M_VOIDFILL, M_BLUR, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
 #ifdef SSR_DEKO3D
         M_WIDEGPU,
 #endif
@@ -3523,6 +3539,8 @@ int main(int argc, char** argv)
             { "WIDE MAP LOADING", !bw2map.Supported() ? "-" : std::string(cfg.wideMap ? "ON" : "OFF") +
                 (cfg.wideMap != bw2map.on ? " (NEXT START)" : "") },
             { "WORLD ZOOM", std::to_string(cfg.zoom) + "%" },
+            { "VOID FILL", cfg.voidFill ? "ON" : "OFF" },
+            { "FOCUS BLUR", cfg.blur == 2 ? "STRONG" : cfg.blur == 1 ? "LIGHT" : "OFF" },
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
@@ -4303,6 +4321,12 @@ int main(int argc, char** argv)
                 cfg.zoom = steps[(i + (dir < 0 ? n - 1 : 1)) % n];
                 break;
             }
+            case M_VOIDFILL:
+                cfg.voidFill = !cfg.voidFill;
+                break;
+            case M_BLUR:
+                cfg.blur = (cfg.blur + (dir < 0 ? 2 : 1)) % 3;
+                break;
             case M_WIDELINES:
                 cfg.wideLines = detailLines[(detailIndex() + (dir < 0 ? detailCount - 1 : 1)) % detailCount];
                 break;
@@ -4599,6 +4623,32 @@ int main(int argc, char** argv)
                 wideImage.pixels = melonDS::Wide.Front;
                 wideImage.w = melonDS::Wide.FrontW;
                 wideImage.h = melonDS::Wide.FrontH;
+                // (Tests: the settings are not read headless.)
+                static const char* voidEnv = getenv("SSR_VOIDFILL");
+                static const char* blurEnv = getenv("SSR_BLUR");
+                if (voidEnv ? atoi(voidEnv) != 0 : cfg.voidFill)
+                {
+                    // The DS's own view: 256 of the view's base pixels across, all 192 down,
+                    // both scaled by the zoom. Its empty pixels are the game's own look (the
+                    // black around a room), which stays.
+                    const float zoom = melonDS::Wide.Zoom > 0 ? melonDS::Wide.Zoom : 1.0f;
+                    wideImage.pixels = voidFill.Apply(wideImage.pixels, wideImage.w, wideImage.h,
+                        std::min(1.0f, 256 * zoom / std::max(256.0f, melonDS::Wide.ViewWidth)), std::min(1.0f, zoom),
+                        melonDS::Wide.FrontSerial);
+                }
+                const int blurLevel = blurEnv ? std::clamp(atoi(blurEnv), 0, 2) : cfg.blur;
+                if (blurLevel)
+                {
+                    // Made again only for a new picture (the in-between frames and the
+                    // pause menu show the same one).
+                    if (melonDS::Wide.FrontSerial != focusBlurSerial || blurLevel != focusBlurLevel)
+                    {
+                        focusBlur.Build(wideImage.pixels, wideImage.w, wideImage.h, blurLevel);
+                        focusBlurSerial = melonDS::Wide.FrontSerial;
+                        focusBlurLevel = blurLevel;
+                    }
+                    wideImage.blur = &focusBlur;
+                }
                 // Fades: the game darkens or whitens its screen with the master brightness
                 // register, or with a brightness effect on the 3D layer.
                 const auto& unit = wideUnit;
