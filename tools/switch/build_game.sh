@@ -7,6 +7,7 @@
 #   tools/switch/build_game.sh bw
 #   tools/switch/build_game.sh hgss       your-soulsilver-us.nds
 #   tools/switch/build_game.sh white      your-white-us-or-europe.nds
+#   tools/switch/build_game.sh all        your-soulsilver-us.nds
 #
 # bw needs no ROM: one program for Black 2, White 2, Black and White that reads what it needs
 # from the player's ROM when it starts, packed as build-sd/pokemon-black2-white2-wide-switch.zip and
@@ -14,6 +15,12 @@
 # (US) as build-sd/pokemon-soulsilver-heartgold-wide-switch.zip: the SoulSilver ROM is only read for
 # the addresses in its tables (tools/soulsilver/tables_only.py); none of its code goes in.
 #   tools/switch/build_game.sh black      your-black-us-or-europe.nds
+#
+# all packs one program for all six games, with a list to choose the game from when it starts
+# (frontend/launcher.h): SoulSilver and HeartGold's tables (as hgss) and the Black games'
+# function tables (as bw) in one .nro, as build-sd/pokemon-ds-wide-switch.zip
+# (switch/pokemon-ds-wide/pokemon-ds-wide.nro). It holds nothing of the games either.
+# SSR_SWITCH_ICON_ALL: its Homebrew Menu icon.
 #
 # The result is a folder laid out like the SD card, build-sd/switch/<game folder>/, with the
 # .nro (and, for Black, Black 2 and White 2, funcs.txt): copy build-sd/switch to the root of the SD card,
@@ -54,8 +61,8 @@ case "$GAME" in
     white2) FOLDER=pokemon-white2-wide; NRO=pokemon-white2-wide.nro ;;
     black) FOLDER=pokemon-black-wide; NRO=pokemon-black-wide.nro ;;
     white) FOLDER=pokemon-white-wide; NRO=pokemon-white-wide.nro ;;
-    bw|hgss) FOLDER=; NRO= ;;
-    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|black2|white2|black|white your-rom.nds (or bw, no ROM)" ;;
+    bw|hgss|all) FOLDER=; NRO= ;;
+    *) fail "which game? tools/switch/build_game.sh soulsilver|hgss|all|black2|white2|black|white your-rom.nds (or bw, no ROM)" ;;
 esac
 if [ "$GAME" != bw ]; then
     [ -n "$ROM" ] || fail "give your ROM: tools/switch/build_game.sh $GAME your-rom.nds"
@@ -105,7 +112,72 @@ fetch_symbols() { # dir url commit paths...
     git -C "$dir" checkout -q --force FETCH_HEAD
 }
 
+# The Black games' function tables, made without a ROM (the program reads the few bytes the tables
+# need from the player's ROM), into a romfs folder: bw and all.
+bw_tables() { # romfs-folder
+    mkdir -p "$1/funcs"
+    say "The function tables, from the decompilations' symbol files"
+    fetch_symbols build-decomp-pokebw2 "$BW2_DECOMP" "$BW2_COMMIT" \
+        '/config/b2_us/arm9/symbols.txt' '/config/b2_us/arm9/*/symbols.txt' '/config/b2_us/arm9/overlays/*/symbols.txt'
+    fetch_symbols build-decomp-pokew2 "$BW2_DECOMP" "$W2_COMMIT" \
+        '/config/w2_us/arm9/symbols.txt' '/config/w2_us/arm9/*/symbols.txt' '/config/w2_us/arm9/overlays/*/symbols.txt'
+    fetch_symbols build-decomp-aletheia "$BW1_DECOMP" "$BW1_COMMIT" '/layout/function_addrs.tsv'
+    python3 tools/bw2/funcmap.py build-decomp-pokebw2/config/b2_us/arm9 - "$1/funcs/IREO.txt"
+    python3 tools/bw2/funcmap.py build-decomp-pokew2/config/w2_us/arm9 - "$1/funcs/IRDO.txt"
+    python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$1/funcs/IRBO.txt"
+    python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$1/funcs/IRAO.txt" --white
+}
+
 case "$GAME" in
+all)
+    # One program for all six games: SoulSilver and HeartGold's tables (addresses only, made from
+    # the SoulSilver ROM as for hgss) and the Black games' function tables in its romfs (as for bw).
+    # It shows the list of the player's games when it starts (frontend/launcher.h).
+    BUILD=build-switch-all
+    [ "$(dd if="$ROM" bs=1 skip=12 count=4 2>/dev/null)" = IPGE ] ||
+        fail "$ROM is not Pokemon SoulSilver (US, game code IPGE): the tables are made from it"
+    if [ ! -f gen/sources.cmake ]; then
+        say "SoulSilver's tables, from $ROM"
+        python3 tools/recomp.py --rom "$ROM" --layout layouts/soulsilver-us.json melonDS/src gen
+        python3 tools/apps.py --layout layouts/soulsilver-us.json gen
+    fi
+    python3 tools/soulsilver/tables_only.py gen build-gen-tables
+    ROMFS="$HERE/$BUILD/romfs"
+    bw_tables "$ROMFS"
+    icon="${SSR_SWITCH_ICON_ALL:-${SSR_SWITCH_ICON:-}}"
+    rm -f "$BUILD/icon.jpg"
+    [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
+    say "Compiling for the Switch"
+    build SSR_SWITCH_JIT=1 SSR_SWITCH_GEN="$HERE/build-gen-tables" SSR_SWITCH_BUILD="$BUILD" \
+        SSR_SWITCH_ROMFS="$ROMFS" SSR_NRO_TITLE="Pokemon DS Widescreen" bash tools/switch/build.sh
+    mkdir -p build-sd/switch/pokemon-ds-wide
+    cp "$BUILD/ssrecomp.nro" build-sd/switch/pokemon-ds-wide/pokemon-ds-wide.nro
+    ZIP=pokemon-ds-wide-switch.zip
+    rm -f "build-sd/$ZIP"
+    (cd build-sd && python3 -c "
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
+    for p in sys.argv[2:]: z.write(p)
+" "$ZIP" switch/pokemon-ds-wide/pokemon-ds-wide.nro)
+    # (Only the program: no ROM, save, save state or generated code.)
+    python3 -c "
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+if names != ['switch/pokemon-ds-wide/pokemon-ds-wide.nro']: sys.exit('unexpected files in the zip: %s' % names)
+print('zip holds:', ', '.join(names))
+" "build-sd/$ZIP"
+    say "Done: $HERE/build-sd/$ZIP"
+    ls -l build-sd/switch/pokemon-ds-wide "build-sd/$ZIP"
+    cat <<EOF
+
+Copy build-sd/switch to the root of the SD card, then your ROMs into /switch/pokemon-ds-wide/ (any
+names; English Black, White, Black 2, White 2; SoulSilver and HeartGold US). With no ROM there, it
+offers the games in the other folders of /switch (the one-game downloads), each with its own save.
+On the Switch, hold R while starting any game and choose Pokemon DS Widescreen.
+The zip holds only the program, ready to share: nothing of the games.
+EOF
+    exit 0
+    ;;
 soulsilver)
     BUILD=build-switch-jit
     if [ ! -f gen/sources.cmake ]; then
@@ -144,17 +216,7 @@ bw)
     # Nothing of the games is in it, so it can be shared (a release's download).
     BUILD=build-switch-bwshared
     ROMFS="$HERE/$BUILD/romfs"
-    mkdir -p "$ROMFS/funcs"
-    say "The function tables, from the decompilations' symbol files"
-    fetch_symbols build-decomp-pokebw2 "$BW2_DECOMP" "$BW2_COMMIT" \
-        '/config/b2_us/arm9/symbols.txt' '/config/b2_us/arm9/*/symbols.txt' '/config/b2_us/arm9/overlays/*/symbols.txt'
-    fetch_symbols build-decomp-pokew2 "$BW2_DECOMP" "$W2_COMMIT" \
-        '/config/w2_us/arm9/symbols.txt' '/config/w2_us/arm9/*/symbols.txt' '/config/w2_us/arm9/overlays/*/symbols.txt'
-    fetch_symbols build-decomp-aletheia "$BW1_DECOMP" "$BW1_COMMIT" '/layout/function_addrs.tsv'
-    python3 tools/bw2/funcmap.py build-decomp-pokebw2/config/b2_us/arm9 - "$ROMFS/funcs/IREO.txt"
-    python3 tools/bw2/funcmap.py build-decomp-pokew2/config/w2_us/arm9 - "$ROMFS/funcs/IRDO.txt"
-    python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$ROMFS/funcs/IRBO.txt"
-    python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$ROMFS/funcs/IRAO.txt" --white
+    bw_tables "$ROMFS"
     say "Compiling for the Switch"
     # Packed once per game, with its own title and icon in the Homebrew Menu (the same program).
     # The icons: SSR_SWITCH_ICON_BLACK2, SSR_SWITCH_ICON_WHITE2, SSR_SWITCH_ICON_BLACK and

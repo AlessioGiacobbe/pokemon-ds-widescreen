@@ -13,6 +13,11 @@ namespace SwitchPlatform
 // false, after saying why on the screen, when the game cannot start.
 bool Start(int& argc, char**& argv);
 
+// Whether the game was chosen from the game list (several games found), so that the pause menu
+// can go back to it; ChangeGame then makes the program start again with the list once it ends.
+bool CanChangeGame();
+void ChangeGame();
+
 // The processor's boost mode: about 1.8 GHz instead of 1 GHz, as games use while loading.
 bool SetCpuBoost(bool on);
 

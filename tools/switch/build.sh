@@ -15,7 +15,8 @@
 # of generated tables given in SSR_SWITCH_GEN (e.g. gen-tables, made by
 # tools/soulsilver/tables_only.py: everything but the recompiled code, so the build takes a
 # couple of minutes and the .nro is small), into build-switch-jit unless SSR_SWITCH_BUILD says
-# otherwise. SSR_NRO_TITLE: the title in the Homebrew Menu (ssrecomp by default).
+# otherwise. SSR_NRO_TITLE: the title in the Homebrew Menu (ssrecomp by default). SSR_SWITCH_ROMFS:
+# a folder for the .nro's romfs (the all-games build's function tables for the Black games).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -73,6 +74,7 @@ if [ "$JIT" = 1 ]; then
         -DCMAKE_BUILD_TYPE=Release \
         -DSSR_GENERATED_DIR="$GEN" \
         -DSSR_NRO_TITLE="${SSR_NRO_TITLE:-ssrecomp}" \
+        -DSSR_SWITCH_ROMFS="${SSR_SWITCH_ROMFS:-}" \
         -DSSR_JIT=ON
 elif [ ! -f "$BUILD/build.ninja" ]; then
     cmake -S . -B "$BUILD" -G Ninja \

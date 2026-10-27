@@ -14,6 +14,10 @@
 #include <switch.h>
 
 #include "testrun.h"
+#include "launcher.h"
+
+// How many chunks the program's SoulSilver tables have: none in a build for the Black games only.
+extern const uint32_t rc_num_chunks;
 
 namespace SwitchPlatform
 {
@@ -44,34 +48,109 @@ void ShowMessage(const std::string& text)
     consoleExit(nullptr);
 }
 
-bool EndsWithNds(const std::string& name)
+// The program's romfs (the Black games' function tables), mounted once.
+bool RomfsReady()
 {
-    if (name.size() < 4) return false;
-    std::string ext = name.substr(name.size() - 4);
-    for (char& c : ext) c = (char)tolower((unsigned char)c);
-    return ext == ".nds";
+    static const bool ready = R_SUCCEEDED(romfsInit());
+    return ready;
 }
 
-// rom.nds in the folder, or else the only .nds file there.
-std::string FindRom(const std::string& dir, std::string& problem)
+// Whether this build plays a game: SoulSilver and HeartGold need the program's own tables, the
+// Black games a function table (the player's own funcs.txt beside the game, or the build's).
+bool Playable(const Launcher::Game& g)
 {
+    if (!g.known) return false;
+    if (g.code == "IPGE" || g.code == "IPKE") return rc_num_chunks > 0;
     struct stat st;
-    if (stat((dir + "/rom.nds").c_str(), &st) == 0) return dir + "/rom.nds";
-    std::vector<std::string> found;
-    if (DIR* d = opendir(dir.c_str()))
-    {
-        while (dirent* e = readdir(d))
-            if (EndsWithNds(e->d_name)) found.push_back(e->d_name);
-        closedir(d);
-    }
-    if (found.size() == 1) return dir + "/" + found[0];
-    if (found.empty())
-        problem = "  No game found. Copy your ROM (Pokemon SoulSilver or HeartGold US; Black 2,\n"
-                  "  White 2, Black or White in English) into\n  " + dir + "/";
-    else
-        problem = "  More than one .nds file in\n  " + dir + "\n  Rename the one to play to rom.nds.";
-    return "";
+    if (stat((g.folder + "/funcs.txt").c_str(), &st) == 0) return true;
+    return RomfsReady() && stat(("romfs:/funcs/" + g.code + ".txt").c_str(), &st) == 0;
 }
+
+// The game list (launcher.h) on the screen until a game is chosen: its index, or -1 for +.
+// Shown with libnx's framebuffer, before the game's own window exists.
+int PickGame(const std::vector<Launcher::Game>& games, int selected)
+{
+    Framebuffer fb;
+    if (R_FAILED(framebufferCreate(&fb, nwindowGetDefault(), 1280, 720, PIXEL_FORMAT_RGBA_8888, 2))) return selected;
+    framebufferMakeLinear(&fb);
+    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+    PadState pad;
+    padInitializeDefault(&pad);
+    Canvas canvas;
+    canvas.Resize(1280, 720);
+    int first = 0, held = 0, result = -1;
+    std::string note;
+    while (appletMainLoop())
+    {
+        padUpdate(&pad);
+        const u64 down = padGetButtonsDown(&pad), now = padGetButtons(&pad);
+        // Up and down move one row, and keep moving while held.
+        const bool up = now & HidNpadButton_AnyUp, dn = now & HidNpadButton_AnyDown;
+        held = (up || dn) ? held + 1 : 0;
+        const bool step = held == 1 || (held > 20 && held % 6 == 0);
+        if (step && up && selected > 0) { selected--; note.clear(); }
+        if (step && dn && selected + 1 < (int)games.size()) { selected++; note.clear(); }
+        if (down & HidNpadButton_A)
+        {
+            if (Playable(games[selected]))
+            {
+                result = selected;
+                break;
+            }
+            note = games[selected].known ? "THIS DOWNLOAD DOES NOT HAVE THIS GAME" : "THIS GAME IS NOT ONE THAT THIS PLAYS";
+        }
+        if (down & (HidNpadButton_Plus | HidNpadButton_B)) break;
+        Launcher::Draw(canvas, games, selected, first, note);
+        u32 stride;
+        u32* out = (u32*)framebufferBegin(&fb, &stride);
+        for (int y = 0; y < 720; y++)
+        {
+            const uint32_t* src = &canvas.px[(size_t)y * 1280];
+            u32* dst = out + (size_t)y * (stride / 4);
+            // (ARGB to the framebuffer's RGBA bytes.)
+            for (int x = 0; x < 1280; x++)
+            {
+                const uint32_t p = src[x];
+                dst[x] = 0xFF000000u | (p & 0xFF) << 16 | (p & 0xFF00) | (p >> 16 & 0xFF);
+            }
+        }
+        framebufferEnd(&fb);
+    }
+    framebufferClose(&fb);
+    return result;
+}
+
+// The games to choose from: rom.nds or the ROMs in the program's folder (and its roms/ folder)
+// if there are any, else those in the other folders of /switch (the one-game-per-folder
+// downloads before the all-games one), each played with the save in its own folder.
+std::vector<Launcher::Game> FindGames(const std::string& dir, bool& ownFolder)
+{
+    std::vector<Launcher::Game> games;
+    Launcher::Game g;
+    ownFolder = true;
+    if (Launcher::ReadGame(dir + "/rom.nds", dir, g)) return { g };
+    Launcher::ScanFolder(dir, games);
+    if (games.empty())
+    {
+        ownFolder = false;
+        if (DIR* d = opendir("sdmc:/switch"))
+        {
+            while (dirent* e = readdir(d))
+            {
+                const std::string folder = std::string("sdmc:/switch/") + e->d_name;
+                if (e->d_name[0] == '.' || folder == dir) continue;
+                struct stat st;
+                if (stat(folder.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) Launcher::ScanFolder(folder, games);
+            }
+            closedir(d);
+        }
+    }
+    Launcher::Sort(games);
+    return games;
+}
+
+// Set when the game list was shown: the pause menu can then go back to it.
+bool g_canChange = false, g_changeGame = false;
 }
 
 // Set while a start with the JIT (and with its fast memory) has not yet run for a few
@@ -128,35 +207,55 @@ bool Start(int& argc, char**& argv)
     // With arguments (e.g. sent with nxlink while testing) they are used as they are.
     if (argc >= 2) return true;
 
-    std::string problem;
-    std::string rom = FindRom(dir, problem);
-    if (rom.empty())
+    // The game: the only one there is, or the one chosen from the list (launcher.h).
+    bool ownFolder = true;
+    std::vector<Launcher::Game> games = FindGames(dir, ownFolder);
+    if (games.empty())
     {
-        ShowMessage(problem);
+        ShowMessage("  No game found. Copy your ROMs (Pokemon Black, White, Black 2 or White 2 in\n"
+                    "  English; SoulSilver or HeartGold US) into\n  " + dir + "/");
         return false;
     }
-    // The save is named after the game (SoulSilver's name is the one earlier builds used).
-    char code[5] = {};
-    if (FILE* f = fopen(rom.c_str(), "rb"))
+    int chosen = 0;
+    if (games.size() > 1)
     {
-        if (fseek(f, 0x0C, SEEK_SET) != 0 || fread(code, 1, 4, f) != 4) code[0] = 0;
-        fclose(f);
+        // The list starts on the game played last.
+        const std::string lastPath = dir + "/last-game.txt";
+        std::string last;
+        if (FILE* f = fopen(lastPath.c_str(), "r"))
+        {
+            char line[768] = {};
+            if (fgets(line, sizeof(line), f)) last = line;
+            fclose(f);
+            while (!last.empty() && (last.back() == '\n' || last.back() == '\r')) last.pop_back();
+        }
+        for (size_t i = 0; i < games.size(); i++)
+            if (games[i].rom == last) chosen = (int)i;
+        chosen = PickGame(games, chosen);
+        if (chosen < 0) return false;
+        if (FILE* f = fopen(lastPath.c_str(), "w"))
+        {
+            fprintf(f, "%s\n", games[chosen].rom.c_str());
+            fclose(f);
+        }
+        g_canChange = true;
     }
+    const Launcher::Game& game = games[chosen];
+    const std::string rom = game.rom, gameDir = game.folder;
+    char code[5] = {};
+    memcpy(code, game.code.data(), std::min<size_t>(4, game.code.size()));
     // SoulSilver and HeartGold (US): the same program, layouts from its own tables.
     const bool heartSilver = !strcmp(code, "IPGE") || !strcmp(code, "IPKE");
-    std::string saveName = "game.sav";
-    if (!strcmp(code, "IPGE")) saveName = "soulsilver.sav";
-    else if (!strcmp(code, "IPKE")) saveName = "heartgold.sav";
-    else if (!strcmp(code, "IREO")) saveName = "black2.sav";
-    else if (!strcmp(code, "IRDO")) saveName = "white2.sav";
-    else if (!strcmp(code, "IRBO")) saveName = "black.sav";
-    else if (!strcmp(code, "IRAO")) saveName = "white.sav";
-    fprintf(stderr, "[switch] game code %s, save %s\n", code[0] ? code : "?", saveName.c_str());
+    // The save is named after the game (SoulSilver's name is the one earlier builds used), in
+    // the game's own folder.
+    const std::string saveName = game.saveName;
+    fprintf(stderr, "[switch] %s (game code %s), save %s/%s%s\n", rom.c_str(), code[0] ? code : "?", gameDir.c_str(),
+        saveName.c_str(), ownFolder ? "" : " (from another folder)");
     // The settings: settings.cfg beside the game (ssrecomp.cfg before; an old one is renamed).
     const std::string cfgPath = dir + "/settings.cfg", oldCfg = dir + "/ssrecomp.cfg";
     struct stat cst;
     if (stat(cfgPath.c_str(), &cst) != 0 && stat(oldCfg.c_str(), &cst) == 0) rename(oldCfg.c_str(), cfgPath.c_str());
-    g_args = { argc > 0 && argv[0] ? argv[0] : "pokemon-ds-wide", rom, "--save", dir + "/" + saveName, "--fullscreen",
+    g_args = { argc > 0 && argv[0] ? argv[0] : "pokemon-ds-wide", rom, "--save", gameDir + "/" + saveName, "--fullscreen",
                "--config", cfgPath };
     // A game that is not recompiled (Black, White, Black 2, White 2) comes with its function table, made on the
     // PC by tools/bw2/funcmap.py or tools/bw1/funcmap.py; its layouts follow the functions that
@@ -169,9 +268,9 @@ bool Start(int& argc, char**& argv)
     std::string funcsPath;
     if (!heartSilver)
     {
-        const std::string own = dir + "/funcs.txt", builtIn = std::string("romfs:/funcs/") + code + ".txt";
+        const std::string own = gameDir + "/funcs.txt", builtIn = std::string("romfs:/funcs/") + code + ".txt";
         if (stat(own.c_str(), &st) == 0) funcsPath = own;
-        else if (R_SUCCEEDED(romfsInit()) && stat("romfs:/funcs", &st) == 0)
+        else if (RomfsReady() && stat("romfs:/funcs", &st) == 0)
         {
             if (stat(builtIn.c_str(), &st) == 0) funcsPath = builtIn;
             else
@@ -280,6 +379,9 @@ bool Start(int& argc, char**& argv)
 }
 
 static bool DirectBoost(bool on);
+
+bool CanChangeGame() { return g_canChange && envHasNextLoad(); }
+void ChangeGame() { g_changeGame = true; }
 
 bool SetCpuBoost(bool on)
 {
@@ -508,6 +610,14 @@ void Finish()
 {
     JitStarted(); // (an ordinary exit: the JIT did start)
     if (g_boosted) SetCpuBoost(false);
+    // CHANGE GAME in the pause menu: the Homebrew Menu's loader starts the program again, which
+    // shows the game list.
+    if (g_changeGame && !g_self.empty())
+    {
+        const std::string cmd = g_self.find(' ') == std::string::npos ? g_self : "\"" + g_self + "\"";
+        const Result rc = envSetNextLoad(g_self.c_str(), cmd.c_str());
+        fprintf(stderr, "[switch] back to the game list: 0x%x\n", (unsigned)rc);
+    }
     fflush(stderr);
     if (TestRun::Finish(g_test))
     {

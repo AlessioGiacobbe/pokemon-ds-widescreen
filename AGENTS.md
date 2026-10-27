@@ -57,9 +57,10 @@ Targets: Linux and Windows first, Android second. macOS is community-maintained.
 | `tools/package_setup.py`, `make_appimage.sh` | packaging the setup program with PyInstaller |
 | `tools/android/` | APK packing around SDL's Java code |
 | `frontend/switch_platform.cpp` | the Switch's parts (SD card folder, clocks, threads, exit); only file that sees libnx |
+| `frontend/launcher.h` | the all-games program's game list (ROMs found, icons and names from their banners), drawn by `switch_platform.cpp` before the game starts |
 | `frontend/bw1.h`, `tools/bw1/`, `tools/bw2/` | Pokémon Black, White and Black 2: no recompiled code; layouts follow the functions in `funcs.txt` (made by `funcmap.py` from a decompilation's symbols and the ROM), Black's own layouts on top of Black 2's (White's table is Black's at the addresses in `tools/bw1/white_shifts.txt`) |
 | `melonDS/src/GPU3D_WideGpu*.cpp`, `wide_gpu/` | the widescreen world drawn by a graphics chip: deko3D on the Switch, OpenGL on a PC for headless comparisons (keep both in step with `GPU3D_Wide.cpp`) |
-| `tools/switch/` | Switch builds: `build_game.sh` (any of the games, or `bw`: the shared Black 2/White 2 build with its tables in the romfs), `build.sh` (SoulSilver) |
+| `tools/switch/` | Switch builds: `build_game.sh` (any of the games; `bw`: the shared Black 2/White 2 build with its tables in the romfs; `all`: one program for all six with the game list), `build.sh` (SoulSilver) |
 | `layouts/soulsilver-us.json` | section addresses and code/data map, so a plain ROM can be recompiled without the decompilation |
 
 ## Building

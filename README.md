@@ -10,7 +10,8 @@
 | **Pokémon Black 2 and White 2** | ✅ out now | [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
 | **Pokémon SoulSilver and HeartGold** | ✅ out now | [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
 | **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
-| **All six games in one** | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v1) |
+| **All six games in one program** (choose the game when it starts) | 🆕 next release | `pokemon-ds-wide-switch.zip` |
+| **All six games in one zip** (one program per game) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v1) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 Every download is free of the games themselves: you bring your own ROM, and
@@ -53,6 +54,24 @@ sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`) and
 choose to install a forwarder. Do it once per game; keep the game's folder
 where it is, as the forwarder starts the `.nro` in it. Each game then has its
 own entry, so sys-clk (below) can have its own settings for it.
+
+### All the games in one program
+
+`pokemon-ds-wide-switch.zip` is one program for all six games, with a list to
+choose from when it starts, each game shown with its own icon (read from your
+ROM).
+
+1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`.
+2. Copy your ROMs into that folder (any names; a `roms` folder inside it works
+   too). Each game keeps its save there under its own name (`black2.sav`,
+   `soulsilver.sav` and so on).
+3. Hold R while starting any game, pick **Pokemon DS Widescreen**, then the
+   game. **CHANGE GAME** in the pause menu saves and goes back to the list.
+
+Already using the one-game folders? Leave them as they are and put no ROM in
+`/switch/pokemon-ds-wide/`: the list then shows the games in your other
+`/switch/` folders, each played with the save already in its folder. With
+only one ROM in the folder there is no list: that game starts straight away.
 
 ---
 
