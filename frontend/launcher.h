@@ -14,6 +14,9 @@
 #include <sys/stat.h>
 
 #include "ui.h"
+// (JPEG and PNG pictures for the list: the program that draws it defines STB_IMAGE_IMPLEMENTATION
+// with STBI_ONLY_JPEG and STBI_ONLY_PNG before including this, in one file.)
+#include "thirdparty/stb_image.h"
 
 namespace Launcher
 {
@@ -29,7 +32,12 @@ struct Game
     bool hasSave = false;
     bool hasIcon = false;
     uint32_t icon[32 * 32] = {}; // ARGB, transparent where the icon is
+    // A larger picture for the game, if the player has one (FindArt): ARGB, Art x Art pixels.
+    std::vector<uint32_t> art;
 };
+
+// The size the larger pictures are kept at (the tiles of the list at 720 lines).
+constexpr int Art = 224;
 
 // The games this program plays, in the order the list shows them.
 struct KnownGame
@@ -133,6 +141,94 @@ inline bool ReadGame(const std::string& rom, const std::string& folder, Game& g)
     return true;
 }
 
+// A JPEG or PNG picture, scaled to Art x Art (each pixel the average of the ones it covers).
+inline bool LoadArt(const unsigned char* data, size_t size, std::vector<uint32_t>& out)
+{
+    int w = 0, h = 0, n = 0;
+    unsigned char* px = stbi_load_from_memory(data, (int)size, &w, &h, &n, 4);
+    if (!px) return false;
+    out.assign((size_t)Art * Art, 0);
+    for (int y = 0; y < Art; y++)
+        for (int x = 0; x < Art; x++)
+        {
+            const int x0 = x * w / Art, x1 = std::max(x0 + 1, (x + 1) * w / Art);
+            const int y0 = y * h / Art, y1 = std::max(y0 + 1, (y + 1) * h / Art);
+            uint32_t sum[4] = {}, count = 0;
+            for (int yy = y0; yy < y1; yy++)
+                for (int xx = x0; xx < x1; xx++)
+                {
+                    const unsigned char* p = px + ((size_t)yy * w + xx) * 4;
+                    for (int c = 0; c < 4; c++) sum[c] += p[c];
+                    count++;
+                }
+            out[(size_t)y * Art + x] = (sum[3] / count) << 24 | (sum[0] / count) << 16 | (sum[1] / count) << 8 | sum[2] / count;
+        }
+    stbi_image_free(px);
+    return true;
+}
+
+inline bool ReadFile(const std::string& path, std::vector<unsigned char>& data, long offset = 0, long size = -1)
+{
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return false;
+    if (size < 0)
+    {
+        fseek(f, 0, SEEK_END);
+        size = ftell(f) - offset;
+    }
+    bool ok = size > 0 && size < (16 << 20) && fseek(f, offset, SEEK_SET) == 0;
+    if (ok)
+    {
+        data.resize((size_t)size);
+        ok = fread(data.data(), 1, data.size(), f) == data.size();
+    }
+    fclose(f);
+    return ok;
+}
+
+// The icon a Switch homebrew program carries (its Homebrew Menu icon, a JPEG), from a .nro file.
+inline bool NroIcon(const std::string& nro, std::vector<unsigned char>& jpeg)
+{
+    std::vector<unsigned char> head;
+    if (!ReadFile(nro, head, 0, 0x20) || memcmp(head.data() + 0x10, "NRO0", 4) != 0) return false;
+    const long size = head[0x18] | head[0x19] << 8 | head[0x1A] << 16 | (long)head[0x1B] << 24;
+    std::vector<unsigned char> aset;
+    if (!ReadFile(nro, aset, size, 0x38) || memcmp(aset.data(), "ASET", 4) != 0) return false;
+    uint64_t off = 0, len = 0;
+    for (int i = 7; i >= 0; i--)
+    {
+        off = off << 8 | aset[0x08 + i];
+        len = len << 8 | aset[0x10 + i];
+    }
+    return len > 0 && ReadFile(nro, jpeg, size + (long)off, (long)len);
+}
+
+// The game's larger picture, from the first of: <list folder>/icons/<game code>.jpg or .png (e.g.
+// icons/IREO.jpg), a picture with the ROM's name (Black 2.nds: Black 2.jpg or .png), icon.jpg in
+// the game's folder, or the Homebrew Menu icon of a one-game program (.nro) in its folder. The
+// downloads hold none: these are the player's own.
+inline void FindArt(Game& g, const std::string& listFolder)
+{
+    std::vector<unsigned char> data;
+    const std::string base = g.rom.substr(0, g.rom.size() - 4);
+    for (const std::string& path : { listFolder + "/icons/" + g.code + ".jpg", listFolder + "/icons/" + g.code + ".png",
+                                     base + ".jpg", base + ".png", g.folder + "/icon.jpg" })
+        if (ReadFile(path, data) && LoadArt(data.data(), data.size(), g.art)) return;
+    if (DIR* d = opendir(g.folder.c_str()))
+    {
+        std::vector<std::string> nros;
+        while (dirent* e = readdir(d))
+        {
+            const std::string n = e->d_name;
+            if (n.size() > 4 && n.compare(n.size() - 4, 4, ".nro") == 0) nros.push_back(g.folder + "/" + n);
+        }
+        closedir(d);
+        std::sort(nros.begin(), nros.end());
+        for (const std::string& nro : nros)
+            if (NroIcon(nro, data) && LoadArt(data.data(), data.size(), g.art)) return;
+    }
+}
+
 // The ROMs in a folder and in its roms/ folder; their saves go in the folder itself.
 inline void ScanFolder(const std::string& folder, std::vector<Game>& out)
 {
@@ -163,48 +259,74 @@ inline void Sort(std::vector<Game>& games)
     });
 }
 
-// The list, drawn over the whole canvas (1280x720 on the Switch). first is the top row shown.
-inline void Draw(Canvas& c, const std::vector<Game>& games, int selected, int& first, const std::string& note)
+// The list, drawn over the whole canvas (1280x720 on the Switch): a grid of tiles, each the
+// game's picture (or its DS icon, enlarged) with its name and whether it has a save. first is the
+// first row shown. Returns the number of columns, for moving up and down.
+inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& first, const std::string& note)
 {
     const int s = std::max(1, c.h / 240); // the font's scale: 3 at 720 lines
     c.Fill(0, 0, c.w, c.h, 0xFF101A2E);
     // A band along the top with the title.
-    c.Fill(0, 0, c.w, 26 * s, 0xFF1C2A44);
-    c.Fill(0, 26 * s, c.w, s, 0xFF3D6FD1);
+    c.Fill(0, 0, c.w, 22 * s, 0xFF1C2A44);
+    c.Fill(0, 22 * s, c.w, s, 0xFF3D6FD1);
     const std::string title = "POKEMON DS WIDESCREEN";
-    c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 8 * s, title, s + 1, 0xFFFFD75E);
+    c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, 0xFFFFD75E);
 
-    const int rowH = 26 * s, top = 32 * s, bottom = c.h - 20 * s;
-    const int rows = std::max(1, (bottom - top) / rowH);
-    if (selected < first) first = selected;
-    if (selected >= first + rows) first = selected - rows + 1;
-    const int listW = std::min(c.w - 16 * s, 240 * s), lx = (c.w - listW) / 2;
-    const int is = std::max(1, s * 2 / 3); // the icons' scale: 2 at 720 lines (64 pixels)
-    const int ts = std::max(1, s * 2 / 3); // the second line's
-    for (int i = first; i < (int)games.size() && i < first + rows; i++)
+    // Tiles three across and two rows down (six games on one screen), at most Art x Art at 720
+    // lines.
+    const int gap = 8 * s, labelH = 20 * s, top = 28 * s, bottom = c.h - 16 * s;
+    const int tile = std::max(32, std::min(Art * c.h / 720, (bottom - top) / 2 - labelH - gap));
+    const int cols = std::max(1, std::min(3, (c.w - gap) / (tile + gap * 3)));
+    const int rows = std::max(1, (bottom - top) / (tile + labelH + gap));
+    const int selRow = selected / cols;
+    if (selRow < first) first = selRow;
+    if (selRow >= first + rows) first = selRow - rows + 1;
+    const int gridW = cols * tile + (cols - 1) * gap * 3;
+    const int gx = (c.w - gridW) / 2;
+    for (int i = first * cols; i < (int)games.size() && i < (first + rows) * cols; i++)
     {
         const Game& g = games[i];
-        const int y = top + (i - first) * rowH, h = rowH - 3 * s;
         const bool sel = i == selected;
-        c.Fill(lx, y, listW, h, sel ? 0xFF3D6FD1 : 0xFF1C2A44);
-        // The game's own icon.
-        if (g.hasIcon)
+        const int x = gx + (i % cols) * (tile + gap * 3), y = top + (i / cols - first) * (tile + labelH + gap);
+        // A frame round the chosen one.
+        if (sel) c.Fill(x - 2 * s, y - 2 * s, tile + 4 * s, tile + 4 * s, 0xFFFFD75E);
+        c.Fill(x, y, tile, tile, 0xFF1C2A44);
+        if (!g.art.empty())
         {
-            const int ix = lx + 4 * s, iy = y + (h - 32 * is) / 2;
+            for (int py = 0; py < tile; py++)
+            {
+                const uint32_t* row = &g.art[(size_t)(py * Art / tile) * Art];
+                for (int px = 0; px < tile; px++)
+                {
+                    const uint32_t p = row[px * Art / tile];
+                    if (p >> 24 >= 0x80) c.px[(size_t)(y + py) * c.w + x + px] = p | 0xFF000000u;
+                }
+            }
+            c.Fill(x, y, 1, 1, 0xFF1C2A44); // (so the canvas knows the tile was drawn)
+        }
+        else if (g.hasIcon)
+        {
+            // The DS icon, enlarged by whole pixels.
+            const int is = std::max(1, tile / 40), o = (tile - 32 * is) / 2;
             for (int py = 0; py < 32; py++)
                 for (int px = 0; px < 32; px++)
-                    if (g.icon[py * 32 + px] >> 24) c.Fill(ix + px * is, iy + py * is, is, is, g.icon[py * 32 + px]);
+                    if (g.icon[py * 32 + px] >> 24) c.Fill(x + o + px * is, y + o + py * is, is, is, g.icon[py * 32 + px]);
         }
-        const int tx = lx + 8 * s + 32 * is;
-        c.Text(tx, y + 4 * s, g.name, s, sel ? 0xFFFFFFFF : 0xFFC8D0E0);
-        const std::string sub = !g.known ? "NOT ONE OF THE GAMES THIS PLAYS" : g.hasSave ? "SAVE FOUND" : "NEW GAME";
-        c.Text(tx, y + 14 * s, sub, ts, !g.known ? 0xFFE07A6A : sel ? 0xFFDDE6FF : 0xFF8FA0C0);
+        // The name (shortened: POKEMON is the same for all) and the save.
+        std::string name = g.name;
+        if (name.rfind("POKEMON ", 0) == 0) name = name.substr(8);
+        const int ns = Canvas::TextWidth(name, s) <= tile ? s : std::max(1, s - 1);
+        c.Text(x + (tile - Canvas::TextWidth(name, ns)) / 2, y + tile + 3 * s, name, ns, sel ? 0xFFFFFFFF : 0xFFC8D0E0);
+        const std::string sub = !g.known ? "NOT PLAYABLE" : g.hasSave ? "SAVE FOUND" : "NEW GAME";
+        const int ss = std::max(1, s * 2 / 3);
+        c.Text(x + (tile - Canvas::TextWidth(sub, ss)) / 2, y + tile + 12 * s, sub, ss, !g.known ? 0xFFE07A6A : sel ? 0xFFDDE6FF : 0xFF8FA0C0);
     }
     // More games above or below the ones shown.
-    if (first > 0) c.Fill(lx + listW / 2 - 6 * s, top - 4 * s, 12 * s, s, 0xFF8FA0C0);
-    if (first + rows < (int)games.size()) c.Fill(lx + listW / 2 - 6 * s, top + rows * rowH - 2 * s, 12 * s, s, 0xFF8FA0C0);
+    if (first > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, 0xFF8FA0C0);
+    if ((first + rows) * cols < (int)games.size()) c.Fill(c.w / 2 - 8 * s, bottom - 2 * s, 16 * s, s, 0xFF8FA0C0);
     const std::string hint = note.empty() ? "A: PLAY    +: QUIT" : note;
-    c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 13 * s, hint, s, 0xFF8FA0C0);
+    c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, 0xFF8FA0C0);
+    return cols;
 }
 
 }

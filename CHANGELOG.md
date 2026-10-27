@@ -3,7 +3,8 @@
 ## Unreleased
 
 - **One program for all six games (Switch):** `pokemon-ds-wide-switch.zip` holds a single
-  program that shows a list of your games when it starts, each with the icon from its ROM, and
+  program that shows a grid of your games when it starts, each with the icon from its ROM (or
+  your own picture in `icons/`, or the HOME Menu icon of a one-game program beside it), and
   **CHANGE GAME** in the pause menu goes back to it. With no ROM in its own folder it lists the
   games in the other `/switch/` folders (the one-game downloads), each with its own save, so
   nothing needs moving. A folder with a single ROM still starts that game straight away.

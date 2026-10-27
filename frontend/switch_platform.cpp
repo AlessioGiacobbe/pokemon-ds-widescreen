@@ -14,6 +14,13 @@
 #include <switch.h>
 
 #include "testrun.h"
+// (stb_image's code here, for the game list's pictures: only JPEG and PNG.)
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#include "thirdparty/stb_image.h"
+#undef STB_IMAGE_IMPLEMENTATION
 #include "launcher.h"
 
 // How many chunks the program's SoulSilver tables have: none in a build for the Black games only.
@@ -78,18 +85,27 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected)
     padInitializeDefault(&pad);
     Canvas canvas;
     canvas.Resize(1280, 720);
-    int first = 0, held = 0, result = -1;
+    int first = 0, held = 0, result = -1, cols = 3;
     std::string note;
     while (appletMainLoop())
     {
         padUpdate(&pad);
         const u64 down = padGetButtonsDown(&pad), now = padGetButtons(&pad);
-        // Up and down move one row, and keep moving while held.
+        // The arrows (or a stick) move through the grid, and keep moving while held.
         const bool up = now & HidNpadButton_AnyUp, dn = now & HidNpadButton_AnyDown;
-        held = (up || dn) ? held + 1 : 0;
+        const bool lf = now & HidNpadButton_AnyLeft, rt = now & HidNpadButton_AnyRight;
+        held = (up || dn || lf || rt) ? held + 1 : 0;
         const bool step = held == 1 || (held > 20 && held % 6 == 0);
-        if (step && up && selected > 0) { selected--; note.clear(); }
-        if (step && dn && selected + 1 < (int)games.size()) { selected++; note.clear(); }
+        int to = selected;
+        if (step && lf) to = selected - 1;
+        if (step && rt) to = selected + 1;
+        if (step && up) to = selected - cols;
+        if (step && dn) to = std::min(selected + cols, (int)games.size() - 1);
+        if (to != selected && to >= 0 && to < (int)games.size())
+        {
+            selected = to;
+            note.clear();
+        }
         if (down & HidNpadButton_A)
         {
             if (Playable(games[selected]))
@@ -100,7 +116,7 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected)
             note = games[selected].known ? "THIS DOWNLOAD DOES NOT HAVE THIS GAME" : "THIS GAME IS NOT ONE THAT THIS PLAYS";
         }
         if (down & (HidNpadButton_Plus | HidNpadButton_B)) break;
-        Launcher::Draw(canvas, games, selected, first, note);
+        cols = Launcher::Draw(canvas, games, selected, first, note);
         u32 stride;
         u32* out = (u32*)framebufferBegin(&fb, &stride);
         for (int y = 0; y < 720; y++)
@@ -231,6 +247,8 @@ bool Start(int& argc, char**& argv)
         }
         for (size_t i = 0; i < games.size(); i++)
             if (games[i].rom == last) chosen = (int)i;
+        // Each game's picture, if the player has one (Launcher::FindArt).
+        for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
         chosen = PickGame(games, chosen);
         if (chosen < 0) return false;
         if (FILE* f = fopen(lastPath.c_str(), "w"))

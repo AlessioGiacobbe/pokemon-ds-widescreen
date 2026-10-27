@@ -57,9 +57,12 @@ own entry, so sys-clk (below) can have its own settings for it.
 
 ### All the games in one program
 
-`pokemon-ds-wide-switch.zip` is one program for all six games, with a list to
-choose from when it starts, each game shown with its own icon (read from your
-ROM).
+`pokemon-ds-wide-switch.zip` is one program for all six games, with a grid to
+choose from when it starts. Each game is shown with the icon from its ROM, or
+with a picture of your own: put it in `/switch/pokemon-ds-wide/icons/` named
+after the game's code (`IRBO` Black, `IRAO` White, `IREO` Black 2, `IRDO`
+White 2, `IPKE` HeartGold, `IPGE` SoulSilver), e.g. `icons/IREO.jpg` (JPEG or
+PNG, square). A game in a one-game folder shows that program's HOME Menu icon.
 
 1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`.
 2. Copy your ROMs into that folder (any names; a `roms` folder inside it works
