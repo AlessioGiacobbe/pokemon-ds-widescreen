@@ -21,8 +21,9 @@ game starts.
 
 ## What is it?
 
-A Switch homebrew app that runs the game on the melonDS emulator core, plus a
-layer that knows what the game is doing (which screen, which menu, which
+A Switch homebrew app that runs the game on the melonDS emulator core (built
+in: there is no need to install melonDS or anything else), plus a layer that
+knows what the game is doing (which screen, which menu, which
 battle) and rearranges it into one proper widescreen picture. It is **not a
 native port** (those are the dream, see [What's next](#whats-next)); it's the
 DS game, presented the way it should look on a Switch.
