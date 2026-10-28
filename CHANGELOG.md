@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Black, White, Black 2 and White 2 (playtest notes):** no more trees drawn as thin slivers at
+  the edge of the wide view (Castelia City's plaza); calm side bars instead of streaks while
+  a door's zoom, a key item's cut-in or Fly covers the world; Black and White's start menu
+  with no saved game shows its list properly; the X menu no longer opens as a grid of black
+  boxes; going back from the Bag to the X menu goes straight to the wide view.
 - **SoulSilver and HeartGold menus:** the Bag shows the chosen item's description above the
   items; no black box where the X menu was while it closes into the save or a menu; the
   Pokemon summary no longer flashes empty frames while it fades; a fade to white (choosing

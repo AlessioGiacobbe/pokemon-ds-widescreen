@@ -34,7 +34,7 @@ public:
         if (useWide) DrawWide(scene, screens, outW, outH, v, smooth, *wide);
         else if (scene.edgeFill && !scene.items.empty() && scene.items[0].screen >= 0) DrawEdgeFill(screens[scene.items[0].screen], outW, v);
         else if ((scene.softBars || (scene.wide && scene.narrow)) && !scene.items.empty() && scene.items[0].screen >= 0 && v.originX > 0)
-            DrawNarrowBars(screens[scene.items[0].screen], outW, outH, v);
+            DrawNarrowBars(screens[scene.items[0].screen], outW, outH, v, scene.wide && scene.narrow);
 
         int slot = 0;
         bool first = true;
@@ -311,10 +311,10 @@ private:
     }
 
     // The bars beside a 4:3 picture on a wide view (MergedNarrowBars): a colour per row.
-    void DrawNarrowBars(const ScreenImage& top, int outW, int outH, const MergedView& v)
+    void DrawNarrowBars(const ScreenImage& top, int outW, int outH, const MergedView& v, bool calm)
     {
         uint32_t bars[2][192];
-        MergedNarrowBars(top, bars[0], bars[1]);
+        MergedNarrowBars(top, bars[0], bars[1], calm);
         const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
         const float y0 = v.originY, h = 192 * v.unit;
         for (int side = 0; side < 2; side++)

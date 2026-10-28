@@ -4671,7 +4671,14 @@ int main(int argc, char** argv)
             // whole battle (its party and Bag pages are not wide), so that coming back to the
             // world or the arena shows it straight away instead of a few frames with bars.
             static uint32_t lastWideScene = 0;
-            if (funcWatchOn && scene.wide) lastWideScene = frame;
+            // (And through the menus opened from the X menu, the Bag and the party and the like,
+            // which can be up for longer: going back from them to the X menu showed the
+            // overworld at 4:3 for a few frames while the renderer started again. It draws
+            // nothing meanwhile, the world being paused.)
+            static const char* const keepNames[] = { "bag", "party", "pokedex", "pokedex-list", "trainer-card", "options",
+                "summary", "town-map", "start-menu" };
+            const bool fromMenu = std::any_of(std::begin(keepNames), std::end(keepNames), [&](const char* n) { return !strcmp(scene.name, n); });
+            if (funcWatchOn && (scene.wide || (fromMenu && lastWideScene && frame - lastWideScene < 300))) lastWideScene = frame;
             const bool bw2KeepWide = funcWatchOn && (scene.wide || (lastWideScene && frame - lastWideScene < 300) ||
                 funcWatch.Ran(bw2.battle, 2) || funcWatch.Ran(pt.battle, 2));
             const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 && (funcWatchOn ? bw2KeepWide :
@@ -5245,6 +5252,9 @@ int main(int argc, char** argv)
                 // The layout on screen stays until the save is written (see probeSaveWrite).
                 pending = 0;
             else if (shownName.empty() || shownName == picked.name ||
+                // (Back from a menu to the X menu: at once, not the menu's layout over the X menu's
+                // screens for a few frames.)
+                (!strcmp(picked.name, "start-menu") && menuScene(shownName.c_str())) ||
                 // Between menus, with both screens black nothing on screen changes, so the new
                 // layout can take over at once and is in place when the picture fades in.
                 // (Not around battles: there the timing of the layouts decides which buttons

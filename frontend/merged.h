@@ -620,8 +620,13 @@ inline const uint32_t* MergedFillWideHoles(const WideImage& wide, int screenX0, 
 // opening with a snapshot of the screen, a flash, a cut-in): the bars beside it go on in soft
 // colours from the picture's edges, each row the average of the 8 pixels at that edge over
 // the 17 rows around it, rather than black, so that the view does not seem to shrink.
-inline void MergedNarrowBars(const ScreenImage& s, uint32_t left[192], uint32_t right[192])
+// calm: the bars beside a 2D picture that covers the world for a moment (a door's zoom, a key
+// item's cut-in, Fly): averaged over 81 rows instead of 17 and darkened by a third, so that the
+// trees and houses at the picture's edges are not drawn out into streaks across the bars.
+inline void MergedNarrowBars(const ScreenImage& s, uint32_t left[192], uint32_t right[192], bool calm = false)
 {
+    const int reach = calm ? 40 : 8;
+    const uint32_t keep = calm ? 170 : 256; // (in 256ths)
     for (int side = 0; side < 2; side++)
     {
         uint32_t rowSum[192][3];
@@ -643,13 +648,13 @@ inline void MergedNarrowBars(const ScreenImage& s, uint32_t left[192], uint32_t 
         for (int y = 0; y < 192; y++)
         {
             uint32_t r = 0, g = 0, b = 0, n = 0;
-            for (int k = std::max(0, y - 8); k <= std::min(191, y + 8); k++, n += 8)
+            for (int k = std::max(0, y - reach); k <= std::min(191, y + reach); k++, n += 8)
             {
                 r += rowSum[k][0];
                 g += rowSum[k][1];
                 b += rowSum[k][2];
             }
-            out[y] = 0xFF000000 | (r / n) << 16 | (g / n) << 8 | (b / n);
+            out[y] = 0xFF000000 | (r / n * keep >> 8) << 16 | (g / n * keep >> 8) << 8 | (b / n * keep >> 8);
         }
     }
 }
@@ -729,7 +734,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     uint32_t narrowBar[2][192];
     const bool narrowBars = (scene.softBars || (scene.wide && scene.narrow)) && !scene.items.empty() && scene.items[0].screen >= 0 &&
         v.originX > 0;
-    if (narrowBars) MergedNarrowBars(screens[scene.items[0].screen], narrowBar[0], narrowBar[1]);
+    if (narrowBars) MergedNarrowBars(screens[scene.items[0].screen], narrowBar[0], narrowBar[1], scene.wide && scene.narrow);
 
     auto rows = [&](int ya, int yb) {
         // Background: one colour, or the widescreen 3D picture with the game's fade applied.

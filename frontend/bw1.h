@@ -139,6 +139,24 @@ public:
             // the menu's own background, without the Poke Ball and stripes behind them (BG3, also
             // left out of the buttons it shows through: Scene::redrawSkip). Otherwise the top
             // screen alone, with soft bars.
+            // (With no saved game there is no card: the list alone, NEW GAME first, rows 15-110,
+            // nothing on the screen below it but the background.)
+            bool listBelow = false;
+            if (screens && screens[0].flags)
+                for (int y = 135; y < 186 && !listBelow; y += 2)
+                    for (int x = 40; x < 216 && !listBelow; x += 4)
+                    {
+                        const uint8_t c = LayerClass(screens[0].flags[y * 256 + x]);
+                        listBelow = c != LAYER_BACKDROP && c != LAYER_BG3;
+                    }
+            if (wideView && !listBelow)
+            {
+                Element list = Crop(0, 32, 14, 194, 98);
+                list.drop = LAYER_BACKDROP;
+                sc = CleanMenu("launch-menu", { list }, viewWidth, 0x1c1c1c);
+                sc.redrawSkip[0] = 1 << 3;
+                return;
+            }
             if (wideView)
             {
                 Element card = Crop(0, 24, 15, 206, 113), list = Crop(0, 32, 128, 192, 169);
@@ -399,7 +417,16 @@ private:
                     const int lum = (((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF)) / 3;
                     if (lum <= 150) dark++;
                 }
-                if (dark * 10 >= 123 * 3)
+                // (And something light on it, its icon or name: while the menu opens its buttons
+                // are empty dark boxes for a few frames, which showed as a grid of black boxes.)
+                int light = 0;
+                for (int y = by + 8; y < by + 35; y += 2)
+                    for (int x = bx + 8; x < bx + 115; x += 2)
+                    {
+                        const uint32_t c = px[y * 256 + x];
+                        if ((((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF)) / 3 > 200) light++;
+                    }
+                if (dark * 10 >= 123 * 3 && light >= 8)
                 {
                     buttons.push_back({ Crop(1, bx, by, 123, 41), row, col });
                     rows = row + 1;
