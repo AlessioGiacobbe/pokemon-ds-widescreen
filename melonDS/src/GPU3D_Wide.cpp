@@ -275,41 +275,24 @@ struct WideAccess
     };
     static inline std::vector<std::unique_ptr<Texture>> Textures;
 
-    // Submits the recorded frame again into the given buffers. With `interpolate`, every
-    // vertex is first moved halfway back towards where the same polygon was in the
-    // previous frame; `matched` then counts the polygons found in both frames. The
-    // horizontal clip coordinate is multiplied by xnum/xden.
-    // The frame is rawCur, the one before it rawPrev (g's own RawCurrent and RawPrevious, or
-    // copies of them when g is a helper's GPU3D, see ListHelper).
-    static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 xden, Vertex* vram, Polygon* pram,
-        Polygon** list, u32& numPolys, u32& matched, const std::vector<GPU3D::RawPolygon>& rawCur,
-        const std::vector<GPU3D::RawPolygon>& rawPrev, u32 polyLimit = 2048, u32 vertLimit = 6144)
+    // Which polygon of the previous frame each of this frame's polygons is paired with (-1 for
+    // none), and whether it may share two corners with the polygon before it (see Replay).
+    // (No initialisers: one is a static object of ListHelper, zeroed.)
+    struct Pairing
     {
-        const u32 savedPolyLimit = g.PolygonLimit, savedVertLimit = g.VertexLimit;
-        g.PolygonLimit = polyLimit;
-        g.VertexLimit = vertLimit;
+        std::vector<s32> Partner;
+        std::vector<u8> KeepStrip;
+        u32 Matched;
+    };
+
+    // Pairs the polygons of rawCur with those of rawPrev, for an in-between frame. The same for
+    // the DS-resolution in-between frame and the wide view's, so it is worked out once where
+    // the wide view's lists are built on a helper thread (ListHelper). `debug`: the pairs are
+    // written to the log with SSR_PAIR_DEBUG.
+    static void Pair(const std::vector<GPU3D::RawPolygon>& rawCur, const std::vector<GPU3D::RawPolygon>& rawPrev, bool debug,
+        Pairing& out)
+    {
         typedef GPU3D::RawPolygon RawPolygon;
-
-        // Everything SubmitPolygon touches is saved and put back afterwards.
-        Vertex savedTemp[4];
-        memcpy(savedTemp, g.TempVertexBuffer, sizeof(savedTemp));
-        u32 savedViewport[6];
-        memcpy(savedViewport, g.Viewport, sizeof(savedViewport));
-        const u32 savedPolygonMode = g.PolygonMode, savedAttr = g.CurPolygonAttr, savedTexParam = g.TexParam,
-            savedTexPalette = g.TexPalette, savedConsecutive = g.NumConsecutivePolygons, savedDispCnt = g.DispCnt,
-            savedNumVertices = g.NumVertices, savedNumPolygons = g.NumPolygons, savedNumOpaque = g.NumOpaquePolygons,
-            savedSlotsFree = g.VertexSlotsFree;
-        const s32 savedPipeline = g.PolygonPipeline, savedSlotCounter = g.VertexSlotCounter;
-        Polygon* const savedLastStrip = g.LastStripPolygon;
-        Vertex* const savedVertexRAM = g.CurVertexRAM;
-        Polygon* const savedPolygonRAM = g.CurPolygonRAM;
-
-        g.CurVertexRAM = vram;
-        g.CurPolygonRAM = pram;
-        g.NumVertices = g.NumPolygons = g.NumOpaquePolygons = 0;
-        g.LastStripPolygon = nullptr;
-        g.InReplay = true;
-
         // Polygons are matched in submission order. When the two frames do not line up (an
         // object entered or left), the search skips ahead a little; an unmatched polygon is
         // drawn at its new position.
@@ -365,7 +348,7 @@ struct WideAccess
         // The movement most pairings agree on: every polygon votes with each candidate it
         // could be paired with; the true pairings all say the same, the false ones scatter.
         s64 sceneX = 0, sceneY = 0;
-        if (interpolate && !rawPrev.empty())
+        if (!rawPrev.empty())
         {
             // (Per thread: the DS-resolution in-between frame and the wide one are built at once.)
             static thread_local std::vector<u16> votes;
@@ -401,15 +384,137 @@ struct WideAccess
             }
         }
 
+        out.Partner.assign(rawCur.size(), -1);
+        out.KeepStrip.assign(rawCur.size(), 1);
+        out.Matched = 0;
         size_t ia = 0;
         s64 lastPair = -1;
         static const bool dbgPairOn = getenv("SSR_PAIR_DEBUG") != nullptr;
-        const bool dbgPair = dbgPairOn && interpolate && xnum == xden;
+        const bool dbgPair = dbgPairOn && debug;
         s64 dbgOff = 0;
         if (dbgPair) fprintf(stderr, "[pair] --- frame, scene motion %lld,%lld\n", (long long)sceneX, (long long)sceneY);
-        matched = 0;
-        for (const RawPolygon& cur : rawCur)
+        for (size_t ci = 0; ci < rawCur.size(); ci++)
         {
+            const RawPolygon& cur = rawCur[ci];
+            const int nverts = (cur.PolygonMode & 0x1) ? 4 : 3;
+
+            // Polygons of a strip share two corners with the one before, and the DS takes
+            // those from the polygon already built. That is only right here if both were
+            // moved the same way: both paired, with neighbours in the previous frame as
+            // well, or both left where they are. Otherwise this one is built on its own;
+            // sharing would give it two corners from the in-between position and the rest
+            // from the new one, which tore faces apart (seen where a model meets the edge
+            // of the picture and some of its polygons no longer pair).
+            // Scenes are full of identical tiles and models, so of the candidates the one
+            // that moved the way the scene did is taken.
+            const RawPolygon* prev = nullptr;
+            s64 bestMove = -1;
+            size_t bestIndex = 0;
+            // A partner has to have moved roughly as the scene did (within a few DS
+            // pixels per vertex, more when the scene moves fast; that leaves room for things
+            // that move by themselves).
+            // Without that limit, when a model leaves the picture the next model of the
+            // same kind was paired with it and drawn halfway towards where it had been.
+            static const bool loose = getenv("SSR_PAIR_LOOSE") != nullptr;
+            const s64 speed = (sceneX < 0 ? -sceneX : sceneX) + (sceneY < 0 ? -sceneY : sceneY);
+            const s64 limit = loose ? INT64_MAX : nverts * (12 + speed / 2);
+            // First the polygon that follows the last partner: within an object the two
+            // lists run in step, and that also pairs what moves by itself (a windmill's
+            // blades, a walking person) and what is so close to the camera that it moves
+            // unlike the rest. A neighbouring tile or model is further off than this allows.
+            if (ia < rawPrev.size() && !loose)
+            {
+                s64 mx, my;
+                if (sameKind(rawPrev[ia], cur) && movement(rawPrev[ia], cur, nverts, mx, my) &&
+                    unlike(rawPrev[ia], cur, nverts, sceneX, sceneY) <= nverts * 40)
+                {
+                    bestMove = 0;
+                    bestIndex = ia;
+                }
+            }
+            for (size_t k = ia; bestMove < 0 && k < rawPrev.size() && k < ia + 512; k++)
+            {
+                s64 mx, my;
+                if (!sameKind(rawPrev[k], cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
+                s64 m = unlike(rawPrev[k], cur, nverts, sceneX, sceneY);
+                if (m > limit) continue;
+                if (bestMove < 0 || m < bestMove)
+                {
+                    bestMove = m;
+                    bestIndex = k;
+                    if (m <= nverts * 6) break; // within a pixel or so per vertex of the scene's movement
+                }
+            }
+            if (bestMove >= 0)
+            {
+                prev = &rawPrev[bestIndex];
+                ia = bestIndex + 1;
+            }
+            const s64 pairIndex = prev ? (s64)bestIndex : -1;
+            const bool keepStrip = (pairIndex < 0 && lastPair < 0) || (pairIndex >= 0 && lastPair >= 0 && pairIndex == lastPair + 1);
+            lastPair = pairIndex;
+            if (dbgPair)
+            {
+                const s64 off = pairIndex < 0 ? INT64_MIN : pairIndex - (s64)ci;
+                if (off != dbgOff)
+                    fprintf(stderr, "[pair] cur %zu/%zu -> prev %lld/%zu (mode %u, unlike %lld)\n", ci, rawCur.size(),
+                        (long long)pairIndex, rawPrev.size(), cur.PolygonMode, (long long)bestMove);
+                dbgOff = off;
+            }
+            out.Partner[ci] = (s32)pairIndex;
+            out.KeepStrip[ci] = keepStrip ? 1 : 0;
+            if (prev) out.Matched++;
+        }
+    }
+
+    // Submits the recorded frame again into the given buffers. With `interpolate`, every
+    // vertex is first moved halfway back towards where the same polygon was in the
+    // previous frame; `matched` then counts the polygons found in both frames. The
+    // horizontal clip coordinate is multiplied by xnum/xden.
+    // The frame is rawCur, the one before it rawPrev (g's own RawCurrent and RawPrevious, or
+    // copies of them when g is a helper's GPU3D, see ListHelper).
+    static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 xden, Vertex* vram, Polygon* pram,
+        Polygon** list, u32& numPolys, u32& matched, const std::vector<GPU3D::RawPolygon>& rawCur,
+        const std::vector<GPU3D::RawPolygon>& rawPrev, u32 polyLimit = 2048, u32 vertLimit = 6144,
+        const Pairing* pairing = nullptr)
+    {
+        const u32 savedPolyLimit = g.PolygonLimit, savedVertLimit = g.VertexLimit;
+        g.PolygonLimit = polyLimit;
+        g.VertexLimit = vertLimit;
+        typedef GPU3D::RawPolygon RawPolygon;
+
+        // Everything SubmitPolygon touches is saved and put back afterwards.
+        Vertex savedTemp[4];
+        memcpy(savedTemp, g.TempVertexBuffer, sizeof(savedTemp));
+        u32 savedViewport[6];
+        memcpy(savedViewport, g.Viewport, sizeof(savedViewport));
+        const u32 savedPolygonMode = g.PolygonMode, savedAttr = g.CurPolygonAttr, savedTexParam = g.TexParam,
+            savedTexPalette = g.TexPalette, savedConsecutive = g.NumConsecutivePolygons, savedDispCnt = g.DispCnt,
+            savedNumVertices = g.NumVertices, savedNumPolygons = g.NumPolygons, savedNumOpaque = g.NumOpaquePolygons,
+            savedSlotsFree = g.VertexSlotsFree;
+        const s32 savedPipeline = g.PolygonPipeline, savedSlotCounter = g.VertexSlotCounter;
+        Polygon* const savedLastStrip = g.LastStripPolygon;
+        Vertex* const savedVertexRAM = g.CurVertexRAM;
+        Polygon* const savedPolygonRAM = g.CurPolygonRAM;
+
+        g.CurVertexRAM = vram;
+        g.CurPolygonRAM = pram;
+        g.NumVertices = g.NumPolygons = g.NumOpaquePolygons = 0;
+        g.LastStripPolygon = nullptr;
+        g.InReplay = true;
+
+        // The pairs: worked out here, or already (see Pair).
+        static thread_local Pairing local;
+        const Pairing* pr = pairing;
+        if (interpolate && !pr)
+        {
+            Pair(rawCur, rawPrev, xnum == xden, local);
+            pr = &local;
+        }
+        matched = interpolate ? pr->Matched : 0;
+        for (size_t ci = 0; ci < rawCur.size(); ci++)
+        {
+            const RawPolygon& cur = rawCur[ci];
             const int nverts = (cur.PolygonMode & 0x1) ? 4 : 3;
             memcpy(g.TempVertexBuffer, cur.Vertices, sizeof(cur.Vertices));
 
@@ -423,66 +528,10 @@ struct WideAccess
             bool keepStrip = true;
             if (interpolate)
             {
-                // Scenes are full of identical tiles and models, so of the candidates the one
-                // that moved the way the scene did is taken.
-                const RawPolygon* prev = nullptr;
-                s64 bestMove = -1;
-                size_t bestIndex = 0;
-                // A partner has to have moved roughly as the scene did (within a few DS
-                // pixels per vertex, more when the scene moves fast; that leaves room for things
-                // that move by themselves).
-                // Without that limit, when a model leaves the picture the next model of the
-                // same kind was paired with it and drawn halfway towards where it had been.
-                static const bool loose = getenv("SSR_PAIR_LOOSE") != nullptr;
-                const s64 speed = (sceneX < 0 ? -sceneX : sceneX) + (sceneY < 0 ? -sceneY : sceneY);
-                const s64 limit = loose ? INT64_MAX : nverts * (12 + speed / 2);
-                // First the polygon that follows the last partner: within an object the two
-                // lists run in step, and that also pairs what moves by itself (a windmill's
-                // blades, a walking person) and what is so close to the camera that it moves
-                // unlike the rest. A neighbouring tile or model is further off than this allows.
-                if (ia < rawPrev.size() && !loose)
+                keepStrip = pr->KeepStrip[ci] != 0;
+                if (pr->Partner[ci] >= 0)
                 {
-                    s64 mx, my;
-                    if (sameKind(rawPrev[ia], cur) && movement(rawPrev[ia], cur, nverts, mx, my) &&
-                        unlike(rawPrev[ia], cur, nverts, sceneX, sceneY) <= nverts * 40)
-                    {
-                        bestMove = 0;
-                        bestIndex = ia;
-                    }
-                }
-                for (size_t k = ia; bestMove < 0 && k < rawPrev.size() && k < ia + 512; k++)
-                {
-                    s64 mx, my;
-                    if (!sameKind(rawPrev[k], cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
-                    s64 m = unlike(rawPrev[k], cur, nverts, sceneX, sceneY);
-                    if (m > limit) continue;
-                    if (bestMove < 0 || m < bestMove)
-                    {
-                        bestMove = m;
-                        bestIndex = k;
-                        if (m <= nverts * 6) break; // within a pixel or so per vertex of the scene's movement
-                    }
-                }
-                if (bestMove >= 0)
-                {
-                    prev = &rawPrev[bestIndex];
-                    ia = bestIndex + 1;
-                }
-                const s64 pairIndex = prev ? (s64)bestIndex : -1;
-                keepStrip = (pairIndex < 0 && lastPair < 0) || (pairIndex >= 0 && lastPair >= 0 && pairIndex == lastPair + 1);
-                lastPair = pairIndex;
-                if (dbgPair)
-                {
-                    const size_t ci = &cur - rawCur.data();
-                    const s64 off = pairIndex < 0 ? INT64_MIN : pairIndex - (s64)ci;
-                    if (off != dbgOff)
-                        fprintf(stderr, "[pair] cur %zu/%zu -> prev %lld/%zu (mode %u, unlike %lld)\n", ci, rawCur.size(),
-                            (long long)pairIndex, rawPrev.size(), cur.PolygonMode, (long long)bestMove);
-                    dbgOff = off;
-                }
-                if (prev)
-                {
-                    matched++;
+                    const RawPolygon* prev = &rawPrev[pr->Partner[ci]];
                     for (int i = 0; i < nverts; i++)
                     {
                         Vertex& v = g.TempVertexBuffer[i];
@@ -598,6 +647,10 @@ struct WideAccess
     // the DS-resolution in-between frame itself; the real frame's lists are needed only a frame
     // later. Each list is built by a GPU3D of its own (only its SubmitPolygon is used), from
     // copies of the frame's raw polygons, so nothing the emulation goes on with is touched.
+    // The in-between frame's pairs (Pair, most of its cost) are worked out here first, for the
+    // wide view's lists and for the DS-resolution in-between frame, which the emulation then
+    // builds from them when it is drawn (WideReplayPaired, GPU3D::VCount215): so the emulation
+    // goes on through the 23 lines in between instead of pairing them itself.
     struct ListHelper
     {
         // A GPU3D that only builds polygon lists: no renderer.
@@ -616,7 +669,10 @@ struct WideAccess
             bool Interpolate;
             bool Busy, Started; // queued (or being built) / taken by the thread
         };
-        static inline Job Jobs[2]; // 0: the in-between frame's lists, 1: the real frame's
+        // 0: the in-between frame's pairs, 1: its lists, 2: the real frame's lists (in that order).
+        static inline Job Jobs[3];
+        static inline Pairing Shared;
+        static inline bool Paired; // pairs are being worked out for this frame
         static inline std::vector<GPU3D::RawPolygon> Cur, Prev;
         static inline s64 XNum = 1, XDen = 1;
         static inline float View = 256;
@@ -631,43 +687,55 @@ struct WideAccess
             std::unique_lock<std::mutex> lock(Mutex);
             for (;;)
             {
-                Wake.wait(lock, [] { return Quit || (Jobs[0].Busy && !Jobs[0].Started) || (Jobs[1].Busy && !Jobs[1].Started); });
+                auto next = []() -> int {
+                    for (int i = 0; i < 3; i++)
+                        if (Jobs[i].Busy && !Jobs[i].Started) return i;
+                    return -1;
+                };
+                Wake.wait(lock, [&next] { return Quit || next() >= 0; });
                 if (Quit) return;
-                Job& job = Jobs[0].Busy && !Jobs[0].Started ? Jobs[0] : Jobs[1];
+                const int which = next();
+                Job& job = Jobs[which];
                 job.Started = true;
                 lock.unlock();
-                Build(job);
+                Build(which);
                 lock.lock();
                 job.Busy = false;
                 Done.notify_all();
             }
         }
-        static void Build(Job& job)
+        static void Build(int which)
         {
             u32 matched;
-            if (job.Interpolate)
+            if (which == 0)
+                Pair(Cur, Prev, true, Shared);
+            else if (which == 1)
             {
-                Replay(*job.Engine, true, XNum, XDen, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched,
-                    Cur, Prev, MaxPolygons, MaxVertices);
+                Replay(*Jobs[1].Engine, true, XNum, XDen, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched,
+                    Cur, Prev, MaxPolygons, MaxVertices, &Shared);
                 ExtendToEdges(ListInterp.data(), NumInterp, View);
             }
             else
             {
-                Replay(*job.Engine, false, XNum, XDen, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched,
+                Replay(*Jobs[2].Engine, false, XNum, XDen, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched,
                     Cur, Prev, MaxPolygons, MaxVertices);
                 ExtendToEdges(ListReal.data(), NumReal, View);
             }
         }
-        // Waits for the in-between frame's lists (0) or for both (1).
+        // Waits for the in-between frame's pairs (0), also its lists (1), or everything (2).
         static void Join(int which)
         {
             if (!Thread.joinable()) return;
             std::unique_lock<std::mutex> lock(Mutex);
-            Done.wait(lock, [which] { return !Jobs[0].Busy && (which == 0 || !Jobs[1].Busy); });
+            Done.wait(lock, [which] {
+                for (int i = 0; i <= which; i++)
+                    if (Jobs[i].Busy) return false;
+                return true;
+            });
         }
         static void Start(GPU3D& g, bool interpolate, s64 xnum, s64 xden, float view)
         {
-            Join(1);
+            Join(2);
             if (!Thread.joinable())
             {
                 for (Job& j : Jobs) j.Engine = std::make_unique<GPU3D>(g.GetNDS(), std::make_unique<NoRenderer>());
@@ -682,14 +750,15 @@ struct WideAccess
             NumInterp = 0;
             {
                 std::lock_guard<std::mutex> lock(Mutex);
-                for (int i = 0; i < 2; i++)
+                Paired = interpolate && !Prev.empty();
+                for (int i = 0; i < 3; i++)
                 {
                     Job& j = Jobs[i];
                     // (What SubmitPolygon reads besides the polygon itself.)
                     j.Engine->FlushAttributes = g.FlushAttributes;
                     j.Engine->ZeroDotWLimit = g.ZeroDotWLimit;
-                    j.Interpolate = i == 0;
-                    j.Busy = i == 1 || (interpolate && !Prev.empty());
+                    j.Interpolate = i < 2;
+                    j.Busy = i == 2 || Paired;
                     j.Started = false;
                 }
             }
@@ -709,8 +778,22 @@ struct WideAccess
                 j.Engine.reset();
                 j.Busy = j.Started = false;
             }
+            Paired = false;
         }
     };
+
+    // The DS-resolution in-between frame, from the pairs the helper thread worked out for this
+    // frame (false if there are none: no frame before it).
+    static bool ReplayPaired(GPU3D& g, Vertex* vram, Polygon* pram, Polygon** list, u32& numPolys, u32& matched,
+        size_t& frameSize)
+    {
+        ListHelper::Join(0);
+        if (!ListHelper::Paired) return false;
+        Replay(g, true, 1, 1, vram, pram, list, numPolys, matched, ListHelper::Cur, ListHelper::Prev, 2048, 6144,
+            &ListHelper::Shared);
+        frameSize = ListHelper::Cur.size();
+        return true;
+    }
 
     // Where the wide lists are built: on the helper thread on the Switch (SSR_WIDE_LISTS=0
     // keeps them with the emulation), elsewhere only with SSR_WIDE_LISTS=1; never for the
@@ -1019,7 +1102,7 @@ struct WideAccess
         }
         // The lists built on the helper thread (ListHelper): the in-between frame's for it, or
         // both.
-        ListHelper::Join(showingInterp ? 0 : 1);
+        ListHelper::Join(showingInterp ? 1 : 2);
         if (Wide.Width <= 0 || Wide.Height <= 0) return;
         if (showingInterp && NumInterp)
         {
@@ -1701,6 +1784,10 @@ void WideShutdown() { WideAccess::Shutdown(); }
 void WideReleaseGpu() { WideAccess::ReleaseGpu(); }
 void WideOnFlush(GPU3D& g, bool interpolate) { WideAccess::OnFlush(g, interpolate); }
 bool WideListsOnHelper() { return WideAccess::ListsOnHelper(); }
+bool WideReplayPaired(GPU3D& g, Vertex* vram, Polygon* pram, Polygon** list, u32& numPolys, u32& matched, size_t& frameSize)
+{
+    return WideAccess::ReplayPaired(g, vram, pram, list, numPolys, matched, frameSize);
+}
 void WideOnRender(GPU& gpu, bool showingInterp) { WideAccess::OnRender(gpu, showingInterp); }
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched)

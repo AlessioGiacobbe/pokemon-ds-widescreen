@@ -38,6 +38,7 @@ void WideWait();
 // the frame is submitted again for the widescreen picture, which shows more of the scene.
 void WideOnFlush(GPU3D& g, bool interpolate);
 bool WideListsOnHelper();
+bool WideReplayPaired(GPU3D& g, Vertex* vram, Polygon* pram, Polygon** list, u32& numPolys, u32& matched, size_t& frameSize);
 void WideOnRender(GPU& gpu, bool showingInterp);
 void WideWaitForTextures();
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
@@ -2525,7 +2526,9 @@ bool YSort(Polygon* a, Polygon* b)
 void GPU3D::BuildInterpolatedFrame() noexcept
 {
     InterpPending = false;
-    if (RawCurrent.empty() || RawPrevious.empty()) return;
+    const bool deferred = InterpDeferred;
+    InterpDeferred = false;
+    if (!deferred && (RawCurrent.empty() || RawPrevious.empty())) return;
 
     if (InterpVertexRAM.empty())
     {
@@ -2534,9 +2537,18 @@ void GPU3D::BuildInterpolatedFrame() noexcept
     }
 
     u32 matched = 0;
-    WideReplay(*this, true, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
-        InterpNumPolygons, matched);
-    InterpPending = InterpNumPolygons && matched * 2 >= RawCurrent.size();
+    size_t frameSize = RawCurrent.size();
+    if (deferred)
+    {
+        // ssrecomp: the frame flushed at VBlank, as the wide view's helper thread copied it.
+        if (!WideReplayPaired(*this, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
+                InterpNumPolygons, matched, frameSize))
+            return;
+    }
+    else
+        WideReplay(*this, true, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
+            InterpNumPolygons, matched);
+    InterpPending = InterpNumPolygons && matched * 2 >= frameSize;
 }
 
 void GPU3D::VBlank() noexcept
@@ -2590,7 +2602,9 @@ void GPU3D::VBlank() noexcept
                         SsrProf::Scope prof(SsrProf::WideFlush);
                         WideOnFlush(*this, interpolate);
                     }
-                    if (interpolate)
+                    if (interpolate && helper)
+                        InterpDeferred = true; // built when it is drawn, from the helper's pairs
+                    else if (interpolate)
                     {
                         SsrProf::Scope prof(SsrProf::Interp);
                         BuildInterpolatedFrame();
@@ -2660,6 +2674,12 @@ void GPU3D::VBlank() noexcept
 void GPU3D::VCount215(GPU& gpu) noexcept
 {
     SsrProf::Scope prof(SsrProf::Render3D); // ssrecomp
+    if (InterpDeferred)
+    {
+        // ssrecomp: the in-between frame of the frame flushed at VBlank (see VBlank).
+        SsrProf::Scope prof(SsrProf::Interp);
+        BuildInterpolatedFrame();
+    }
     // ssrecomp: the widescreen picture drawn in the background reads texture memory, which
     // rendering a frame is about to bring up to date. (Not one drawn by the graphics chip
     // through GPU3D_WideGpu.h: its data was copied when it was sent.)

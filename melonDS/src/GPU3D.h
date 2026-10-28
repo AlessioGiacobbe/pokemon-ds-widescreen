@@ -365,6 +365,8 @@ public:
     u64 VBlankCount = 0, LastFlushVBlank = 0;
     bool InterpPending = false;   // an in-between frame is ready to be shown
     bool InterpShowReal = false;  // the real frame must be drawn on the next display frame
+    bool InterpDeferred = false;  // ssrecomp: the in-between frame is built at VCount215 (from the
+                                  // pairs the wide view's helper thread works out, GPU3D_Wide.cpp)
     std::vector<Vertex> InterpVertexRAM;
     std::vector<Polygon> InterpPolygonRAM;
     std::array<Polygon*,2048> InterpRenderPolygonRAM {};
