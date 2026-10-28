@@ -170,6 +170,26 @@ std::vector<Launcher::Game> FindGames(const Folders& fo, std::map<std::string, s
     return games;
 }
 
+// The list's look: near-black with white text and red details (the Switch's stays navy and
+// gold, launcher.h's default).
+Launcher::Theme PcTheme()
+{
+    Launcher::Theme t;
+    t.bg = 0xFF0B0B0C;
+    t.band = 0xFF141416;
+    t.bandLine = 0xFFE0242C;
+    t.title = 0xFFFFFFFF;
+    t.tile = 0xFF1A1A1D;
+    t.frame = 0xFFE0242C;
+    t.name = 0xFFB8B8BC;
+    t.nameSel = 0xFFFFFFFF;
+    t.sub = 0xFF707076;
+    t.subSel = 0xFFE0242C;
+    t.bad = 0xFFE0242C;
+    t.hint = 0xFF8A8A90;
+    return t;
+}
+
 void OpenFolder(const std::string& path)
 {
     std::string url = "file://";
@@ -334,7 +354,8 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ow, oh);
         }
         const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    ESC: QUIT" : "ENTER OR A: PLAY    O: ROMS FOLDER    ESC: QUIT";
-        cols = Launcher::Draw(canvas, games, selected, first, note, hint);
+        static const Launcher::Theme theme = PcTheme();
+        cols = Launcher::Draw(canvas, games, selected, first, note, hint, theme);
         if (games.empty())
         {
             const int s = std::max(1, canvas.h / 240);
@@ -347,7 +368,7 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             {
                 const int ls = !strcmp(l, "NO GAMES FOUND") ? s + 1 : s;
                 const int ts = Canvas::TextWidth(l, ls) <= canvas.w - 8 ? ls : std::max(1, ls - 1);
-                canvas.Text((canvas.w - Canvas::TextWidth(l, ts)) / 2, y, l, ts, ls > s ? 0xFFFFD75Eu : 0xFFC8D0E0u);
+                canvas.Text((canvas.w - Canvas::TextWidth(l, ts)) / 2, y, l, ts, ls > s ? theme.title : theme.name);
                 y += 12 * s;
             }
         }
