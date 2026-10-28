@@ -18,12 +18,6 @@ bool Start(int& argc, char**& argv);
 bool CanChangeGame();
 void ChangeGame();
 
-// The processor's boost mode: about 1.8 GHz instead of 1 GHz, as games use while loading.
-bool SetCpuBoost(bool on);
-
-// Called every frame: puts the boost speed back when the system has lowered it.
-void KeepBoost(uint32_t frame);
-
 // Called once the game has run a few seconds: a start with the JIT worked, so the next one
 // uses it again (otherwise the next start falls back to the interpreter by itself).
 void JitStarted();
@@ -31,8 +25,8 @@ void JitStarted();
 // The console's own date and time, in the time zone set on it. False if it cannot be read.
 bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& second);
 
-// For the timing lines in the log (SSR_PERF, always on here): the processor, graphics and
-// memory clocks and the chip's and the board's temperature right now, as text.
+// For the timing lines in the log, in test runs only (empty otherwise): the processor,
+// graphics and memory clocks and the chip's and the board's temperature right now, as text.
 std::string Status();
 
 // The thread for the emulation when frames are shown alongside it (main.cpp, emuthread.h):
@@ -42,7 +36,7 @@ bool StartThread(void (*entry)(void*), void* arg);
 void JoinThread();
 void MoveMainThread();
 
-// Called last: puts the processor back to its normal speed.
+// Called last: the next start (the game list again, or the next test run).
 void Finish();
 
 // Ends the program at once (after Finish), for an exit that has got stuck.

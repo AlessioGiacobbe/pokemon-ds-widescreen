@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Switch: fixed a rare freeze a few seconds into a game** (black screen, only holding POWER
+  got out of it). The game asked the console for its clock speeds and temperatures for its log,
+  and with sys-clk installed that could crash the console's power service. A player's log now
+  goes without them.
 - **Switch: smoother battles while you choose a command** (SoulSilver, HeartGold, Platinum):
   the buttons beside the battle are only sent to the graphics chip when they change, instead of
   every frame; and the chosen button has its white outline on the Switch too.

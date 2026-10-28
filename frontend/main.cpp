@@ -5128,7 +5128,6 @@ int main(int argc, char** argv)
         perfMark(1);
         frame++;
 #ifdef __SWITCH__
-        if (!opt.headless) SwitchPlatform::KeepBoost(frame);
         if (frame == 300) SwitchPlatform::JitStarted();
 #endif
         if (melonDS::WideGpuCurrent && ++WideGpuFrames == 600 && !WideGpuMarker.empty())
@@ -5832,7 +5831,7 @@ int main(int argc, char** argv)
     exitWatch.join();
 #endif
 #ifdef __SWITCH__
-    exitStep("processor speed");
+    exitStep("finish");
     SwitchPlatform::Finish();
 #endif
     exitStep("done");

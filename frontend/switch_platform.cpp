@@ -32,7 +32,6 @@ namespace
 {
 std::vector<std::string> g_args;
 std::vector<char*> g_argv;
-bool g_boosted = false;
 // A test run from test.txt (testrun.h), and the .nro to start again for the next one.
 TestRun::State g_test;
 std::string g_self;
@@ -458,33 +457,8 @@ bool Start(int& argc, char**& argv)
     return true;
 }
 
-static bool DirectBoost(bool on);
-
 bool CanChangeGame() { return g_canChange && envHasNextLoad(); }
 void ChangeGame() { g_changeGame = true; }
-
-bool SetCpuBoost(bool on)
-{
-    // Set the speeds directly, as sys-clk does, when the system allows it; otherwise ask for
-    // boost mode, which needs system version 7.0.0 or later (on older ones the call fails
-    // and the processor stays at its normal speed).
-    if (on && DirectBoost(true))
-    {
-        g_boosted = true;
-        return true;
-    }
-    if (!on) DirectBoost(false);
-    const Result rc = appletSetCpuBoostMode(on ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
-    if (R_FAILED(rc))
-    {
-        fprintf(stderr, "[switch] CPU boost %s failed: 0x%x\n", on ? "on" : "off", (unsigned)rc);
-        if (!on) g_boosted = false;
-        return !on;
-    }
-    g_boosted = on;
-    fprintf(stderr, "[switch] CPU boost %s (system boost mode)\n", on ? "on" : "off");
-    return true;
-}
 
 bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& second)
 {
@@ -502,98 +476,6 @@ bool LocalTime(int& year, int& month, int& day, int& hour, int& minute, int& sec
     minute = cal.minute;
     second = cal.second;
     return true;
-}
-
-// The clock services, opened on first use (false if the game may not use them).
-static ClkrstSession g_cpuClock, g_gpuClock, g_memClock;
-static bool OpenClocks()
-{
-    static bool tried = false, ok = false;
-    if (!tried)
-    {
-        tried = true;
-        if (hosversionAtLeast(8, 0, 0) && R_SUCCEEDED(clkrstInitialize()))
-            ok = R_SUCCEEDED(clkrstOpenSession(&g_cpuClock, PcvModuleId_CpuBus, 3)) &&
-                 R_SUCCEEDED(clkrstOpenSession(&g_gpuClock, PcvModuleId_GPU, 3)) &&
-                 R_SUCCEEDED(clkrstOpenSession(&g_memClock, PcvModuleId_EMC, 3));
-        if (!ok) fprintf(stderr, "[switch] clock rates cannot be read\n");
-    }
-    return ok;
-}
-
-// Boost mode is the system's to grant, and it takes it away for 10-20 seconds every minute
-// or so (measured: the processor at 1020 MHz in each slow spell, with the chip at 35C), in
-// SoulSilver too; asking for it again only shortened the slow spells. sys-clk, which sets the
-// speeds itself and checks them every 0.3 seconds, had none. So the same is done here: the
-// processor at 1785 MHz (boost mode's speed) and the memory at 1600 MHz (its docked speed;
-// handheld mode runs it at 1331 and the emulation uses memory constantly), checked five times
-// a second and set again if the system has lowered them. The graphics chip keeps its own
-// speed (boost mode would turn it down to 76 MHz). When boost is turned off or the game ends,
-// both go back to the speeds they had.
-static bool g_direct = false;
-static u32 g_cpuNormal = 0, g_memNormal = 0;
-static constexpr u32 BoostCpuHz = 1785000000u, BoostMemHz = 1600000000u;
-
-static bool DirectBoost(bool on)
-{
-    if (!on)
-    {
-        if (g_direct)
-        {
-            clkrstSetClockRate(&g_cpuClock, g_cpuNormal);
-            clkrstSetClockRate(&g_memClock, g_memNormal);
-            fprintf(stderr, "[switch] CPU boost off: processor %u MHz, memory %u MHz again\n", g_cpuNormal / 1000000, g_memNormal / 1000000);
-        }
-        g_direct = false;
-        return true;
-    }
-    if (!OpenClocks()) return false;
-    u32 cpu = 0, mem = 0;
-    if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &cpu)) || R_FAILED(clkrstGetClockRate(&g_memClock, &mem))) return false;
-    if (!g_direct)
-    {
-        g_cpuNormal = cpu;
-        g_memNormal = mem;
-    }
-    const Result rc1 = clkrstSetClockRate(&g_cpuClock, BoostCpuHz);
-    const Result rc2 = clkrstSetClockRate(&g_memClock, BoostMemHz);
-    u32 nowCpu = 0, nowMem = 0;
-    clkrstGetClockRate(&g_cpuClock, &nowCpu);
-    clkrstGetClockRate(&g_memClock, &nowMem);
-    if (R_FAILED(rc1) || nowCpu < BoostCpuHz - 15000000u)
-    {
-        fprintf(stderr, "[switch] the processor speed cannot be set (0x%x); using the system's boost mode\n", (unsigned)rc1);
-        if (R_SUCCEEDED(rc2)) clkrstSetClockRate(&g_memClock, g_memNormal);
-        return false;
-    }
-    g_direct = true;
-    fprintf(stderr, "[switch] CPU boost on: processor %u MHz (was %u), memory %u MHz (was %u)\n", nowCpu / 1000000,
-        g_cpuNormal / 1000000, nowMem / 1000000, g_memNormal / 1000000);
-    return true;
-}
-
-void KeepBoost(uint32_t frame)
-{
-    static int events = 0;
-    if (!g_boosted || frame % 12 != 0 || !OpenClocks()) return;
-    u32 cpu = 0, mem = 0;
-    if (R_FAILED(clkrstGetClockRate(&g_cpuClock, &cpu)) || R_FAILED(clkrstGetClockRate(&g_memClock, &mem))) return;
-    const bool cpuLow = cpu < BoostCpuHz - 15000000u, memLow = g_direct && mem < BoostMemHz - 15000000u;
-    if (!cpuLow && !memLow) return;
-    events++;
-    if (events <= 10 || events % 50 == 0)
-        fprintf(stderr, "[switch] the system lowered the %s to %u MHz (time %d); set back\n", cpuLow ? "processor" : "memory",
-            (cpuLow ? cpu : mem) / 1000000, events);
-    if (g_direct)
-    {
-        if (cpuLow) clkrstSetClockRate(&g_cpuClock, BoostCpuHz);
-        if (memLow) clkrstSetClockRate(&g_memClock, BoostMemHz);
-    }
-    else
-    {
-        appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
-        appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
-    }
 }
 
 static Thread g_emuThread;
@@ -636,46 +518,49 @@ void JitStarted()
 
 std::string Status()
 {
-    // Opened on first use; a service the game may not use just leaves its part out.
-    static bool tried = false, ts = false, tsSessions = false;
-    static TsSession soc, pcb;
-    const bool clk = OpenClocks();
-    ClkrstSession& cpu = g_cpuClock;
-    ClkrstSession& gpu = g_gpuClock;
-    ClkrstSession& emc = g_memClock;
-    if (!tried)
-    {
-        tried = true;
-        if (R_SUCCEEDED(tsInitialize()))
-        {
-            ts = true;
-            if (hosversionAtLeast(10, 0, 0))
-                tsSessions = R_SUCCEEDED(tsOpenSession(&soc, TsDeviceCode_LocationExternal)) &&
-                             R_SUCCEEDED(tsOpenSession(&pcb, TsDeviceCode_LocationInternal));
-        }
-        if (!ts) fprintf(stderr, "[switch] temperatures cannot be read\n");
-    }
+    // Test runs only, one session at a time, each closed straight after. The clocks come from
+    // the system's pcv service and the temperatures from ptm, and pcv stops the whole console
+    // when it has no room for another session (fatal 2011-0102, "out of session memory"; sys-clk
+    // opens its own several times a second). That happened twice, both times a few seconds into
+    // a game, at this line's first reading, when the three clock sessions were opened and kept
+    // for the whole game. A player's log does without these numbers.
+    if (!g_test.active) return {};
     char buf[128];
     int n = 0;
     buf[0] = 0;
-    u32 c = 0, g = 0, m = 0;
-    if (clk && R_SUCCEEDED(clkrstGetClockRate(&cpu, &c)) && R_SUCCEEDED(clkrstGetClockRate(&gpu, &g)) &&
-        R_SUCCEEDED(clkrstGetClockRate(&emc, &m)))
-        n += snprintf(buf + n, sizeof(buf) - n, "cpu %u gpu %u mem %u MHz", c / 1000000, g / 1000000, m / 1000000);
-    float socC = 0, pcbC = 0;
-    bool haveTemp = false;
-    if (tsSessions)
-        haveTemp = R_SUCCEEDED(tsSessionGetTemperature(&soc, &socC)) && R_SUCCEEDED(tsSessionGetTemperature(&pcb, &pcbC));
-    else if (ts)
+    u32 mhz[3] = {};
+    bool clocks = hosversionAtLeast(8, 0, 0) && R_SUCCEEDED(clkrstInitialize());
+    if (clocks)
     {
-        s32 a = 0, b = 0;
-        haveTemp = R_SUCCEEDED(tsGetTemperatureMilliC(TsLocation_External, &a)) &&
-                   R_SUCCEEDED(tsGetTemperatureMilliC(TsLocation_Internal, &b));
-        socC = a / 1000.0f;
-        pcbC = b / 1000.0f;
+        const PcvModuleId modules[3] = { PcvModuleId_CpuBus, PcvModuleId_GPU, PcvModuleId_EMC };
+        for (int i = 0; i < 3 && clocks; i++)
+        {
+            ClkrstSession s;
+            clocks = R_SUCCEEDED(clkrstOpenSession(&s, modules[i], 3));
+            if (!clocks) break;
+            clocks = R_SUCCEEDED(clkrstGetClockRate(&s, &mhz[i]));
+            clkrstCloseSession(&s);
+        }
+        clkrstExit();
     }
-    if (haveTemp)
-        n += snprintf(buf + n, sizeof(buf) - n, "%schip %.0fC board %.0fC", n ? ", " : "", socC, pcbC);
+    if (clocks)
+        n += snprintf(buf + n, sizeof(buf) - n, "cpu %u gpu %u mem %u MHz", mhz[0] / 1000000, mhz[1] / 1000000, mhz[2] / 1000000);
+    if (hosversionAtLeast(10, 0, 0) && R_SUCCEEDED(tsInitialize()))
+    {
+        const TsDeviceCode places[2] = { TsDeviceCode_LocationExternal, TsDeviceCode_LocationInternal };
+        float temp[2] = {};
+        bool ok = true;
+        for (int i = 0; i < 2 && ok; i++)
+        {
+            TsSession s;
+            ok = R_SUCCEEDED(tsOpenSession(&s, places[i]));
+            if (!ok) break;
+            ok = R_SUCCEEDED(tsSessionGetTemperature(&s, &temp[i]));
+            tsSessionClose(&s);
+        }
+        if (ok) n += snprintf(buf + n, sizeof(buf) - n, "%schip %.0fC board %.0fC", n ? ", " : "", temp[0], temp[1]);
+        tsExit();
+    }
     return buf;
 }
 
@@ -689,7 +574,6 @@ void ForceExit()
 void Finish()
 {
     JitStarted(); // (an ordinary exit: the JIT did start)
-    if (g_boosted) SetCpuBoost(false);
     // QUIT in the pause menu, for a game chosen from the game list: the Homebrew Menu's loader
     // starts the program again, which shows the list.
     if (g_changeGame && !g_self.empty())
