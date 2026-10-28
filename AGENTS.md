@@ -98,10 +98,13 @@ You need your own ROM and snapshots; none are in the repository. Running
   battles: e.g. `--state-load <overworld.st> --input <grass walk> --battle-mash --frames 7500`.
 - **Speed:** `--headless --no-save --no-wide --state-load <snap> --frames 6880`,
   with and without `--interp`, compare the times.
-- **Where the emulation's time goes:** `SSR_PERF=1 SSR_EMU_PROF=1` adds geometry, 2D, sound,
-  DMA, the wide and in-between polygon lists and the 3D frame start to the timing lines
-  (`melonDS/src/SsrProf.h`); on the Switch, `arg --env SSR_EMU_PROF=1` in a test run's
-  `test.txt` (the timing lines there also show the clocks and temperatures).
+- **Where the emulation's time goes:** `SSR_PERF=1 SSR_EMU_PROF=1` adds geometry, 2D (each
+  screen), sound, DMA, the wide and in-between polygon lists, the 3D frames' starts and the
+  waits for helper threads to the timing lines (`melonDS/src/SsrProf.h`); on the Switch,
+  `arg --env SSR_EMU_PROF=1` in a test run's `test.txt` (the timing lines there also show the
+  clocks and temperatures). On the Switch the GPU pictures are built, sent and fetched on two
+  threads of their own (`WideGpuSend` in `GPU3D_WideGpu.cpp`); `SSR_GPU_SEND_THREAD=0` keeps
+  that on the emulation thread, for comparing.
 - **Pictures:** `--headless --compose 1280x720 --shot-dir DIR --shot-at a,b,c`
   (or `--shot-every 1` and ffmpeg for a video) shows the single-screen view.
   Check widescreen and battle changes visually, in motion: transitions, fades
@@ -140,7 +143,14 @@ eighth of the screen" with a multiplication before dividing, dividing once per c
 compact table of polygon kinds: same results, no faster on the Switch (in-between lists 1.59 ms
 a frame before and after). Most of its time is the scene-motion vote's 140,000-odd candidate
 tests a frame, not the divisions. What did help: building the wide lists and the pairs on a
-helper thread (`ListHelper`, `SSR_WIDE_LISTS=0` to compare).
+helper thread (`ListHelper`, `SSR_WIDE_LISTS=0` to compare). Building the DS-resolution
+in-between frame on that helper too (after the pairs) was slower on the Switch: the emulation
+waited 2.4 ms for it at line 215 instead of 1.5 ms building it itself.
+
+Not drawing the bottom screen when the view does not show it: the frontend reads its pixels
+to choose what to show (AutoFocus, the battle and menu scenes), and in the overworld its lines
+mostly come from the line cache already (0.1 ms on a PC). In a Black 2 battle the bottom screen
+costs 2 ms on the Switch, but it is the battle menu.
 
 Widescreen 3D (`GPU3D_Wide.cpp`): the pixel loop works on groups of 8 (AVX2)
 or 4 (SSE, NEON) pixels; measure it with `SSR_WIDE_THREADS=1 SSR_WIDE_PROF=1`.

@@ -40,6 +40,7 @@ void WideOnFlush(GPU3D& g, bool interpolate);
 bool WideListsOnHelper();
 bool WideReplayPaired(GPU3D& g, Vertex* vram, Polygon* pram, Polygon** list, u32& numPolys, u32& matched, size_t& frameSize);
 void WideOnRender(GPU& gpu, bool showingInterp);
+void WideGpuSendJoin(int slot);
 void WideWaitForTextures();
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched);
@@ -2558,6 +2559,12 @@ void GPU3D::VBlank() noexcept
     {
         if (RenderingEnabled)
         {
+            // ssrecomp: the pictures still being sent to the graphics chip read the registers
+            // and polygons this changes (GPU3D_WideGpu.h, WideGpuSend).
+            {
+                SsrProf::Scope prof(SsrProf::SendWait);
+                WideGpuSendJoin(-1);
+            }
             if (FlushRequest)
             {
                 if (NumPolygons)
@@ -2697,11 +2704,11 @@ void GPU3D::VCount215(GPU& gpu) noexcept
         InterpPending = false;
         InterpShowReal = true;
         InterpolatedFrames++;
-        if (Wide.Owner == this) WideOnRender(gpu, true);
+        if (Wide.Owner == this) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, true); }
         return;
     }
     CurrentRenderer->RenderFrame(gpu);
-    if (Wide.Owner == this) WideOnRender(gpu, false);
+    if (Wide.Owner == this) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, false); }
 }
 
 void GPU3D::SetRenderXPos(u16 xpos) noexcept

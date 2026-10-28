@@ -889,14 +889,20 @@ void GPU::StartHBlank(u32 line) noexcept
         if (line < 192)
         {
             GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
-            GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
+            {
+                SsrProf::Scope profB(SsrProf::Draw2DB); // ssrecomp
+                GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
+            }
         }
 
         // sprites are pre-rendered one scanline in advance
         if (line < 191)
         {
             GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A);
-            GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
+            {
+                SsrProf::Scope profB(SsrProf::Draw2DB); // ssrecomp
+                GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
+            }
         }
 
         NDS.CheckDMAs(0, 0x02);

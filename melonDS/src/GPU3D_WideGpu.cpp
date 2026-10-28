@@ -3,7 +3,11 @@
 #include "GPU3D_WideGpu.h"
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdio>
+#include <deque>
+#include <mutex>
+#include <thread>
 #include <cstdlib>
 #include <cstring>
 #include "GPU.h"
@@ -32,6 +36,122 @@ std::unique_ptr<WideGpuBackend> MakeBackend(std::string& info, bool small)
 }
 }
 
+namespace
+{
+struct SendThread
+{
+    std::thread T;
+    std::mutex M;
+    std::condition_variable Wake, Done;
+    std::deque<std::pair<int, std::function<void()>>> Queue;
+    int Queued[4] = { 0, 0, 0, 0 }; // per slot: handed over and not yet finished
+    bool Quit = false;
+
+    void Loop()
+    {
+        SsrHelperThreadStart(-2);
+        std::unique_lock<std::mutex> lock(M);
+        for (;;)
+        {
+            Wake.wait(lock, [this] { return Quit || !Queue.empty(); });
+            if (Queue.empty()) return; // (Quit, with nothing left)
+            auto job = std::move(Queue.front());
+            Queue.pop_front();
+            lock.unlock();
+            job.second();
+            lock.lock();
+            Queued[job.first]--;
+            Done.notify_all();
+        }
+    }
+    void Stop()
+    {
+        if (!T.joinable()) return;
+        {
+            std::lock_guard<std::mutex> lock(M);
+            Quit = true;
+        }
+        Wake.notify_all();
+        T.join();
+        Quit = false;
+    }
+    // (Stopped by WideGpuSendStop as the program ends; joining it from a static object's
+    // destructor, after exit, hung the Switch.)
+    ~SendThread()
+    {
+        if (T.joinable()) T.detach();
+    }
+};
+// Slots 0 and 1 (building and sending) on one, 2 and 3 (waiting for the pictures) on the other,
+// so that waiting for the graphics chip holds up neither the next picture's sending nor what
+// waits for that.
+SendThread Sender, Fetcher;
+SendThread& ThreadFor(int slot) { return slot >= 2 ? Fetcher : Sender; }
+}
+
+bool WideGpuSendOnThread()
+{
+#ifdef SSR_DEKO3D
+    static const bool on = [] {
+        const char* v = getenv("SSR_GPU_SEND_THREAD");
+        return !(v && v[0] == '0');
+    }();
+    return on;
+#else
+    return false;
+#endif
+}
+
+void WideGpuSend(int slot, std::function<void()> job)
+{
+    if (!WideGpuSendOnThread())
+    {
+        job();
+        return;
+    }
+    SendThread& t = ThreadFor(slot);
+    {
+        std::lock_guard<std::mutex> lock(t.M);
+        if (!t.T.joinable()) t.T = std::thread([&t] { t.Loop(); });
+        t.Queue.emplace_back(slot, std::move(job));
+        t.Queued[slot]++;
+    }
+    t.Wake.notify_all();
+}
+
+void WideGpuSendStop()
+{
+    Sender.Stop();
+    Fetcher.Stop();
+}
+
+bool WideGpuSendBusy(int slot)
+{
+    if (!WideGpuSendOnThread()) return false;
+    SendThread& t = ThreadFor(slot);
+    std::lock_guard<std::mutex> lock(t.M);
+    return t.Queued[slot] != 0;
+}
+
+void WideGpuSendJoin(int slot)
+{
+    if (!WideGpuSendOnThread()) return;
+    if (slot < 0)
+    {
+        WideGpuSendJoin(0);
+        WideGpuSendJoin(1);
+        if (slot == -2)
+        {
+            WideGpuSendJoin(2);
+            WideGpuSendJoin(3);
+        }
+        return;
+    }
+    SendThread& t = ThreadFor(slot);
+    std::unique_lock<std::mutex> lock(t.M);
+    t.Done.wait(lock, [&t, slot] { return t.Queued[slot] == 0; });
+}
+
 WideGpuDSRenderer::WideGpuDSRenderer(std::unique_ptr<WideGpuBackend> backend)
     : Renderer3D(false), Backend(std::move(backend))
 {
@@ -39,6 +159,7 @@ WideGpuDSRenderer::WideGpuDSRenderer(std::unique_ptr<WideGpuBackend> backend)
 
 WideGpuDSRenderer::~WideGpuDSRenderer()
 {
+    WideGpuSendJoin(-2);
     if (Pending) Backend->Fetch(0);
     WideGpuTexVersion = 0;
 }
@@ -52,6 +173,10 @@ std::unique_ptr<WideGpuDSRenderer> WideGpuMakeDS(std::string& info)
 
 void WideGpuDSRenderer::RenderFrame(GPU& gpu)
 {
+    // (Both pictures' jobs: the widescreen one reads the texture memory's version and changes
+    // that this brings up to date. And this picture's fetching, which writes Lines.)
+    WideGpuSendJoin(-1);
+    WideGpuSendJoin(3);
     // The flat copies of texture memory brought up to date, as the software renderer does it.
     auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(gpu.VRAMMap_Texture, gpu);
     auto texPalDirty = gpu.VRAMDirty_TexPal.DeriveState(gpu.VRAMMap_TexPal, gpu);
@@ -65,11 +190,38 @@ void WideGpuDSRenderer::RenderFrame(GPU& gpu)
     WideGpuTexVersion = Version;
 
     if (Pending) Backend->Fetch(0); // (an earlier picture nobody asked for)
+    Pending = false;
     Pixels = Backend->Target(0, 256, 192);
-    WideGpuBuild(gpu, gpu.GPU3D.RenderPolygonRAM.data(), gpu.GPU3D.RenderNumPolygons, 256, 192, Frame, Backend->TakesAtlas());
-    Frame.TexVersion = Version;
-    Pending = Pixels && Backend->Submit(Frame, 0);
     Fetched = false;
+    // The list itself is copied (the in-between frame's is lent to RenderPolygonRAM for this
+    // call only, see GPU3D::VCount215); the polygons, the registers it was drawn with and the
+    // flat texture memory stay as they are until the next frame is flushed or rendered, by when
+    // the job has been waited for (GetLine, and GPU3D::VBlank).
+    List = gpu.GPU3D.RenderPolygonRAM;
+    const u32 count = gpu.GPU3D.RenderNumPolygons;
+    WideGpuSend(0, [this, &gpu, count] {
+        WideGpuBuild(gpu, List.data(), count, 256, 192, Frame, Backend->TakesAtlas());
+        Frame.TexVersion = Version;
+        Pending = Pixels && Backend->Submit(Frame, 0);
+        // (Waited for and converted on the other sending thread: GetLine then only waits for that.)
+        if (Pending && WideGpuSendOnThread())
+            WideGpuSend(3, [this] {
+                Backend->Fetch(0);
+                Pending = false;
+                Convert();
+            });
+    });
+}
+
+void WideGpuDSRenderer::Convert()
+{
+    // XRGB (8 bits) with the alpha in the top byte, to the software renderer's format:
+    // red, green, blue in 6 bits from bits 0, 8, 16, alpha in 5 from bit 24.
+    for (int i = 0; i < 256 * 192; i++)
+    {
+        const u32 v = Pixels[i];
+        Lines[i] = ((v >> 18) & 0x3F) | (((v >> 10) & 0x3F) << 8) | (((v >> 2) & 0x3F) << 16) | (((v >> 27) & 0x1F) << 24);
+    }
 }
 
 u32* WideGpuDSRenderer::GetLine(int line)
@@ -77,18 +229,14 @@ u32* WideGpuDSRenderer::GetLine(int line)
     if (!Fetched)
     {
         Fetched = true;
+        SsrWaitTimer t(SsrStats().Wait3DNs);
+        WideGpuSendJoin(0);
+        WideGpuSendJoin(3);
         if (Pending)
         {
-            SsrWaitTimer t(SsrStats().Wait3DNs);
             Backend->Fetch(0);
             Pending = false;
-            // XRGB (8 bits) with the alpha in the top byte, to the software renderer's format:
-            // red, green, blue in 6 bits from bits 0, 8, 16, alpha in 5 from bit 24.
-            for (int i = 0; i < 256 * 192; i++)
-            {
-                const u32 v = Pixels[i];
-                Lines[i] = ((v >> 18) & 0x3F) | (((v >> 10) & 0x3F) << 8) | (((v >> 2) & 0x3F) << 16) | (((v >> 27) & 0x1F) << 24);
-            }
+            Convert();
         }
     }
     return &Lines[256 * (line < 0 ? 0 : line > 191 ? 191 : line)];
@@ -105,6 +253,7 @@ void WideReleaseGpu();
 
 void WideGpuStop()
 {
+    WideGpuSendStop();
     // (Pictures in the renderer's memory, the one on show among them, are copied out first.)
     if (WideGpuCurrent) WideReleaseGpu();
     WideGpuCurrent.reset();

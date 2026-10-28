@@ -1138,7 +1138,7 @@ index 8db1cca..15bdc00 100644
      else          return Run7();
  }
 diff --git a/src/GPU.cpp b/src/GPU.cpp
-index e1c7ddc..6de99f2 100644
+index e1c7ddc..ca89b9e 100644
 --- a/src/GPU.cpp
 +++ b/src/GPU.cpp
 @@ -16,6 +16,7 @@
@@ -1149,7 +1149,7 @@ index e1c7ddc..6de99f2 100644
  #include <string.h>
  #include "NDS.h"
  #include "GPU.h"
-@@ -884,6 +885,7 @@ void GPU::StartHBlank(u32 line) noexcept
+@@ -884,17 +885,24 @@ void GPU::StartHBlank(u32 line) noexcept
      {
          // draw
          // note: this should start 48 cycles after the scanline start
@@ -1157,11 +1157,30 @@ index e1c7ddc..6de99f2 100644
          if (line < 192)
          {
              GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
+-            GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
++            {
++                SsrProf::Scope profB(SsrProf::Draw2DB); // ssrecomp
++                GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
++            }
+         }
+ 
+         // sprites are pre-rendered one scanline in advance
+         if (line < 191)
+         {
+             GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A);
+-            GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
++            {
++                SsrProf::Scope profB(SsrProf::Draw2DB); // ssrecomp
++                GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
++            }
+         }
+ 
+         NDS.CheckDMAs(0, 0x02);
 diff --git a/src/GPU2D_Soft.cpp b/src/GPU2D_Soft.cpp
-index 2f8afcb..ef7b777 100644
+index 2f8afcb..64d4393 100644
 --- a/src/GPU2D_Soft.cpp
 +++ b/src/GPU2D_Soft.cpp
-@@ -16,10 +16,16 @@
+@@ -16,9 +16,16 @@
      with melonDS. If not, see http://www.gnu.org/licenses/.
  */
  
@@ -1170,15 +1189,15 @@ index 2f8afcb..ef7b777 100644
  #include "GPU2D_Soft.h"
  #include "GPU.h"
  #include "GPU3D.h"
- 
++#include "SsrProf.h" // ssrecomp
++
 +// ssrecomp: layers (bit 0-3 BG0-BG3, bit 4 sprites) the frontend asks not to be drawn, per 2D engine.
 +// Display only; the emulated registers are not touched.
 +unsigned rc_hide_layers[2] = { 0, 0 };
-+
+ 
  namespace melonDS
  {
- namespace GPU2D
-@@ -30,7 +36,8 @@ SoftRenderer::SoftRenderer(melonDS::GPU& gpu)
+@@ -30,7 +37,8 @@ SoftRenderer::SoftRenderer(melonDS::GPU& gpu)
      // mosaic table is initialized at compile-time
  }
  
@@ -1188,7 +1207,7 @@ index 2f8afcb..ef7b777 100644
  {
      u32 coloreffect = 0;
      u32 eva, evb;
-@@ -102,6 +109,136 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
+@@ -102,6 +110,136 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
      return val1;
  }
  
@@ -1325,7 +1344,7 @@ index 2f8afcb..ef7b777 100644
  void SoftRenderer::DrawScanline(u32 line, Unit* unit)
  {
      CurUnit = unit;
-@@ -115,20 +252,22 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+@@ -115,20 +253,22 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
      if (CurUnit->Num == 0)
      {
          auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
@@ -1354,7 +1373,18 @@ index 2f8afcb..ef7b777 100644
      }
  
      bool forceblank = false;
-@@ -170,8 +309,56 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+@@ -147,7 +287,10 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+     if (CurUnit->Num == 0)
+     {
+         if (!GPU.GPU3D.IsRendererAccelerated())
++        {
++            SsrProf::Scope prof(SsrProf::Wait3D); // ssrecomp
+             _3DLine = GPU.GPU3D.GetLine(n3dline);
++        }
+         else if (CurUnit->CaptureLatch && (((CurUnit->CaptureCnt >> 29) & 0x3) != 1))
+         {
+             _3DLine = GPU.GPU3D.GetLine(n3dline);
+@@ -170,8 +313,56 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
      u32 dispmode = CurUnit->DispCnt >> 16;
      dispmode &= (CurUnit->Num ? 0x1 : 0x3);
  
@@ -1411,7 +1441,7 @@ index 2f8afcb..ef7b777 100644
      CurUnit->UpdateMosaicCounters(line);
  
      switch (dispmode)
-@@ -303,6 +490,12 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+@@ -303,6 +494,12 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
  
          *(u64*)&dst[i] = c | ((c & 0x00C0C0C000C0C0C0) >> 6) | 0xFF000000FF000000;
      }
@@ -1424,7 +1454,7 @@ index 2f8afcb..ef7b777 100644
  }
  
  void SoftRenderer::VBlankEnd(Unit* unitA, Unit* unitB)
-@@ -576,7 +769,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
+@@ -576,7 +773,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
  template<u32 bgmode>
  void SoftRenderer::DrawScanlineBGMode(u32 line)
  {
@@ -1433,7 +1463,7 @@ index 2f8afcb..ef7b777 100644
      u16* bgCnt = CurUnit->BGCnt;
      for (int i = 3; i >= 0; i--)
      {
-@@ -631,7 +824,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
+@@ -631,7 +828,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
  
  void SoftRenderer::DrawScanlineBGMode6(u32 line)
  {
@@ -1442,7 +1472,7 @@ index 2f8afcb..ef7b777 100644
      u16* bgCnt = CurUnit->BGCnt;
      for (int i = 3; i >= 0; i--)
      {
-@@ -659,7 +852,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
+@@ -659,7 +856,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
  
  void SoftRenderer::DrawScanlineBGMode7(u32 line)
  {
@@ -1451,7 +1481,7 @@ index 2f8afcb..ef7b777 100644
      u16* bgCnt = CurUnit->BGCnt;
      // mode 7 only has text-mode BG0 and BG1
  
-@@ -691,11 +884,29 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
+@@ -691,11 +888,29 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
  
  void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  {
@@ -1481,7 +1511,7 @@ index 2f8afcb..ef7b777 100644
  
          return;
      }
-@@ -741,11 +952,17 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -741,11 +956,17 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  
      if (!GPU.GPU3D.IsRendererAccelerated())
      {
@@ -1499,7 +1529,7 @@ index 2f8afcb..ef7b777 100644
              BGOBJLine[i] = ColorComposite(i, val1, val2);
          }
      }
-@@ -859,16 +1076,6 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -859,16 +1080,6 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  }
  
  
@@ -1516,7 +1546,7 @@ index 2f8afcb..ef7b777 100644
  
  void SoftRenderer::DrawPixel_Accel(u32* dst, u16 color, u32 flag)
  {
-@@ -965,6 +1172,57 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
+@@ -965,6 +1176,57 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
      else
          tilemapaddr += ((yoff & 0xF8) << 3);
  
@@ -1574,7 +1604,7 @@ index 2f8afcb..ef7b777 100644
      u16 curtile;
      u16* curpal;
      u32 pixelsaddr;
-@@ -1599,19 +1857,60 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+@@ -1599,19 +1861,60 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
  
          CurUnit->OBJMosaicY = 0;
          CurUnit->OBJMosaicYCount = 0;
@@ -1598,8 +1628,8 @@ index 2f8afcb..ef7b777 100644
          auto objDirty = GPU.VRAMDirty_BOBJ.DeriveState(GPU.VRAMMap_BOBJ, GPU);
 -        GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
 +        changed = GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
-     }
- 
++    }
++
 +    // ssrecomp: like the lines in DrawScanline, a line's sprites are only drawn again if
 +    // the OAM, the sprite VRAM or the registers changed (see LineCache).
 +    const u8* oamNow = &GPU.OAM[num ? 0x400 : 0];
@@ -1622,7 +1652,7 @@ index 2f8afcb..ef7b777 100644
 +        }
 +        cache->epoch = SpriteEpoch[num];
 +        memcpy(cache->regs, regs, sizeof(regs));
-+    }
+     }
 +    DrawSpritesLine(line);
 +    if (cache)
 +    {
@@ -1632,13 +1662,13 @@ index 2f8afcb..ef7b777 100644
 +        cache->valid = true;
 +    }
 +}
-+
+ 
 +void SoftRenderer::DrawSpritesLine(u32 line)
 +{
      NumSprites[CurUnit->Num] = 0;
      memset(OBJLine[CurUnit->Num], 0, 256*4);
      memset(OBJWindow[CurUnit->Num], 0, 256);
-@@ -1634,15 +1933,29 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+@@ -1634,15 +1937,29 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
          64, 32, 64, 8
      };
  
@@ -1741,7 +1771,7 @@ index 4beaf8f..bf419de 100644
  
      typedef void (*DrawPixel)(u32* dst, u16 color, u32 flag);
 diff --git a/src/GPU3D.cpp b/src/GPU3D.cpp
-index 1204741..cf5a11e 100644
+index 1204741..7379402 100644
 --- a/src/GPU3D.cpp
 +++ b/src/GPU3D.cpp
 @@ -16,6 +16,7 @@
@@ -1752,7 +1782,7 @@ index 1204741..cf5a11e 100644
  #include <stdio.h>
  #include <string.h>
  #include <algorithm>
-@@ -26,8 +27,23 @@
+@@ -26,8 +27,24 @@
  #include "Platform.h"
  #include "GPU3D.h"
  
@@ -1769,6 +1799,7 @@ index 1204741..cf5a11e 100644
 +bool WideListsOnHelper();
 +bool WideReplayPaired(GPU3D& g, Vertex* vram, Polygon* pram, Polygon** list, u32& numPolys, u32& matched, size_t& frameSize);
 +void WideOnRender(GPU& gpu, bool showingInterp);
++void WideGpuSendJoin(int slot);
 +void WideWaitForTextures();
 +void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
 +    u32& numPolys, u32& matched);
@@ -1776,7 +1807,7 @@ index 1204741..cf5a11e 100644
  using Platform::Log;
  using Platform::LogLevel;
  
-@@ -198,6 +214,7 @@ void GPU3D::Reset() noexcept
+@@ -198,6 +215,7 @@ void GPU3D::Reset() noexcept
  
      memset(ExecParams, 0, 32*4);
      ExecParamCount = 0;
@@ -1784,7 +1815,7 @@ index 1204741..cf5a11e 100644
  
      CycleCount = 0;
      VertexPipeline = 0;
-@@ -366,6 +383,7 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
+@@ -366,6 +384,7 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
  
      file->VarArray(ExecParams, 32*4);
      file->Var32(&ExecParamCount);
@@ -1792,7 +1823,7 @@ index 1204741..cf5a11e 100644
      file->Var32((u32*)&CycleCount);
      file->Var64(&Timestamp);
  
-@@ -493,7 +511,21 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
+@@ -493,7 +512,21 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
          }
      }
  
@@ -1815,7 +1846,7 @@ index 1204741..cf5a11e 100644
  
      file->Var32((u32*)&VertexPipeline);
      file->Var32((u32*)&NormalPipeline);
-@@ -971,6 +1003,19 @@ void GPU3D::SubmitPolygon() noexcept
+@@ -971,6 +1004,19 @@ void GPU3D::SubmitPolygon() noexcept
      // TODO: work out how it works on the real thing
      // the normalization part is a wild guess
  
@@ -1835,7 +1866,7 @@ index 1204741..cf5a11e 100644
      Vertex *v0, *v1, *v2, *v3;
      s64 normalX, normalY, normalZ;
      s64 dot;
-@@ -1092,7 +1137,7 @@ void GPU3D::SubmitPolygon() noexcept
+@@ -1092,7 +1138,7 @@ void GPU3D::SubmitPolygon() noexcept
  
      // reject the polygon if it's not going to fit in polygon/vertex RAM
  
@@ -1844,7 +1875,7 @@ index 1204741..cf5a11e 100644
      {
          LastStripPolygon = NULL;
          DispCnt |= (1<<13);
-@@ -1589,6 +1634,15 @@ void GPU3D::BoxTest(const u32* params) noexcept
+@@ -1589,6 +1635,15 @@ void GPU3D::BoxTest(const u32* params) noexcept
          cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
      }
  
@@ -1860,7 +1891,7 @@ index 1204741..cf5a11e 100644
      // front face (-Z)
      face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
      res = ClipPolygon<false>(*this, face, 4, 0);
-@@ -1764,6 +1818,13 @@ void GPU3D::ExecuteCommand() noexcept
+@@ -1764,6 +1819,13 @@ void GPU3D::ExecuteCommand() noexcept
      {
          // fast path for command which only have a single parameter
  
@@ -1874,7 +1905,7 @@ index 1204741..cf5a11e 100644
          /*printf("[GXS:%08X] 0x%02X,  0x%08X", GXStat, entry.Command, entry.Param);*/
  
          switch (entry.Command)
-@@ -2116,6 +2177,9 @@ void GPU3D::ExecuteCommand() noexcept
+@@ -2116,6 +2178,9 @@ void GPU3D::ExecuteCommand() noexcept
      }
      else
      {
@@ -1884,7 +1915,7 @@ index 1204741..cf5a11e 100644
          ExecParams[ExecParamCount] = entry.Param;
          ExecParamCount++;
  
-@@ -2375,6 +2439,7 @@ void GPU3D::FinishWork(s32 cycles) noexcept
+@@ -2375,6 +2440,7 @@ void GPU3D::FinishWork(s32 cycles) noexcept
  
  void GPU3D::Run() noexcept
  {
@@ -1892,7 +1923,7 @@ index 1204741..cf5a11e 100644
      if (!GeometryEnabled || FlushRequest ||
          (CmdPIPE.IsEmpty() && !(GXStat & (1<<27))))
      {
-@@ -2456,8 +2521,39 @@ bool YSort(Polygon* a, Polygon* b)
+@@ -2456,12 +2522,49 @@ bool YSort(Polygon* a, Polygon* b)
      return a->SortKey < b->SortKey;
  }
  
@@ -1932,7 +1963,17 @@ index 1204741..cf5a11e 100644
      if (GeometryEnabled)
      {
          if (RenderingEnabled)
-@@ -2487,6 +2583,41 @@ void GPU3D::VBlank() noexcept
+         {
++            // ssrecomp: the pictures still being sent to the graphics chip read the registers
++            // and polygons this changes (GPU3D_WideGpu.h, WideGpuSend).
++            {
++                SsrProf::Scope prof(SsrProf::SendWait);
++                WideGpuSendJoin(-1);
++            }
+             if (FlushRequest)
+             {
+                 if (NumPolygons)
+@@ -2487,6 +2590,41 @@ void GPU3D::VBlank() noexcept
  
                  RenderNumPolygons = NumPolygons;
                  RenderFrameIdentical = false;
@@ -1974,7 +2015,7 @@ index 1204741..cf5a11e 100644
              }
              else
              {
-@@ -2499,6 +2630,13 @@ void GPU3D::VBlank() noexcept
+@@ -2499,6 +2637,13 @@ void GPU3D::VBlank() noexcept
                      && memcmp(RenderEdgeTable, EdgeTable, 8*2) == 0
                      && memcmp(RenderFogDensityTable + 1, FogDensityTable, 32) == 0
                      && memcmp(RenderToonTable, ToonTable, 32*2) == 0;
@@ -1988,7 +2029,7 @@ index 1204741..cf5a11e 100644
              }
  
              RenderDispCnt = DispCnt;
-@@ -2535,7 +2673,35 @@ void GPU3D::VBlank() noexcept
+@@ -2535,7 +2680,35 @@ void GPU3D::VBlank() noexcept
  
  void GPU3D::VCount215(GPU& gpu) noexcept
  {
@@ -2016,11 +2057,11 @@ index 1204741..cf5a11e 100644
 +        InterpPending = false;
 +        InterpShowReal = true;
 +        InterpolatedFrames++;
-+        if (Wide.Owner == this) WideOnRender(gpu, true);
++        if (Wide.Owner == this) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, true); }
 +        return;
 +    }
      CurrentRenderer->RenderFrame(gpu);
-+    if (Wide.Owner == this) WideOnRender(gpu, false);
++    if (Wide.Owner == this) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, false); }
  }
  
  void GPU3D::SetRenderXPos(u16 xpos) noexcept

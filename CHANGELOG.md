@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Switch: fewer late frames in towns and battles.** Preparing the 3D pictures for the
+  graphics chip, sending them and collecting them now happens on the Switch's spare cores
+  instead of between the game's own work, about 1 ms less a frame. Measured from save states,
+  frames running late: White 2's Aspertia City from 4.5% to 0.9%, Black 2's Castelia City from
+  1.6% to 0.1%, a Black 2 battle from 6% to 2.5%, Platinum's Snowpoint City from 4.8% to 1.7%.
+  The picture is the same as before.
 - **Switch: a game picked from the game list runs as smoothly as one started on its own.** The
   list left the Switch's graphics slower for the game played after it (HeartGold took 12 ms a
   frame to put its picture together instead of 4, and one frame in ten ran late). The program

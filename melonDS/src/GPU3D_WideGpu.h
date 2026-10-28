@@ -25,7 +25,9 @@
 // stencil holds 0x80 where the picture has alpha, plus the ID + 1 of the translucent
 // polygon drawn there last). A final pass applies the fog and writes the picture.
 #pragma once
+#include <array>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <string>
@@ -167,6 +169,20 @@ void WideGpuNoteChanges(u64 version, const u64* tex /* 16 words */, const u64* p
 // translucent 2D layers over it and in scenes without the widescreen view. It is drawn when
 // the frame is rendered (scanline 215) and fetched for the first line the 2D renderer needs,
 // a few milliseconds later: the graphics chip takes well under one.
+// Where the pictures' lists are worked out and sent to the graphics chip (WideGpuBuild and the
+// backend's Submit): with deko3D (the Switch), on a thread of their own, so that the emulation
+// goes on meanwhile (2 ms of every frame the 3D was drawn in White 2's Aspertia City); elsewhere,
+// and with SSR_GPU_SEND_THREAD=0, at once. Slot 0 is the DS-resolution picture, 1 the widescreen
+// one; on a second thread, 2 waits for and fetches the widescreen one, 3 the DS-resolution one.
+// Jobs of a thread run in the order they were handed over. WideGpuSendJoin(slot) waits for the
+// jobs of that slot (-1: slots 0 and 1, -2: all) to have finished; WideGpuSendBusy(slot) tells
+// whether any has not.
+bool WideGpuSendOnThread();
+void WideGpuSend(int slot, std::function<void()> job);
+void WideGpuSendJoin(int slot);
+bool WideGpuSendBusy(int slot);
+void WideGpuSendStop(); // (waits for the jobs, then ends the thread; started again when needed)
+
 class WideGpuDSRenderer : public Renderer3D
 {
 public:
@@ -177,11 +193,13 @@ public:
     u32* GetLine(int line) override;
 
 private:
+    void Convert(); // Pixels to Lines
     std::unique_ptr<WideGpuBackend> Backend;
     WideGpuFrame Frame;
     u32* Pixels = nullptr;
     bool Pending = false, Fetched = true;
     u64 Version = 0;
+    std::array<Polygon*, 2048> List {}; // (the frame's list as it was handed over)
     u32 Lines[256 * 192] {}; // in the format GetLine returns
 };
 std::unique_ptr<WideGpuDSRenderer> WideGpuMakeDS(std::string& info);

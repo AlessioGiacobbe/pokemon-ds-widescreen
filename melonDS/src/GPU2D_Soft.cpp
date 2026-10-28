@@ -21,6 +21,7 @@
 #include "GPU2D_Soft.h"
 #include "GPU.h"
 #include "GPU3D.h"
+#include "SsrProf.h" // ssrecomp
 
 // ssrecomp: layers (bit 0-3 BG0-BG3, bit 4 sprites) the frontend asks not to be drawn, per 2D engine.
 // Display only; the emulated registers are not touched.
@@ -286,7 +287,10 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     if (CurUnit->Num == 0)
     {
         if (!GPU.GPU3D.IsRendererAccelerated())
+        {
+            SsrProf::Scope prof(SsrProf::Wait3D); // ssrecomp
             _3DLine = GPU.GPU3D.GetLine(n3dline);
+        }
         else if (CurUnit->CaptureLatch && (((CurUnit->CaptureCnt >> 29) & 0x3) != 1))
         {
             _3DLine = GPU.GPU3D.GetLine(n3dline);

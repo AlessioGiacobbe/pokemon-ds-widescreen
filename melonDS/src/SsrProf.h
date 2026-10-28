@@ -2,14 +2,16 @@
 // a few parts of the DS's hardware, each counted without the parts it calls (a DMA that feeds
 // the geometry engine counts the geometry as geometry), the rest being the two processors (the
 // JIT or the interpreter) and the scheduler. Off, a part costs one test of a flag.
-// Only the emulation thread is timed (every part below runs there).
+// Only the emulation thread is timed (every part below runs there). "2D top" is engine A
+// without the wait for its 3D lines ("3D lines wait"), "2D bottom" engine B; "3D start" is the
+// DS-resolution 3D's start, "wide 3D start" the widescreen picture's (lists sent to the GPU).
 #pragma once
 #include <chrono>
 #include <cstdint>
 
 namespace SsrProf
 {
-enum Part { Geometry, Draw2D, Sound, DMA, WideFlush, Interp, Render3D, Count };
+enum Part { Geometry, Draw2D, Sound, DMA, WideFlush, Interp, Render3D, Draw2DB, Wait3D, HelperWait, WideRender, SendWait, Count };
 inline bool On = false;
 inline uint64_t Ns[Count] = {};
 inline int Stack[16];

@@ -19,6 +19,7 @@
 #include "GPU3D.h"
 #include "GPU3D_Soft.h"
 #include "SsrThreads.h"
+#include "SsrProf.h"
 #include "GPU3D_GLThread.h"
 #include "GPU3D_WideGpu.h"
 
@@ -216,6 +217,7 @@ struct WideAccess
     static inline bool DrawingOnGL = false; // by the graphics chip (GPU3D_GLThread.h)
     static inline bool DrawingOnWideGpu = false; // by the graphics chip (GPU3D_WideGpu.h)
     static inline int PendingSlot = 0;
+    static inline bool SentOk = false; // the graphics chip took the picture (set by its job, see Draw)
     static inline u64 LateFrames = 0; // frames that went on without the graphics chip's picture (see OnRender)
 
     // Ends the drawing threads (at the end of the program; a new pool is made if needed).
@@ -224,6 +226,7 @@ struct WideAccess
         Wait();
         Pool.reset();
         ListHelper::Stop();
+        WideGpuSendStop();
     }
 
     // Blocks until the picture being drawn in the background is finished.
@@ -234,7 +237,14 @@ struct WideAccess
             SsrWaitTimer t(SsrStats().WaitWideNs);
             static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
             const auto t0 = std::chrono::steady_clock::now();
-            if (WideGpuCurrent) WideGpuCurrent->Fetch(PendingSlot);
+            // (On the sending thread the picture is fetched by its job, see Draw.)
+            // (Not slot 3: the DS-resolution picture just sent, at the same line 215.)
+            if (WideGpuSendOnThread())
+            {
+                WideGpuSendJoin(1);
+                WideGpuSendJoin(2);
+            }
+            else if (WideGpuCurrent) WideGpuCurrent->Fetch(PendingSlot);
             if (prof)
             {
                 static double total = 0;
@@ -726,6 +736,7 @@ struct WideAccess
         static void Join(int which)
         {
             if (!Thread.joinable()) return;
+            SsrProf::Scope prof(SsrProf::HelperWait); // (only the emulation thread joins)
             std::unique_lock<std::mutex> lock(Mutex);
             Done.wait(lock, [which] {
                 for (int i = 0; i <= which; i++)
@@ -736,6 +747,7 @@ struct WideAccess
         static void Start(GPU3D& g, bool interpolate, s64 xnum, s64 xden, float view)
         {
             Join(2);
+            WideGpuSendJoin(1); // (still sending a picture from the lists about to be rebuilt)
             if (!Thread.joinable())
             {
                 for (Job& j : Jobs) j.Engine = std::make_unique<GPU3D>(g.GetNDS(), std::make_unique<NoRenderer>());
@@ -1087,7 +1099,8 @@ struct WideAccess
         // keeps up nothing changes. SSR_WIDE_NO_LATE=1 always waits.)
         static const bool noLate = getenv("SSR_WIDE_NO_LATE") != nullptr;
         if (!noLate && Drawing && DrawingOnWideGpu && WideGpuCurrent && !showingInterp && !Dirty && !NeedReal &&
-            Wide.FrontW == Wide.Width && Wide.FrontH == Wide.Height && !WideGpuCurrent->Done(PendingSlot))
+            Wide.FrontW == Wide.Width && Wide.FrontH == Wide.Height &&
+            (WideGpuSendOnThread() ? WideGpuSendBusy(1) || WideGpuSendBusy(2) : !WideGpuCurrent->Done(PendingSlot)))
         {
             if (++LateFrames % 300 == 0)
                 fprintf(stderr, "[wide] %llu frames went on with the last picture while the graphics chip finished the next\n",
@@ -1138,19 +1151,30 @@ struct WideAccess
         {
             // Worked out here, drawn by the graphics chip while the emulation goes on; Wait()
             // fetches the picture.
+            // (On a thread of its own with deko3D, WideGpuSend: from a copy of the list, whose
+            // polygons are not touched before Wait or the next frame's lists, ListHelper::Start,
+            // which wait for it. The registers and texture memory it reads stay until the next
+            // frame is flushed, GPU3D::VBlank, which waits for it too.)
             static WideGpuFrame frame;
+            static std::vector<Polygon*> listCopy;
             static const bool prof = getenv("SSR_WIDE_PROF") != nullptr;
             const auto t0 = std::chrono::steady_clock::now();
             BackFor(W, H, true);
-            WideGpuBuild(gpu, list, npolys, W, H, frame, WideGpuCurrent->TakesAtlas());
-            if (WideGpuCurrent->Submit(frame, Next))
-            {
-                Drawing = true;
-                DrawingOnWideGpu = true;
-                PendingSlot = Next;
-            }
+            listCopy.assign(list, list + npolys);
+            SentOk = false;
+            const int slot = Next;
+            WideGpuSend(1, [&gpu, W, H, slot] {
+                WideGpuBuild(gpu, listCopy.data(), (u32)listCopy.size(), W, H, frame, WideGpuCurrent->TakesAtlas());
+                SentOk = WideGpuCurrent->Submit(frame, slot);
+                // (Waited for on the other sending thread: the emulation then only waits for that
+                // job, in Wait.)
+                if (SentOk && WideGpuSendOnThread()) WideGpuSend(2, [slot] { WideGpuCurrent->Fetch(slot); });
+            });
+            Drawing = DrawingOnWideGpu = WideGpuSendOnThread() || SentOk;
+            PendingSlot = Next;
             if (prof)
             {
+                WideGpuSendJoin(1);
                 static double total = 0;
                 static u64 frames = 0, vertices = 0, draws = 0;
                 total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
