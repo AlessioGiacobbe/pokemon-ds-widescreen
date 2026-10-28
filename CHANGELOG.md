@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **No more stretched trees at the edges of the wide view:** a tree, house or flower bed that
+  ended just short of the screen's edge was sometimes stretched out to it (SoulSilver and
+  HeartGold by New Bark Town, Black 2). It now stays its own size.
+- **Switch: the log of the game you just played is kept.** QUIT back to the game list used to
+  replace `game.log` with the list's few lines; the previous one is now kept as
+  `game-previous.log`.
 - **Battle buttons are easier to read:** the chosen command or move has a thick white
   outline and the others are shaded, so you can always see what A will press (the red outline
   was lost around the red FIGHT button).

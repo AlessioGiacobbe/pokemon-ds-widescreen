@@ -212,7 +212,20 @@ bool Start(int& argc, char**& argv)
     const std::string logPath = testRun ? g_test.results + "/game.log" : dir + "/game.log";
 
     // Messages go to game.log beside the game, as run.sh does on a PC, with the frame timing,
-    // so that a log can be sent with a bug report.
+    // so that a log can be sent with a bug report. The last session's log is kept as
+    // game-previous.log: QUIT to the game list starts the program again, which would otherwise
+    // replace the log of the game just played with the list's few lines. (Only a log longer
+    // than the list's is kept, so going to the list twice keeps the game's.)
+    if (!testRun)
+    {
+        struct stat ls;
+        if (stat(logPath.c_str(), &ls) == 0 && ls.st_size > 1024)
+        {
+            const std::string prev = dir + "/game-previous.log";
+            remove(prev.c_str());
+            rename(logPath.c_str(), prev.c_str());
+        }
+    }
     if (!freopen(logPath.c_str(), "w", stderr)) freopen("game.log", "w", stderr);
     setvbuf(stderr, nullptr, _IOLBF, 0);
     setenv("SSR_PERF", "1", 0);

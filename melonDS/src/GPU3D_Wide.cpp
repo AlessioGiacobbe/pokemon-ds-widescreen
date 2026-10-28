@@ -800,6 +800,21 @@ struct WideAccess
             m[v].g = (s32)std::clamp(at(in.g, o.g) / invW, 0.0f, 511.0f);
             m[v].b = (s32)std::clamp(at(in.b, o.b) / invW, 0.0f, 511.0f);
         }
+        // Stretched by more than a fifth of its width, a polygon shows it: a tree or a house at the
+        // end of the view grown wide (SoulSilver and HeartGold, Route 29 by New Bark Town). Only
+        // the layers that end a little short (a sky's panels, the haze from a lookout) are
+        // stretched; anything else stays as the game drew it.
+        if (!carry)
+        {
+            s32 x0 = INT32_MAX, x1 = INT32_MIN;
+            for (u32 v = 0; v < n; v++)
+            {
+                x0 = std::min(x0, c[v].x);
+                x1 = std::max(x1, c[v].x);
+            }
+            const s32 added = side == 1 ? x0 - edge : edge - x1;
+            if ((s64)added * 5 > (s64)(x1 - x0)) return;
+        }
         for (u32 v = 0; v < n; v++)
         {
             const bool out = side == 1 ? c[v].x <= near && c[v].x < limit : c[v].x >= near && c[v].x > limit;
