@@ -142,12 +142,13 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFra
         framebufferEnd(&fb);
     }
     framebufferClose(&fb);
-    // libnx's window, once its buffers are released, keeps format 0 where a new window has ~0
-    // ("not set yet": the first buffers configured set it). The game's renderer then configured
-    // its own buffers with format 0, and putting each picture together took HeartGold 12 ms a
-    // frame on the Switch instead of 4 (measured with test runs started after the list and
-    // without it, "arg --show-list"). Put back as on a new window.
+    // libnx's window, once its buffers are released, is left with format 0 and size 0 x 0 where
+    // a new one has ~0 ("not set yet": the first buffers configured set it) and 1280 x 720. The
+    // game's renderer then set its buffers up in it differently, and putting each picture
+    // together took HeartGold 12 ms a frame on the Switch instead of 4 (measured with test runs
+    // started after the list and without it, "arg --show-list"). Put back as on a new window.
     nwindowGetDefault()->format = ~0U;
+    nwindowSetDimensions(nwindowGetDefault(), 1280, 720);
     return result;
 }
 
