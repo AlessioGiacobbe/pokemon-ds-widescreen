@@ -2,6 +2,7 @@
 #ifdef __SWITCH__
 #include "switch_platform.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -75,7 +76,9 @@ bool Playable(const Launcher::Game& g)
 
 // The game list (launcher.h) on the screen until a game is chosen: its index, or -1 for +.
 // Shown with libnx's framebuffer, before the game's own window exists.
-int PickGame(const std::vector<Launcher::Game>& games, int selected)
+// autoFrames > 0: the list is shown that many frames and the selected game played (test runs:
+// "arg --show-list" in test.txt, to time a game started after the list).
+int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFrames = 0)
 {
     Framebuffer fb;
     if (R_FAILED(framebufferCreate(&fb, nwindowGetDefault(), 1280, 720, PIXEL_FORMAT_RGBA_8888, 2))) return selected;
@@ -87,8 +90,14 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected)
     canvas.Resize(1280, 720);
     int first = 0, held = 0, result = -1, cols = 3;
     std::string note;
+    int shown = 0;
     while (appletMainLoop())
     {
+        if (autoFrames > 0 && ++shown > autoFrames)
+        {
+            result = selected;
+            break;
+        }
         padUpdate(&pad);
         const u64 down = padGetButtonsDown(&pad), now = padGetButtons(&pad);
         // The arrows (or a stick) move through the grid, and keep moving while held.
@@ -293,7 +302,16 @@ bool Start(int& argc, char**& argv)
         }
         for (size_t i = 0; i < games.size(); i++)
             if (games[i].rom == last) chosen = (int)i;
-        if (testRun)
+        const auto showList = std::find(testArgs.begin(), testArgs.end(), "--show-list");
+        if (testRun && showList != testArgs.end())
+        {
+            // (Shown for 90 frames, then the game played last, as if chosen.)
+            testArgs.erase(showList);
+            for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
+            chosen = PickGame(games, chosen, 90);
+            fprintf(stderr, "[switch] test run: %s, after the game list\n", games[chosen].rom.c_str());
+        }
+        else if (testRun)
         {
             // (A test run, test.txt, plays the game played last without the list: no one is there.)
             fprintf(stderr, "[switch] test run: %s, without the game list\n", games[chosen].rom.c_str());
