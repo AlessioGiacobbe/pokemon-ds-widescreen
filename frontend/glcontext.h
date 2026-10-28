@@ -14,6 +14,9 @@ bool SsrCreateGLContext(std::string& info);
 // SsrSetSdlContext, otherwise the EGL context current before SsrEnterGLContext.
 void SsrEnterGLContext();
 void SsrLeaveGLContext();
+// Lets go of the context on the calling thread, with nothing made current in its place (the end
+// of a thread that drew with it).
+void SsrReleaseGLContext();
 // SDL's window and OpenGL context (its renderer's), which SsrLeaveGLContext makes current again.
 void SsrSetSdlContext(void* window, void* context);
 // An OpenGL function the bundled loader does not have (eglGetProcAddress).

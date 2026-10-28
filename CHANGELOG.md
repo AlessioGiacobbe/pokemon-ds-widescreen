@@ -5,6 +5,9 @@
 - **PC all-games download (new, Windows and Linux):** unpack it, put your ROMs in its roms
   folder and pick a game from the list (keyboard, controller or mouse); QUIT in the menu goes
   back to the list. Saves go in its saves folder, one per game.
+- **PC: the world on the graphics card, up to 4K.** WORLD ON GPU (on by default in the PC
+  download) draws the widescreen world with the graphics card instead of the processor, and
+  WORLD DETAIL now goes up to 2160 lines (4K).
 - **Platinum battles:** "Use next Pokemon?" after a faint shows its two buttons (Use next
   Pokemon and Flee) instead of a cut-off red bar.
 - **Black, White, Black 2 and White 2 (playtest notes):** no more trees drawn as thin slivers at

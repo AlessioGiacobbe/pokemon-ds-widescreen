@@ -96,10 +96,10 @@ python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "
 python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "$DATA/funcs/IRAO.txt" --white
 cp tools/platinum/CPUE.txt "$DATA/funcs/CPUE.txt"
 
-# The build: the JIT for every game, no libpng (screenshots are for tests), no OpenGL test
-# renderer, and SSE rather than the building machine's AVX2 (SSR_PORTABLE_X86), so that it runs
-# on any 64-bit PC.
-COMMON=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DSSR_JIT=ON -DSSR_PC_ALL_GAMES=ON -DSSR_PNG=OFF -DSSR_GPU3D=OFF
+# The build: the JIT for every game, no libpng (screenshots are for tests), OpenGL for WORLD ON
+# GPU (WGL on Windows, EGL on Linux), and SSE rather than the building machine's AVX2
+# (SSR_PORTABLE_X86), so that it runs on any 64-bit PC.
+COMMON=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DSSR_JIT=ON -DSSR_PC_ALL_GAMES=ON -DSSR_PNG=OFF -DSSR_GPU3D=ON
         -DSSR_PORTABLE_X86=ON -DSSR_GENERATED_DIR="$HERE/build-gen-tables")
 mkdir -p build-pc-dist
 

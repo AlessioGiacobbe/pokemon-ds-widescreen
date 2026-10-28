@@ -72,6 +72,12 @@ void SsrLeaveGLContext()
     }
 }
 
+void SsrReleaseGLContext()
+{
+    glFlush();
+    eglMakeCurrent(OurDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+}
+
 static std::string EglError(const char* what)
 {
     char buf[96];

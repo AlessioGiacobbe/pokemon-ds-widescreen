@@ -26,6 +26,17 @@ Windows may warn that the program is from an unknown publisher the first time: c
 On Linux, SDL2 must be installed (Ubuntu and Debian: sudo apt install libsdl2-2.0-0).
 
 
+PICTURE SETTINGS (Esc menu)
+---------------------------
+
+  WORLD ON GPU       ON: the widescreen world is drawn by your graphics card (OpenGL 4.3 or
+                     newer). Turn it OFF if the world looks wrong or the game will not start.
+  WORLD DETAIL       how sharp the widescreen world is: up to 2160 lines (4K). With WORLD ON
+                     GPU, 1080 or 1440 suits most PCs; 2160 needs a good graphics card.
+  LOWER DETAIL WHEN BUSY   lowers WORLD DETAIL for a moment when the PC cannot keep up.
+  F11                fullscreen at your screen's resolution.
+
+
 WHERE THINGS ARE KEPT
 ---------------------
 

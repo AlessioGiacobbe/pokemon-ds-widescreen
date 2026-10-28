@@ -266,6 +266,18 @@ inline void Sort(std::vector<Game>& games)
     });
 }
 
+// The list's colours (ARGB).
+struct Theme
+{
+    uint32_t bg = 0xFF101A2E, band = 0xFF1C2A44, bandLine = 0xFF3D6FD1, title = 0xFFFFD75E;
+    uint32_t tile = 0xFF1C2A44, frame = 0xFFFFD75E;
+    uint32_t name = 0xFFC8D0E0, nameSel = 0xFFFFFFFF, sub = 0xFF8FA0C0, subSel = 0xFFDDE6FF, bad = 0xFFE07A6A;
+    uint32_t hint = 0xFF8FA0C0;
+    int bandLineH = 1;       // the band's line, in font pixels
+    int frameW = 2;          // the chosen game's frame, in font pixels
+    uint32_t selBar = 0;     // a bar under the chosen game's name (0: none)
+};
+
 // Where the list's tiles go on a canvas (Draw, and TileAt for a mouse).
 struct Grid
 {
@@ -306,16 +318,16 @@ inline int TileAt(const Canvas& c, int count, int first, int x, int y)
 // first row shown. hint: the line along the bottom (the Switch's buttons when empty). Returns the
 // number of columns, for moving up and down.
 inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& first, const std::string& note,
-                const std::string& hintText = std::string())
+                const std::string& hintText = std::string(), const Theme& th = Theme())
 {
     const Grid grid = Layout(c);
     const int s = grid.s;
-    c.Fill(0, 0, c.w, c.h, 0xFF101A2E);
+    c.Fill(0, 0, c.w, c.h, th.bg);
     // A band along the top with the title.
-    c.Fill(0, 0, c.w, 22 * s, 0xFF1C2A44);
-    c.Fill(0, 22 * s, c.w, s, 0xFF3D6FD1);
+    c.Fill(0, 0, c.w, 22 * s, th.band);
+    c.Fill(0, 22 * s, c.w, th.bandLineH * s, th.bandLine);
     const std::string title = "POKEMON DS WIDESCREEN";
-    c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, 0xFFFFD75E);
+    c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, th.title);
 
     const int gap = grid.gap, labelH = grid.labelH, top = grid.top, bottom = grid.bottom;
     const int tile = grid.tile, cols = grid.cols, rows = grid.rows, gx = grid.gx;
@@ -328,8 +340,8 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
         const bool sel = i == selected;
         const int x = gx + (i % cols) * (tile + gap * 3), y = top + (i / cols - first) * (tile + labelH + gap);
         // A frame round the chosen one.
-        if (sel) c.Fill(x - 2 * s, y - 2 * s, tile + 4 * s, tile + 4 * s, 0xFFFFD75E);
-        c.Fill(x, y, tile, tile, 0xFF1C2A44);
+        if (sel) c.Fill(x - th.frameW * s, y - th.frameW * s, tile + 2 * th.frameW * s, tile + 2 * th.frameW * s, th.frame);
+        c.Fill(x, y, tile, tile, th.tile);
         if (!g.art.empty())
         {
             for (int py = 0; py < tile; py++)
@@ -341,7 +353,7 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
                     if (p >> 24 >= 0x80) c.px[(size_t)(y + py) * c.w + x + px] = p | 0xFF000000u;
                 }
             }
-            c.Fill(x, y, 1, 1, 0xFF1C2A44); // (so the canvas knows the tile was drawn)
+            c.Fill(x, y, 1, 1, th.tile); // (so the canvas knows the tile was drawn)
         }
         else if (g.hasIcon)
         {
@@ -355,17 +367,18 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
         std::string name = g.name;
         if (name.rfind("POKEMON ", 0) == 0) name = name.substr(8);
         const int ns = Canvas::TextWidth(name, s) <= tile ? s : std::max(1, s - 1);
-        c.Text(x + (tile - Canvas::TextWidth(name, ns)) / 2, y + tile + 3 * s, name, ns, sel ? 0xFFFFFFFF : 0xFFC8D0E0);
+        c.Text(x + (tile - Canvas::TextWidth(name, ns)) / 2, y + tile + 3 * s, name, ns, sel ? th.nameSel : th.name);
+        if (sel && th.selBar) c.Fill(x + tile / 4, y + tile + 19 * s, tile / 2, s, th.selBar);
         std::string sub = !g.known ? "NOT PLAYABLE" : g.hasSave ? "SAVE FOUND" : "NEW GAME";
         if (!g.where.empty() && g.known) sub = (g.hasSave ? "SAVE " : "NEW ") + g.where; // e.g. SAVE IN BLACK2
         const int ss = std::max(1, s * 2 / 3);
-        c.Text(x + (tile - Canvas::TextWidth(sub, ss)) / 2, y + tile + 12 * s, sub, ss, !g.known ? 0xFFE07A6A : sel ? 0xFFDDE6FF : 0xFF8FA0C0);
+        c.Text(x + (tile - Canvas::TextWidth(sub, ss)) / 2, y + tile + 12 * s, sub, ss, !g.known ? th.bad : sel ? th.subSel : th.sub);
     }
     // More games above or below the ones shown.
-    if (first > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, 0xFF8FA0C0);
-    if ((first + rows) * cols < (int)games.size()) c.Fill(c.w / 2 - 8 * s, bottom - 2 * s, 16 * s, s, 0xFF8FA0C0);
+    if (first > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, th.hint);
+    if ((first + rows) * cols < (int)games.size()) c.Fill(c.w / 2 - 8 * s, bottom - 2 * s, 16 * s, s, th.hint);
     const std::string hint = !note.empty() ? note : !hintText.empty() ? hintText : "A: PLAY    +: QUIT";
-    c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, 0xFF8FA0C0);
+    c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, th.hint);
     return cols;
 }
 

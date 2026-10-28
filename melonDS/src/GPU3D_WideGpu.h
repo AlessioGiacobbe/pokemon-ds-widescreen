@@ -213,5 +213,11 @@ std::unique_ptr<WideGpuBackend> WideGpuMakeGL(std::string& info);
 // Set by the frontend: an OpenGL function by name (for glClipControl, which the bundled
 // loader lacks: depth from 0 to 1 keeps the precision that 1/W needs).
 extern void* (*WideGpuGLGetProc)(const char* name);
+// Set by the frontend when the game is played (not in the headless tests, where the context
+// simply stays current on their one thread): the drawing done on a thread of its own, with the
+// context current there (see GPU3D_WideGpu_GL.cpp).
+extern bool WideGpuGLThreaded;
+// Set by the frontend: lets go of the context on the calling thread (that thread's end).
+extern void (*WideGpuGLRelease)();
 #endif
 }

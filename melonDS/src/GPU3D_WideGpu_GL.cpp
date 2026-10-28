@@ -1,14 +1,21 @@
-// ssrecomp: the widescreen view's polygons drawn by OpenGL (GPU3D_WideGpu.h), to test the
-// graphics chip's version of the picture on a PC against GPU3D_Wide.cpp's own rasteriser.
-// Its context is made by the frontend's hook (GLThreadRenderer::CreateContext) and stays
-// current on the thread that made it, which has to be the one that draws: the headless tests
-// run everything on one thread.
+// ssrecomp: the widescreen view's polygons drawn by OpenGL (GPU3D_WideGpu.h): on a PC, to test
+// the graphics chip's version of the picture against GPU3D_Wide.cpp's own rasteriser, and for
+// WORLD ON GPU in the PC all-games program (high WORLD DETAIL, 4K, without the processor's cost).
+// Its context is made by the frontend's hook (GLThreadRenderer::CreateContext). In the headless
+// tests it is made on the thread that draws and stays current there (everything runs on one
+// thread). In play (WideGpuGLThreaded) it lives on a thread of its own (WideGpuGLWorker), which
+// draws each picture and copies it out while the emulation goes on: the frames are drawn by the
+// 3D render thread and waited for on the main one, where SDL may draw with OpenGL too, and a
+// context can be current on one thread at a time.
 #ifdef OGLRENDERER_ENABLED
 #include "GPU3D_WideGpu.h"
 
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <thread>
 #include "OpenGLSupport.h"
 #include "GPU3D_GLThread.h"
 
@@ -20,6 +27,8 @@
 namespace melonDS
 {
 void* (*WideGpuGLGetProc)(const char* name) = nullptr;
+bool WideGpuGLThreaded = false;
+void (*WideGpuGLRelease)() = nullptr;
 
 namespace
 {
@@ -329,12 +338,160 @@ private:
 };
 }
 
+namespace
+{
+// WideGpuGL on a thread of its own, its context current there for as long as it runs. Submit
+// copies the frame (and the texture memory it is drawn from) and hands it over; the thread draws
+// it and copies the picture into Target's memory; Fetch waits for that.
+class WideGpuGLWorker : public WideGpuBackend
+{
+public:
+    const char* Name() const override { return "OpenGL"; }
+
+    bool Start(std::string& info)
+    {
+        Thread = std::thread([this] { Run(); });
+        std::unique_lock<std::mutex> lock(Mutex);
+        Changed.wait(lock, [this] { return Ready || Failed; });
+        info = Info;
+        return Ready;
+    }
+
+    ~WideGpuGLWorker() override
+    {
+        {
+            std::lock_guard<std::mutex> lock(Mutex);
+            Quit = true;
+        }
+        Changed.notify_all();
+        if (Thread.joinable()) Thread.join();
+    }
+
+    u32* Target(int slot, int w, int h) override
+    {
+        // (No OpenGL here: the memory is the processor's. The slot asked for is never the one
+        // the thread is writing, which Fetch has waited for before a new one is prepared.)
+        return Inner ? Inner->Target(slot, w, h) : nullptr;
+    }
+
+    bool Submit(WideGpuFrame& f, int slot) override
+    {
+        Fetch(PendingSlot); // (one picture at a time)
+        Frame.W = f.W;
+        Frame.H = f.H;
+        Frame.Constants = f.Constants;
+        Frame.Vertices = f.Vertices;
+        Frame.Polygons = f.Polygons;
+        Frame.Draws = f.Draws;
+        memcpy(Frame.ClearColor, f.ClearColor, sizeof(Frame.ClearColor));
+        Frame.ClearDepth = f.ClearDepth;
+        Frame.WDepth = f.WDepth;
+        Frame.ClearDepthValue = f.ClearDepthValue;
+        Frame.ClearFog = f.ClearFog;
+        Frame.ClearStencil = f.ClearStencil;
+        Frame.TexVersion = f.TexVersion;
+        if (!f.TexVersion || f.TexVersion != CopiedTexVersion)
+        {
+            memcpy(Tex.data(), f.TexMem, Tex.size());
+            memcpy(Pal.data(), f.PalMem, Pal.size());
+            CopiedTexVersion = f.TexVersion;
+        }
+        Frame.TexMem = Tex.data();
+        Frame.PalMem = Pal.data();
+        Frame.AtlasOn = false; // (WideGpuGL takes no atlas unless asked for its test variant)
+        {
+            std::lock_guard<std::mutex> lock(Mutex);
+            WorkSlot = slot;
+            Work = true;
+            Finished = false;
+        }
+        PendingSlot = slot;
+        Changed.notify_all();
+        // The direction of y the backend draws in, as WideGpuGL's Submit sets it.
+        f.Constants.Scale[2] = -1.0f;
+        return true;
+    }
+
+    void Fetch(int /*slot*/) override
+    {
+        std::unique_lock<std::mutex> lock(Mutex);
+        Changed.wait(lock, [this] { return !Work || Finished || Failed; });
+    }
+
+    bool Done(int /*slot*/) override
+    {
+        std::lock_guard<std::mutex> lock(Mutex);
+        return !Work || Finished;
+    }
+
+private:
+    void Run()
+    {
+        std::string info;
+        bool ok = GLThreadRenderer::CreateContext && GLThreadRenderer::CreateContext(info);
+        if (ok)
+        {
+            Inner.reset(new WideGpuGL());
+            ok = Inner->Init(info);
+            if (!ok) Inner.reset();
+        }
+        else if (!GLThreadRenderer::CreateContext)
+            info = "no OpenGL context in this build";
+        {
+            std::lock_guard<std::mutex> lock(Mutex);
+            Info = info;
+            Ready = ok;
+            Failed = !ok;
+        }
+        Changed.notify_all();
+        while (ok)
+        {
+            int slot;
+            {
+                std::unique_lock<std::mutex> lock(Mutex);
+                Changed.wait(lock, [this] { return Quit || (Work && !Finished); });
+                if (Quit) break;
+                slot = WorkSlot;
+            }
+            Inner->Submit(Frame, slot);
+            Inner->Fetch(slot);
+            {
+                std::lock_guard<std::mutex> lock(Mutex);
+                Finished = true;
+            }
+            Changed.notify_all();
+        }
+        // (Its OpenGL objects belong to this thread's context, which is then let go of, so that
+        // another thread can make a new one.)
+        Inner.reset();
+        if (WideGpuGLRelease) WideGpuGLRelease();
+    }
+
+    std::thread Thread;
+    std::mutex Mutex;
+    std::condition_variable Changed;
+    bool Ready = false, Failed = false, Quit = false, Work = false, Finished = false;
+    int WorkSlot = 0, PendingSlot = 0;
+    std::string Info;
+    std::unique_ptr<WideGpuGL> Inner;
+    WideGpuFrame Frame;
+    std::vector<u8> Tex = std::vector<u8>(512 * 1024), Pal = std::vector<u8>(128 * 1024);
+    u64 CopiedTexVersion = 0;
+};
+}
+
 std::unique_ptr<WideGpuBackend> WideGpuMakeGL(std::string& info)
 {
     if (!GLThreadRenderer::CreateContext)
     {
         info = "no OpenGL context in this build";
         return nullptr;
+    }
+    if (WideGpuGLThreaded)
+    {
+        std::unique_ptr<WideGpuGLWorker> w(new WideGpuGLWorker());
+        if (!w->Start(info)) return nullptr;
+        return w;
     }
     // One context for every renderer (it stays current on this thread).
     static bool haveContext = false;

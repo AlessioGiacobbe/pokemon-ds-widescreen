@@ -52,6 +52,21 @@
 #include "gpucompose.h"
 #include "emuthread.h"
 #include "pc_launcher.h"
+
+// WORLD ON GPU, the widescreen world drawn by the graphics chip (melonDS/src/GPU3D_WideGpu.h):
+// deko3D on the Switch, OpenGL on a PC (EGL on Linux, WGL on Windows).
+#if defined(SSR_DEKO3D) || (defined(SSR_GPU3D) && !defined(__SWITCH__))
+#define SSR_WORLD_ON_GPU 1
+#else
+#define SSR_WORLD_ON_GPU 0
+#endif
+// 3D ON GPU, melonDS's OpenGL renderer for the whole 3D scene (GPU3D_GLThread.h): a PC test;
+// not offered in the PC all-games program, which has WORLD ON GPU for the same purpose.
+#if defined(SSR_GPU3D) && !defined(__SWITCH__) && !defined(SSR_PC_LAUNCHER)
+#define SSR_MENU_GPU3D 1
+#else
+#define SSR_MENU_GPU3D 0
+#endif
 #ifdef SSR_GPU3D
 #include "GPU3D_GLThread.h"
 #include "glcontext.h"
@@ -730,6 +745,15 @@ static void ApplyDSGpu(NDS& nds, bool on)
         fprintf(stderr, "[widegpu] the DS-resolution 3D picture is drawn by the processor\n");
     }
 }
+// Whether the DS-resolution 3D picture goes to the graphics chip with the widescreen world.
+static bool DSPictureOnGpu(bool headless)
+{
+#ifdef __SWITCH__
+    return true;
+#else
+    return headless;
+#endif
+}
 static bool StartWideGpu()
 {
     if (!WideGpuMarker.empty())
@@ -1255,7 +1279,7 @@ struct Settings
     // read from ssrecomp.cfg ("gpu3d_test=1"), never offered in the menu or on by default. (The
     // key replaced "gpu3d", which the build that hung saved as 1.)
     bool gpu3d = false;
-#ifdef SSR_DEKO3D
+#if defined(SSR_DEKO3D) || defined(SSR_PC_LAUNCHER)
     bool wideGpu = true;         // the widescreen world drawn by the graphics chip (GPU3D_WideGpu.h)
 #else
     bool wideGpu = false;
@@ -1671,13 +1695,19 @@ int main(int argc, char** argv)
     {
         if (opt.wideGpu < 0 && getenv("SSR_WIDE_GPU")) opt.wideGpu = atoi(getenv("SSR_WIDE_GPU")) ? 1 : 0;
         bool want = opt.wideGpu >= 0 ? opt.wideGpu == 1 : cfg.wideGpu;
-#ifndef __SWITCH__
+#if !defined(__SWITCH__) && !SSR_WORLD_ON_GPU
         want = want && opt.headless;
 #endif
 #ifdef SSR_GPU3D
         if (want && UseGpu3D) want = false; // (the 3D on the graphics chip draws the wide view itself)
         melonDS::GLThreadRenderer::CreateContext = SsrCreateGLContext;
         melonDS::WideGpuGLGetProc = SsrGLGetProc;
+#ifndef __SWITCH__
+        // In play its drawing goes on a thread of its own (the headless tests keep everything on
+        // their one thread).
+        melonDS::WideGpuGLThreaded = !opt.headless;
+        melonDS::WideGpuGLRelease = SsrReleaseGLContext;
+#endif
 #endif
         // If it was on last time and the game never got 600 frames into it (a file made when it
         // starts and removed after that says so), it is turned off.
@@ -1697,7 +1727,9 @@ int main(int argc, char** argv)
                 }
             }
         }
-        if (want && StartWideGpu() && cfg.ds3dGpu && opt.ds3dGpu != 0) ApplyDSGpu(*nds, true);
+        // (The DS-resolution picture too, on the Switch and in the tests; a PC's processor draws
+        // that small picture in no time.)
+        if (want && StartWideGpu() && cfg.ds3dGpu && opt.ds3dGpu != 0 && DSPictureOnGpu(opt.headless)) ApplyDSGpu(*nds, true);
     }
 
     // SSR_PERF=1 prints where the time of a frame goes, averaged over 300 frames.
@@ -3656,10 +3688,10 @@ int main(int argc, char** argv)
         M_FULLSCREEN,
 #endif
         M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
-#ifdef SSR_DEKO3D
+#if SSR_WORLD_ON_GPU
         M_WIDEGPU,
 #endif
-#if defined(SSR_GPU3D) && !defined(__SWITCH__)
+#if SSR_MENU_GPU3D
         M_GPU3D,
 #endif
         M_SHOWFPS,
@@ -3674,7 +3706,7 @@ int main(int argc, char** argv)
     };
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
-    static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440 };
+    static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440, 2160 };
     const int detailCount = (int)(sizeof(detailLines) / sizeof(detailLines[0]));
     auto detailIndex = [&]() {
         int i = 0;
@@ -3710,11 +3742,12 @@ int main(int argc, char** argv)
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
             { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
-#ifdef SSR_DEKO3D
-            // ON: the widescreen world drawn by the graphics chip (deko3D), not the processor.
+#if SSR_WORLD_ON_GPU
+            // ON: the widescreen world drawn by the graphics chip (deko3D on the Switch, OpenGL
+            // on a PC), not the processor.
             { "WORLD ON GPU", melonDS::WideGpuCurrent ? "ON" : cfg.wideGpu ? "ON (NOT AVAILABLE)" : "OFF" },
 #endif
-#if defined(SSR_GPU3D) && !defined(__SWITCH__)
+#if SSR_MENU_GPU3D
             // ON: the 3D scene drawn by the graphics chip instead of the processor. (Not on the
             // Switch: its OpenGL driver hung the console from a second thread and, from the main
             // thread, cost 10-12 ms a frame for the DS's picture and up to 22 ms to read a 720-line
@@ -4493,7 +4526,7 @@ int main(int argc, char** argv)
             case M_AUTODETAIL:
                 cfg.autoDetail = !cfg.autoDetail;
                 break;
-#if defined(SSR_GPU3D) && !defined(__SWITCH__)
+#if SSR_MENU_GPU3D
             case M_GPU3D:
                 // (between frames: the emulation thread is idle here)
                 cfg.gpu3d = !cfg.gpu3d;
@@ -4501,7 +4534,7 @@ int main(int argc, char** argv)
                 if (cfg.gpu3d && !UseGpu3D) say("NOT AVAILABLE: SEE GAME.LOG");
                 break;
 #endif
-#ifdef SSR_DEKO3D
+#if SSR_WORLD_ON_GPU
             case M_WIDEGPU:
                 // (between frames: the emulation thread is idle here)
                 cfg.wideGpu = !cfg.wideGpu;
@@ -4509,7 +4542,7 @@ int main(int argc, char** argv)
                 if (cfg.wideGpu)
                 {
                     if (!melonDS::WideGpuCurrent && !StartWideGpu()) say("NOT AVAILABLE: SEE GAME.LOG");
-                    else if (cfg.ds3dGpu) ApplyDSGpu(*nds, true);
+                    else if (cfg.ds3dGpu && DSPictureOnGpu(opt.headless)) ApplyDSGpu(*nds, true);
                 }
                 else
                 {

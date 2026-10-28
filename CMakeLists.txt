@@ -18,7 +18,8 @@ endif()
 
 # melonDS core is the hardware runtime; its own frontend is not used. Its OpenGL 3D renderer
 # is, on Linux and the Switch, to draw the 3D scene on the graphics chip (SSR_GPU3D:
-# melonDS/src/GPU3D_GLThread.h, frontend/glcontext.cpp; through EGL, desktop OpenGL 3.3).
+# melonDS/src/GPU3D_GLThread.h, frontend/glcontext.cpp; through EGL, desktop OpenGL 3.3; on
+# Windows through WGL, frontend/glcontext_wgl.cpp, for the PC all-games program).
 set(BUILD_QT_SDL OFF CACHE BOOL "" FORCE)
 set(SSR_GPU3D_DEFAULT OFF)
 if(NINTENDO_SWITCH OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
@@ -264,7 +265,10 @@ else()
     else()
         target_compile_definitions(ssrecomp PRIVATE SSR_NO_PNG)
     endif()
-    if(SSR_GPU3D)
+    if(SSR_GPU3D AND WIN32)
+        # (Windows: the context made with WGL, frontend/glcontext_wgl.cpp.)
+        target_link_libraries(ssrecomp PRIVATE opengl32 gdi32)
+    elseif(SSR_GPU3D)
         target_include_directories(ssrecomp PRIVATE "${SSR_EGL_INCLUDE}")
         target_link_libraries(ssrecomp PRIVATE "${SSR_EGL_LIBRARY}")
     endif()
@@ -286,6 +290,10 @@ else()
     endif()
 endif()
 if(SSR_GPU3D)
-    target_sources(ssrecomp PRIVATE frontend/glcontext.cpp)
+    if(WIN32)
+        target_sources(ssrecomp PRIVATE frontend/glcontext_wgl.cpp)
+    else()
+        target_sources(ssrecomp PRIVATE frontend/glcontext.cpp)
+    endif()
     target_compile_definitions(ssrecomp PRIVATE SSR_GPU3D)
 endif()
