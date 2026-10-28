@@ -136,7 +136,7 @@ separate programs keep their own).
 
 | | |
 |---|---|
-| ![HeartGold: Ho-Oh against a wild Spearow, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/heartgold-ho-oh-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
+| ![HeartGold: Totodile against a wild Pidgey on Route 29, with FIGHT, BAG, RUN, POKÉMON and the party beside the battle](docs/screenshots/heartgold-totodile-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
 
 - **Download:** [`pokemon-soulsilver-heartgold-wide-switch.zip`](../../releases/tag/soulsilver-heartgold-v1),
   folders `/switch/pokemon-soulsilver-wide/` and `/switch/pokemon-heartgold-wide/`.
