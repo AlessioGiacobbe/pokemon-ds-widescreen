@@ -107,7 +107,9 @@ public:
             // changing): a piece the same as last frame keeps its texture. (Not the piece under
             // the widescreen world, whose holes follow the world's picture.)
             Tex& cached = Slots[slotIndex];
+            const auto tp = std::chrono::steady_clock::now();
             const uint64_t sig = overWorld ? 0 : Signature(el, src, plain, nearest);
+            SignatureMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tp).count();
             if (!overWorld && cached.hasSig && cached.sig == sig)
             {
                 SDL_SetTextureBlendMode(tex, plain ? SDL_BLENDMODE_NONE : (!nearest && slotIndex < (int)CachedPremul.size() && CachedPremul[slotIndex]) ? Premultiplied : SDL_BLENDMODE_BLEND);
@@ -116,6 +118,7 @@ public:
             }
             cached.hasSig = !overWorld;
             cached.sig = sig;
+            const auto tu = std::chrono::steady_clock::now();
             if (plain)
             {
                 SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
@@ -158,6 +161,8 @@ public:
                 }
                 SDL_UpdateTexture(tex, nullptr, Buf.data(), el.sw * 4);
             }
+            (overWorld ? UnderWorldMs : UploadMs) += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tu).count();
+            Uploads++;
             DrawPiece(tex, dst, el);
         }
     }
@@ -435,6 +440,10 @@ public:
     // Time spent handing the widescreen picture to the renderer (for the frontend's timing line).
     double WideUploadMs = 0;
     unsigned WideUploads = 0;
+    // (For SSR_EMU_PROF: the pieces' signatures, the piece under the world, the other pieces
+    // that were uploaded, and how many were.)
+    double SignatureMs = 0, UnderWorldMs = 0, UploadMs = 0;
+    unsigned Uploads = 0;
 
 private:
     SDL_Renderer* R;

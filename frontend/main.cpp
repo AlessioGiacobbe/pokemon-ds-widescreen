@@ -4114,6 +4114,15 @@ int main(int argc, char** argv)
                     gpuCompose->WideUploadMs = 0;
                     gpuCompose->WideUploads = 0;
                 }
+                if (gpuCompose && SsrProf::On)
+                {
+                    snprintf(extra, sizeof(extra), "; of compose, signatures %.2f, the piece under the world %.2f, other pieces %.2f ms (%.1f a frame)",
+                        gpuCompose->SignatureMs / perfN, gpuCompose->UnderWorldMs / perfN, gpuCompose->UploadMs / perfN,
+                        (double)gpuCompose->Uploads / perfN);
+                    tail += extra;
+                    gpuCompose->SignatureMs = gpuCompose->UnderWorldMs = gpuCompose->UploadMs = 0;
+                    gpuCompose->Uploads = 0;
+                }
                 if (SsrProf::On)
                 {
                     static const char* const names[SsrProf::Count] = { "geometry", "2D", "sound", "DMA", "wide lists",
