@@ -138,7 +138,13 @@ public:
                 }
                 SDL_UpdateTexture(tex, nullptr, Buf.data(), el.sw * 4);
             }
-            SDL_RenderCopy(R, tex, nullptr, &dst);
+            // (A mirrored piece, as MergedCompose draws it: the message box's closing edge in
+            // the battle strip was drawn the wrong way round here, a dark line beside the text.)
+            if (el.flipX || el.flipY)
+                SDL_RenderCopyEx(R, tex, nullptr, &dst, 0.0, nullptr,
+                    (SDL_RendererFlip)((el.flipX ? SDL_FLIP_HORIZONTAL : 0) | (el.flipY ? SDL_FLIP_VERTICAL : 0)));
+            else
+                SDL_RenderCopy(R, tex, nullptr, &dst);
         }
     }
 

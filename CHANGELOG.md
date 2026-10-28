@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **SoulSilver, HeartGold and Platinum battles:** the message box beside the buttons ends
+  cleanly again on the Switch (its closing edge was drawn the wrong way round, a dark line
+  beside the text); the party's Poke Balls sit in two straight rows with room between them,
+  without the grey ring around each.
 - **A new look for the game list** (Switch and PC): black with white text and red details, and
   four games across when there are more than six, so all seven fit on one screen.
 - **PC all-games download (new, Windows and Linux):** unpack it, put your ROMs in its roms

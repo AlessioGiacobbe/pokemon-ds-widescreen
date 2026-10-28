@@ -2248,15 +2248,24 @@ int main(int argc, char** argv)
                 }
                 // The party: the balls on the touch screen's top row (a ball for each
                 // Pokemon, a grey dot for an empty place; sprites, taken without their
-                // background), three over three.
+                // background), three over three with room between them. Each is cut on its
+                // own, 19 pixels apart from x 3 (both games; cutting three at a time put the
+                // second three a pixel off and clipped their tops), and drawn without its dark
+                // outline (0x383030 in Platinum, 0x414141 in SoulSilver), which showed as a
+                // grey ring on the panel: the panel shows through it instead.
                 const float partyX = innerX + 2 * (cellW + gap), partyW = innerW - 2 * (cellW + gap);
                 const uint8_t drop = LAYER_BG0 | LAYER_BG1 | LAYER_BG2 | LAYER_BG3 | LAYER_BACKDROP;
-                const float ps = std::min(partyW / 56, (rowH - 1) / 30);
-                const float px = partyX + (partyW - 56 * ps) / 2, py = rowY + (rowH - 30 * ps) / 2;
-                put(3, 7, 56, 15, px, py, ps);
-                sc.items.back().drop = drop;
-                put(61, 7, 56, 15, px, py + 15 * ps, ps);
-                sc.items.back().drop = drop;
+                const float ballGapX = 4, ballGapY = 5; // (source pixels)
+                const float ps = std::min(partyW / (3 * 19 + 2 * ballGapX), (rowH - 1) / (2 * 19 + ballGapY));
+                const float px = partyX + (partyW - (3 * 19 + 2 * ballGapX) * ps) / 2;
+                const float py = rowY + (rowH - (2 * 19 + ballGapY) * ps) / 2;
+                for (int i = 0; i < 6; i++)
+                {
+                    put(3 + 19 * i, 4, 19, 19, px + (i % 3) * (19 + ballGapX) * ps, py + (i / 3) * (19 + ballGapY) * ps, ps);
+                    sc.items.back().drop = drop;
+                    sc.items.back().keys[0] = 0x383030;
+                    sc.items.back().keys[1] = 0x414141;
+                }
             }
             else if (moves)
             {
