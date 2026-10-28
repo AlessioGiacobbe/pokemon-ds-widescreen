@@ -312,8 +312,9 @@ single-screen and widescreen view; [its README](docs/original-ssrecomp-README.md
 covers that project. Function names come from the
 [pokebw2](https://github.com/fuddlesworth/pokebw2) and
 [aletheia](https://github.com/Project-Holon/aletheia) decompilations (only their
-symbol files); SoulSilver's and HeartGold's addresses come from ssrecomp's own
-SoulSilver layout. The DS is emulated by [melonDS](https://melonds.kuribo64.net).
+symbol files), Platinum's from a build of
+[pret/pokeplatinum](https://github.com/pret/pokeplatinum); SoulSilver's and HeartGold's
+addresses come from ssrecomp's own SoulSilver layout. The DS is emulated by [melonDS](https://melonds.kuribo64.net).
 
 GPL-3.0-or-later (see `LICENSE`), as required by melonDS. Not affiliated with
 or endorsed by Nintendo, Game Freak, The Pokémon Company or the melonDS
