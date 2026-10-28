@@ -282,8 +282,8 @@ Everything can be done from a controller:
 | L / R | shoulders | Q / W |
 | Start / Select | Start / Back | Enter / Right Shift |
 | Pause menu | Guide, or Start + Select together | Esc |
-| Touch screen | off by default; with "STICK TOUCH CURSOR" on in the pause menu: right stick moves a cursor, right trigger presses | mouse, or I J K L and Space |
-| Fast forward (4x) | hold left trigger | hold Left Shift |
+| Touch screen | off by default; with "STICK TOUCH CURSOR" on in the pause menu: right stick moves a cursor, left trigger presses | mouse, or I J K L and Space |
+| Fast forward (4x) | hold right trigger | hold Left Shift |
 | Swap the large screen | click right stick (only with "STICK TOUCH CURSOR" on) | F1 |
 | Next layout | click left stick (only with "STICK TOUCH CURSOR" on) | Tab |
 | Quick save / load state | pause menu | F5 / F8 |

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fast forward is on the right trigger in every game** (ZR on the Switch, RT on a PC
+  controller): hold it for up to 4x speed. It was the left trigger. With STICK TOUCH CURSOR on,
+  the left trigger now presses the touch screen instead of the right.
+- **Fast forward goes faster and looks smoother.** Of the frames it runs at once only the last
+  is shown, so the others are no longer drawn (their 2D and widescreen world), and the 60 FPS
+  in-between frames pause while it is held.
 - **Switch: fewer late frames in towns and battles.** Preparing the 3D pictures for the
   graphics chip, sending them and collecting them now happens on the Switch's spare cores
   instead of between the game's own work, about 1 ms less a frame. Measured from save states,

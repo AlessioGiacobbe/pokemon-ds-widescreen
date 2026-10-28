@@ -17,6 +17,15 @@
 */
 
 #include "SsrProf.h" // ssrecomp
+
+// ssrecomp: set by the frontend for a frame whose picture is never shown (all but the last of
+// the frames run at once when fast forwarding): its 2D is not drawn, nor its widescreen world
+// (GPU3D::VCount215), so that fast forward goes faster and shows more frames. Not while the
+// game captures the picture into video memory or shows it from main memory, which it reads.
+bool rc_frame_hidden = false;
+// ssrecomp: the widescreen world drawn at line 215 of this frame would not be shown either (it is
+// shown after the next frame), so it is not drawn (GPU3D::VCount215).
+bool rc_wide_render_skip = false;
 #include <string.h>
 #include "NDS.h"
 #include "GPU.h"
@@ -886,7 +895,11 @@ void GPU::StartHBlank(u32 line) noexcept
         // draw
         // note: this should start 48 cycles after the scanline start
         SsrProf::Scope prof(SsrProf::Draw2D); // ssrecomp
-        if (line < 192)
+        // ssrecomp: a frame nobody sees (rc_frame_hidden), when the 2D engines draw only for the screen.
+        const bool skip2D = rc_frame_hidden && !(GPU2D_A.CaptureCnt & (1u << 31)) && ((GPU2D_A.DispCnt >> 16) & 3) != 3;
+        // (The 3D lines are still taken: the 3D thread counts them out frame after frame.)
+        if (line < 192 && skip2D) GPU3D.GetLine(line);
+        if (line < 192 && !skip2D)
         {
             GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
             {
@@ -896,7 +909,7 @@ void GPU::StartHBlank(u32 line) noexcept
         }
 
         // sprites are pre-rendered one scanline in advance
-        if (line < 191)
+        if (line < 191 && !skip2D)
         {
             GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A);
             {

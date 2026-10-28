@@ -188,6 +188,7 @@ static std::set<uint32_t> g_sceneShots;
 
 // Defined in the 2D renderer: layers not to draw, per engine (see GPU2D_Soft.cpp).
 extern unsigned rc_hide_layers[2];
+extern bool rc_frame_hidden, rc_wide_render_skip; // melonDS/src/GPU.cpp
 
 using namespace melonDS;
 
@@ -1266,8 +1267,9 @@ struct Settings
     bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
     bool byLabel = true;
     bool fps60 = true;
-    // Right stick as a touch cursor, right trigger as the press, and the stick clicks that
-    // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
+    // Right stick as a touch cursor, left trigger as the press (the right one fast forwards),
+    // and the stick clicks that switch screens. Off unless asked for: brushing the stick put
+    // the bottom screen up.
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
     bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
@@ -3819,7 +3821,7 @@ int main(int argc, char** argv)
     touchPadUsed = true;
 #endif
     // Touch cursor for devices without a touchscreen: moved with the right stick or IJKL,
-    // pressed with the right trigger or Space.
+    // pressed with the left trigger or Space.
     float cursorX = 128, cursorY = 96;
     uint32_t cursorShownUntil = 0;
     PadState prevPad;
@@ -3916,11 +3918,18 @@ int main(int argc, char** argv)
 
     // The emulation of one frame (several when fast-forwarding; only the first one's sound
     // is played).
+    // Fast forward runs several frames at once and shows the last: the others' 2D and widescreen
+    // world are not drawn (rc_frame_hidden, rc_wide_render_skip), so it goes faster and shows
+    // more frames. SSR_FF_FULL=1 draws them all, for comparing.
+    static const bool ffFull = getenv("SSR_FF_FULL") != nullptr;
     auto runFrames = [&]() {
         const double t0 = perfNow();
         emuGot = 0;
         for (int i = 0; i < emuSpeed; i++)
         {
+            // (The widescreen world drawn during a frame is shown after the next one.)
+            rc_frame_hidden = !ffFull && emuSpeed > 1 && i < emuSpeed - 1;
+            rc_wide_render_skip = !ffFull && emuSpeed > 1 && i < emuSpeed - 2;
             rc_frame++;
             if (funcWatchOn) funcWatch.NextFrame();
             nds->RunFrame();
@@ -3929,6 +3938,7 @@ int main(int argc, char** argv)
             int n = nds->SPU.ReadOutput(audioBuf.data(), avail);
             if (i == 0) emuGot = n;
         }
+        rc_frame_hidden = rc_wide_render_skip = false;
         emuMs = perfNow() - t0;
     };
     if (pipelined)
@@ -4669,10 +4679,12 @@ int main(int argc, char** argv)
                 if (pressed(PAD_LS)) layout = LayoutNext(layout);
                 if (fabsf(ps.rx) > 0.2f) curDX += ps.rx;
                 if (fabsf(ps.ry) > 0.2f) curDY += ps.ry;
-                if (ps.rt > 0.3f) curPress = true;
+                if (ps.lt > 0.3f) curPress = true;
             }
         }
-        if (!paused && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
+        // Fast forward (4x) while the right trigger (ZR on the Switch) or Left Shift is held, or
+        // locked on from the menu.
+        if (!paused && (fastLock || kbFast || ps.rt > 0.5f)) speed = 4;
         prevPad = ps;
 
         // A decompilation build with SINGLE_SCREEN puts everything on the engine of the touch
@@ -5113,6 +5125,8 @@ int main(int argc, char** argv)
             else nds->ReleaseScreen();
 
             emuSpeed = speed;
+            // (No in-between frames while fast forwarding: only one frame in several is shown.)
+            nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60 && !opt.lockstep && speed == 1;
             if (pipelined && pendingJob.valid)
             {
                 // The last frame is shown while this one is emulated.

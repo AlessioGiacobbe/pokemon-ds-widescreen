@@ -17,6 +17,7 @@
 */
 
 #include "SsrProf.h" // ssrecomp
+extern bool rc_wide_render_skip; // ssrecomp: GPU.cpp
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
@@ -2704,11 +2705,11 @@ void GPU3D::VCount215(GPU& gpu) noexcept
         InterpPending = false;
         InterpShowReal = true;
         InterpolatedFrames++;
-        if (Wide.Owner == this) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, true); }
+        if (Wide.Owner == this && !rc_wide_render_skip) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, true); }
         return;
     }
     CurrentRenderer->RenderFrame(gpu);
-    if (Wide.Owner == this) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, false); }
+    if (Wide.Owner == this && !rc_wide_render_skip) { SsrProf::Scope prof(SsrProf::WideRender); WideOnRender(gpu, false); }
 }
 
 void GPU3D::SetRenderXPos(u16 xpos) noexcept
