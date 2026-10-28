@@ -2771,6 +2771,11 @@ int main(int argc, char** argv)
                 sc.softBars = plainEdges;
                 return sc;
             }
+            // (Platinum: a moment of an event in the overworld in which its own function stops for
+            // a little longer, a fade with only a message on the top screen: the last layout up
+            // to 2 seconds after the overworld last ran.)
+            if (pt.on && lastKnownBw2Frame && funcWatch.Ran(pt.field, 120))
+                return lastKnownBw2;
             sc = Stack("spread", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
             return sc;
         }
