@@ -47,6 +47,14 @@ public:
         CV.wait(lock, [this] { return !Pending; });
     }
 
+    // Until the job started by the last Kick has finished or `seconds` have passed; whether it
+    // has finished.
+    bool WaitFor(double seconds)
+    {
+        std::unique_lock<std::mutex> lock(M);
+        return CV.wait_for(lock, std::chrono::duration<double>(seconds), [this] { return !Pending; });
+    }
+
     // Until the job started by the last Kick has finished, calling service() meanwhile (every
     // fraction of a millisecond), for work the job hands to this thread.
     template <typename F> void WaitServicing(F service)

@@ -3899,6 +3899,45 @@ int main(int argc, char** argv)
                 wide.pixels = widePixels.data();
             }
         }
+        // For a picture shown a frame later still (`ahead`): by then the emulation has drawn
+        // over both framebuffers and the widescreen picture's memory, so copies of all of it.
+        // Made once the next frame runs (KeepLater): the frame just run's framebuffer and
+        // widescreen picture stay as they are through the next frame, and the copies (4 MB at
+        // 720 lines) took 1.5 ms of the time between two frames' emulation.
+        std::vector<uint32_t> screenPixels[2], plainPixels[2];
+        bool keepLater = false;
+        void KeepLater()
+        {
+            if (!keepLater) return;
+            keepLater = false;
+            for (int i = 0; i < 2; i++)
+            {
+                ScreenImage& sc = screens[i];
+                if (!sc.pixels) continue;
+                const u32* old = sc.pixels;
+                screenPixels[i].assign(old, old + 256 * (192 + scene.extraRows[i]));
+                sc.pixels = screenPixels[i].data();
+                if (top == old) top = sc.pixels;
+                if (bot == old) bot = sc.pixels;
+            }
+            for (int i = 0; i < 2; i++)
+            {
+                // (top and bot, where not one of the screens above: the plain layouts.)
+                const u32*& p = i ? bot : top;
+                if (!p || p == screens[0].pixels || p == screens[1].pixels) continue;
+                plainPixels[i].assign(p, p + 256 * 192);
+                p = plainPixels[i].data();
+            }
+            if (!battleRender) KeepWide(); // (a widened battle picture: once it is made)
+        }
+        void KeepWide()
+        {
+            if (wide.pixels && wide.w > 0 && wide.h > 0 && wide.pixels != widePixels.data())
+            {
+                widePixels.assign(wide.pixels, wide.pixels + (size_t)wide.w * wide.h);
+                wide.pixels = widePixels.data();
+            }
+        }
     };
     DrawJob nowJob, pendingJob;
 
@@ -3954,7 +3993,10 @@ int main(int argc, char** argv)
         fprintf(stderr, "[pipeline] %s\n", pipelined ? "on: each frame is shown while the next one is emulated" : "could not start");
     }
 
-    auto drawFrame = [&](DrawJob& j) {
+    uint64_t lastShownAt = 0, shownGaps = 0, shownGapsLong = 0;
+    // Showing a frame in two steps: drawn (renderFrame), then handed to the screen
+    // (presentFrame), which with `ahead` happens at the frame's own time, a while after.
+    auto renderFrame = [&](DrawJob& j) {
         // (The widened battle picture, from what was grabbed after the frame: made here, beside
         // the next frame's emulation.)
         if (j.battleRender)
@@ -4043,6 +4085,20 @@ int main(int argc, char** argv)
             touchPad.Apply(held, menuHeld);
             touchPad.Draw(renderer, held, menuHeld);
         }
+    };
+    auto presentFrame = [&](DrawJob& j, bool pace) {
+        // How evenly the frames are handed to the screen, for the timing lines: gaps between
+        // them of more than 17.5 ms (a frame takes 16.7). (Taken before presenting: how long
+        // that takes depends on the screen's own refresh.)
+        {
+            const uint64_t t = SDL_GetPerformanceCounter();
+            if (lastShownAt && !j.wantShot)
+            {
+                shownGaps++;
+                if ((double)(t - lastShownAt) / perfFreq > 0.0175) shownGapsLong++;
+            }
+            lastShownAt = t;
+        }
         SDL_RenderPresent(renderer);
         perfMark(4);
         // Frames shown in the last whole second, for the FPS counter.
@@ -4055,6 +4111,12 @@ int main(int argc, char** argv)
             fpsSince = ms;
         }
 
+        // (Frames shown a frame later keep their own times: see `ahead`.)
+        if (!pace)
+        {
+            perfMark(5);
+            return;
+        }
         nextTick += (uint64_t)(frameTime * perfFreq);
         uint64_t now = SDL_GetPerformanceCounter();
         if (now < nextTick)
@@ -4082,6 +4144,64 @@ int main(int argc, char** argv)
             if (now - nextTick > carry) nextTick = now - carry;
         }
         perfMark(5);
+    };
+    auto drawFrame = [&](DrawJob& j, bool pace = true) {
+        renderFrame(j);
+        presentFrame(j, pace);
+    };
+
+    // One frame further ahead (`ahead`, with the pipeline; SSR_AHEAD=0 to compare): the emulation
+    // may finish up to two frames before they are shown, and they are shown at even times of
+    // their own (nextTick) instead of as each frame's emulation ends. A frame that takes
+    // longer than 16.7 ms then no longer makes its picture late, as long as the frames around
+    // it make up for it. Each frame reaches the screen a frame later. Not with the OpenGL 3D
+    // of a PC (GPU3D_GLThread.h), which works on this thread between the emulation's steps.
+    bool ahead = pipelined && !(getenv("SSR_AHEAD") && getenv("SSR_AHEAD")[0] == '0');
+#ifdef SSR_GPU3D
+    if (melonDS::GLThreadRenderer::Current) ahead = false;
+#endif
+    if (ahead) fprintf(stderr, "[pipeline] frames shown one frame later, at even times\n");
+    DrawJob aheadJobs[3];
+    int aheadHead = 0, aheadCount = 0;
+    bool aheadRendered = false; // the oldest waiting picture is drawn, to be handed over at its time
+    uint64_t aheadShown = 0, aheadLate = 0; // for the timing lines
+    // Shows the oldest waiting picture if its time has come (or `now` regardless).
+    auto presentDue = [&](bool now) -> bool {
+        if (!aheadCount) return false;
+        uint64_t t = SDL_GetPerformanceCounter();
+        if (!now && t < nextTick) return false;
+        const uint64_t ft = (uint64_t)(frameTime * perfFreq);
+        if (t > nextTick + perfFreq / 500) aheadLate++; // (over 2 ms after its time)
+        aheadShown++;
+        DrawJob& j = aheadJobs[aheadHead];
+        if (!aheadRendered)
+        {
+            j.KeepLater(); // (not yet made when no frame has run since, as while paused)
+            renderFrame(j);
+        }
+        presentFrame(j, false);
+        aheadRendered = false;
+        j.valid = false;
+        aheadHead = (aheadHead + 1) % 3;
+        aheadCount--;
+        nextTick += ft;
+        // (As drawFrame's own pacing: a little lateness is won back, a stall is not.)
+        t = SDL_GetPerformanceCounter();
+        if (t > nextTick && t - nextTick > ft / 4) nextTick = t - ft / 4;
+        return true;
+    };
+    // Draws the oldest waiting picture ahead of its time, so that only handing it over is left
+    // for then (drawing it took 4-8 ms, and frames reached the screen that much unevenly).
+    auto renderAhead = [&]() {
+        if (!aheadCount || aheadRendered) return;
+        DrawJob& j = aheadJobs[aheadHead];
+        if (j.keepLater || j.battleRender) return; // (still to be finished once the next frame runs)
+        renderFrame(j);
+        aheadRendered = true;
+    };
+    auto secondsToTick = [&]() {
+        const uint64_t t = SDL_GetPerformanceCounter();
+        return t < nextTick ? (double)(nextTick - t) / perfFreq : 0.0;
     };
 
     while (running && !Host::StopRequested)
@@ -4162,6 +4282,20 @@ int main(int argc, char** argv)
                 {
                     snprintf(extra, sizeof(extra), "; pipeline: waited for the emulation %.2f ms", perfAcc[1] / perfN);
                     tail += extra;
+                }
+                if (shownGaps)
+                {
+                    snprintf(extra, sizeof(extra), "; shown over 17.5 ms after the last: %llu of %llu",
+                        (unsigned long long)shownGapsLong, (unsigned long long)shownGaps);
+                    tail += extra;
+                    shownGaps = shownGapsLong = 0;
+                }
+                if (ahead && aheadShown)
+                {
+                    snprintf(extra, sizeof(extra), "; shown a frame later: %llu of %llu over 2 ms late",
+                        (unsigned long long)aheadLate, (unsigned long long)aheadShown);
+                    tail += extra;
+                    aheadLate = aheadShown = 0;
                 }
                 if (perfDsFrames > (uint64_t)perfN)
                 {
@@ -5147,7 +5281,41 @@ int main(int argc, char** argv)
             emuSpeed = speed;
             // (No in-between frames while fast forwarding: only one frame in several is shown.)
             nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60 && !opt.lockstep && speed == 1;
-            if (pipelined && pendingJob.valid)
+            if (ahead)
+            {
+                // Room for this frame's picture: at most two waiting to be shown.
+                while (aheadCount >= 2)
+                    if (!presentDue(false))
+                    {
+                        renderAhead();
+                        if (!presentDue(false)) std::this_thread::sleep_for(std::chrono::duration<double>(std::max(0.0002, secondsToTick())));
+                    }
+                emuThread.Kick();
+                // The newest waiting picture's widened battle picture, from what its frame
+                // grabbed, made now that the next frame runs (and before that grabs again),
+                // into the picture's own memory.
+                if (aheadCount)
+                {
+                    DrawJob& nj = aheadJobs[(aheadHead + aheadCount - 1) % 3];
+                    nj.KeepLater();
+                    if (nj.battleRender)
+                    {
+                        BattleRender(battleWide, nj.wide, 0);
+                        nj.battleRender = false;
+                        nj.KeepWide();
+                    }
+                }
+                // The waiting pictures shown as their times come while the frame runs.
+                for (;;)
+                {
+                    if (presentDue(false)) continue;
+                    renderAhead();
+                    if (presentDue(false)) continue;
+                    if (emuThread.WaitFor(aheadCount ? std::max(0.0001, secondsToTick()) : 0.1)) break;
+                }
+                perfEmu += emuMs;
+            }
+            else if (pipelined && pendingJob.valid)
             {
                 // The last frame is shown while this one is emulated.
 #ifdef SSR_GPU3D
@@ -5185,6 +5353,12 @@ int main(int argc, char** argv)
         {
             drawFrame(pendingJob);
             pendingJob.valid = false;
+        }
+        else if (ahead && aheadCount)
+        {
+            // (Not emulating, as while paused: the waiting pictures shown in turn.)
+            while (aheadCount)
+                if (!presentDue(false)) std::this_thread::sleep_for(std::chrono::duration<double>(std::max(0.0002, secondsToTick())));
         }
         perfMark(1);
         frame++;
@@ -5765,7 +5939,7 @@ int main(int argc, char** argv)
             // What the picture needs; drawn now, or with the pipeline while the next frame is
             // emulated (from copies of what that emulation overwrites).
             if (merged) takeWideImage();
-            DrawJob& job = pipelined ? pendingJob : nowJob;
+            DrawJob& job = ahead ? aheadJobs[(aheadHead + aheadCount) % 3] : pipelined ? pendingJob : nowJob;
             job.merged = merged;
             job.overlayUsed = overlayUsed;
             job.wantShot = wantShot && opt.windowShots;
@@ -5781,7 +5955,15 @@ int main(int argc, char** argv)
             job.scene = scene;
             job.wide = wideImage;
             job.battleRender = battleRenderLater;
-            if (pipelined)
+            if (ahead)
+            {
+                job.Keep(false); // (the layer flags and edges: drawn over line by line)
+                job.keepLater = true;
+                job.valid = true;
+                aheadCount++;
+                perfMark(2);
+            }
+            else if (pipelined)
             {
                 job.Keep(speed > 1);
                 job.valid = true;
