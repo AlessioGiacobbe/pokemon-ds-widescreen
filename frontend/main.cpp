@@ -51,6 +51,7 @@
 #include "audiostretch.h"
 #include "gpucompose.h"
 #include "emuthread.h"
+#include "pc_launcher.h"
 #ifdef SSR_GPU3D
 #include "GPU3D_GLThread.h"
 #include "glcontext.h"
@@ -1265,6 +1266,8 @@ struct Settings
     // for Black 2), the buttons large in the message box's band; 2 PANEL, the touch screen's
     // panel as tall as the message box (Bw1Layouts::BUTTONS_*).
     int battleButtons = 1;
+    // The PC all-games program: the window's size when it last closed (0: 1280x720, a wide view).
+    int windowW = 0, windowH = 0;
 
     void Load(const std::string& path)
     {
@@ -1310,6 +1313,15 @@ struct Settings
             else if (k == "wide_gpu") wideGpu = v == "1";
             else if (k == "ds3d_gpu") ds3dGpu = v != "0";
             else if (k == "battle_buttons") battleButtons = v == "corner" ? 0 : v == "panel" ? 2 : 1;
+            else if (k == "window")
+            {
+                const size_t x = v.find('x');
+                if (x != std::string::npos)
+                {
+                    windowW = std::clamp(atoi(v.c_str()), 0, 16384);
+                    windowH = std::clamp(atoi(v.c_str() + x + 1), 0, 16384);
+                }
+            }
         }
     }
 
@@ -1332,6 +1344,9 @@ struct Settings
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
         f << "battle_buttons=" << (battleButtons == 0 ? "corner" : battleButtons == 2 ? "panel" : "strip") << "\n";
+#ifdef SSR_PC_LAUNCHER
+        if (windowW > 0 && windowH > 0) f << "window=" << windowW << "x" << windowH << "\n";
+#endif
 #ifdef SSR_GPU3D
         f << "gpu3d_test=" << (gpu3d ? 1 : 0) << "\n";
         f << "wide_gpu=" << (wideGpu ? 1 : 0) << "\n";
@@ -1438,6 +1453,10 @@ int main(int argc, char** argv)
     // Started from the Homebrew Menu: the ROM, save and settings are in the app's folder
     // on the SD card (sdmc:/switch/ssrecomp), and the log goes there too.
     if (!SwitchPlatform::Start(argc, argv)) return 1;
+#endif
+#ifdef SSR_PC_LAUNCHER
+    // The PC all-games program started without arguments: the game list (pc_launcher.cpp).
+    if (!PcLauncher::Start(argc, argv)) return 0;
 #endif
     if (!ParseArgs(argc, argv, opt))
     {
@@ -1730,8 +1749,20 @@ int main(int argc, char** argv)
         }
         int w, h;
         LayoutNativeSize(layout, w, h);
-        window = SDL_CreateWindow("Pokemon SoulSilver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            w * opt.scale, h * opt.scale,
+        w *= opt.scale;
+        h *= opt.scale;
+        const char* windowTitle = "Pokemon SoulSilver";
+#ifdef SSR_PC_LAUNCHER
+        // The PC all-games program: a wide window (the widescreen view follows the window's
+        // shape), as large as it was last time, named after the game.
+        w = cfg.windowW >= 320 && cfg.windowH >= 240 ? cfg.windowW : 1280;
+        h = cfg.windowW >= 320 && cfg.windowH >= 240 ? cfg.windowH : 720;
+        static std::string gameTitle;
+        gameTitle = PcLauncher::GameName();
+        if (!gameTitle.empty()) windowTitle = gameTitle.c_str();
+#endif
+        window = SDL_CreateWindow(windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            w, h,
             SDL_WINDOW_RESIZABLE |
 #ifdef __APPLE__
             SDL_WINDOW_ALLOW_HIGHDPI |
@@ -4142,6 +4173,15 @@ int main(int argc, char** argv)
                 }
                 else if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
                     mouseDown = false;
+#ifdef SSR_PC_LAUNCHER
+                // (The size the window is given, kept for next time; not the screen's when fullscreen.)
+                else if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED &&
+                         !(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN))
+                {
+                    cfg.windowW = ev.window.data1;
+                    cfg.windowH = ev.window.data2;
+                }
+#endif
                 else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) mouseDown = true;
                 else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) mouseDown = false;
                 // (Every joystick is announced by SDL_JOYDEVICEADDED, game controllers also
@@ -4529,6 +4569,10 @@ int main(int argc, char** argv)
                 // A game chosen from the game list goes back to the list (the program starts
                 // again once this one has saved and closed); + there goes to the Homebrew Menu.
                 if (SwitchPlatform::CanChangeGame()) SwitchPlatform::ChangeGame();
+#endif
+#ifdef SSR_PC_LAUNCHER
+                // (The PC's all-games program likewise: QUIT goes back to its game list.)
+                if (PcLauncher::CanChangeGame()) PcLauncher::ChangeGame();
 #endif
                 running = false;
                 break;
@@ -5749,6 +5793,9 @@ int main(int argc, char** argv)
     SwitchPlatform::Finish();
 #endif
     exitStep("done");
+#ifdef SSR_PC_LAUNCHER
+    PcLauncher::Finish();
+#endif
     if (opt.lockstep)
     {
         if (TraceFailed) return 1;

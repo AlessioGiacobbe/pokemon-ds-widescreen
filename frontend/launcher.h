@@ -266,12 +266,50 @@ inline void Sort(std::vector<Game>& games)
     });
 }
 
+// Where the list's tiles go on a canvas (Draw, and TileAt for a mouse).
+struct Grid
+{
+    int s, gap, labelH, top, bottom, tile, cols, rows, gx;
+};
+inline Grid Layout(const Canvas& c)
+{
+    Grid g;
+    g.s = std::max(1, c.h / 240); // the font's scale: 3 at 720 lines
+    // Tiles three across and two rows down (six games on one screen), at most Art x Art at 720
+    // lines.
+    g.gap = 8 * g.s;
+    g.labelH = 20 * g.s;
+    g.top = 28 * g.s;
+    g.bottom = c.h - 16 * g.s;
+    g.tile = std::max(32, std::min(Art * c.h / 720, (g.bottom - g.top) / 2 - g.labelH - g.gap));
+    g.cols = std::max(1, std::min(3, (c.w - g.gap) / (g.tile + g.gap * 3)));
+    g.rows = std::max(1, (g.bottom - g.top) / (g.tile + g.labelH + g.gap));
+    const int gridW = g.cols * g.tile + (g.cols - 1) * g.gap * 3;
+    g.gx = (c.w - gridW) / 2;
+    return g;
+}
+
+// The game whose tile (with its name below it) is at x, y on the canvas, or -1.
+inline int TileAt(const Canvas& c, int count, int first, int x, int y)
+{
+    const Grid g = Layout(c);
+    for (int i = first * g.cols; i < count && i < (first + g.rows) * g.cols; i++)
+    {
+        const int tx = g.gx + (i % g.cols) * (g.tile + g.gap * 3), ty = g.top + (i / g.cols - first) * (g.tile + g.labelH + g.gap);
+        if (x >= tx && x < tx + g.tile && y >= ty && y < ty + g.tile + g.labelH) return i;
+    }
+    return -1;
+}
+
 // The list, drawn over the whole canvas (1280x720 on the Switch): a grid of tiles, each the
 // game's picture (or its DS icon, enlarged) with its name and whether it has a save. first is the
-// first row shown. Returns the number of columns, for moving up and down.
-inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& first, const std::string& note)
+// first row shown. hint: the line along the bottom (the Switch's buttons when empty). Returns the
+// number of columns, for moving up and down.
+inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& first, const std::string& note,
+                const std::string& hintText = std::string())
 {
-    const int s = std::max(1, c.h / 240); // the font's scale: 3 at 720 lines
+    const Grid grid = Layout(c);
+    const int s = grid.s;
     c.Fill(0, 0, c.w, c.h, 0xFF101A2E);
     // A band along the top with the title.
     c.Fill(0, 0, c.w, 22 * s, 0xFF1C2A44);
@@ -279,17 +317,11 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
     const std::string title = "POKEMON DS WIDESCREEN";
     c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, 0xFFFFD75E);
 
-    // Tiles three across and two rows down (six games on one screen), at most Art x Art at 720
-    // lines.
-    const int gap = 8 * s, labelH = 20 * s, top = 28 * s, bottom = c.h - 16 * s;
-    const int tile = std::max(32, std::min(Art * c.h / 720, (bottom - top) / 2 - labelH - gap));
-    const int cols = std::max(1, std::min(3, (c.w - gap) / (tile + gap * 3)));
-    const int rows = std::max(1, (bottom - top) / (tile + labelH + gap));
+    const int gap = grid.gap, labelH = grid.labelH, top = grid.top, bottom = grid.bottom;
+    const int tile = grid.tile, cols = grid.cols, rows = grid.rows, gx = grid.gx;
     const int selRow = selected / cols;
     if (selRow < first) first = selRow;
     if (selRow >= first + rows) first = selRow - rows + 1;
-    const int gridW = cols * tile + (cols - 1) * gap * 3;
-    const int gx = (c.w - gridW) / 2;
     for (int i = first * cols; i < (int)games.size() && i < (first + rows) * cols; i++)
     {
         const Game& g = games[i];
@@ -332,7 +364,7 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
     // More games above or below the ones shown.
     if (first > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, 0xFF8FA0C0);
     if ((first + rows) * cols < (int)games.size()) c.Fill(c.w / 2 - 8 * s, bottom - 2 * s, 16 * s, s, 0xFF8FA0C0);
-    const std::string hint = note.empty() ? "A: PLAY    +: QUIT" : note;
+    const std::string hint = !note.empty() ? note : !hintText.empty() ? hintText : "A: PLAY    +: QUIT";
     c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, 0xFF8FA0C0);
     return cols;
 }

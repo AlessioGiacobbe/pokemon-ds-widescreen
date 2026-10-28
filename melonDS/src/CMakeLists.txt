@@ -137,7 +137,12 @@ if (ENABLE_JIT)
     if (WIN32)
         # Required for memory mapping-related functions introduced in Windows 8
         target_compile_definitions(core PRIVATE -D_WIN32_WINNT=_WIN32_WINNT_WIN8)
-        target_link_libraries(core PRIVATE onecore)
+        # (ssrecomp: only where the toolchain has it; Ubuntu's MinGW-w64 has none. The two
+        # functions it is for are looked up when the JIT starts, ARMJIT_Memory.cpp.)
+        find_library(SSR_ONECORE_LIB onecore)
+        if (SSR_ONECORE_LIB)
+            target_link_libraries(core PRIVATE onecore)
+        endif()
     endif()
 
     if (CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")

@@ -1,0 +1,70 @@
+POKEMON DS WIDESCREEN FOR PC
+============================
+
+The Pokemon DS games on one widescreen display, with the two DS screens merged into one view,
+the world drawn out to the sides of a 16:9 screen, 60 fps and controller support.
+It plays your own copies of:
+
+  Pokemon Black, White, Black 2 and White 2 (English, US or Europe)
+  Pokemon SoulSilver and HeartGold (US)
+  Pokemon Platinum (English)
+
+Nothing of the games comes with this download: you need your own ROMs (.nds files).
+
+
+GETTING STARTED
+---------------
+
+1. Unpack the download anywhere you like (not inside Program Files).
+2. Put your ROMs in the roms folder. Any file names are fine.
+3. Start pokemon-ds-wide.exe (Windows) or pokemon-ds-wide (Linux).
+4. Pick a game from the list: arrow keys or a controller's D-pad, then Enter or A.
+   You can also double-click a game. Press O in the list to open the roms folder.
+
+Windows may warn that the program is from an unknown publisher the first time: choose
+"More info", then "Run anyway".
+On Linux, SDL2 must be installed (Ubuntu and Debian: sudo apt install libsdl2-2.0-0).
+
+
+WHERE THINGS ARE KEPT
+---------------------
+
+  roms/           your ROMs
+  saves/          your saved games, one per game (black2.sav, soulsilver.sav, ...)
+  settings.cfg    your settings
+  game.log        what happened in the last session (send it with a bug report)
+
+To carry on a game from another emulator, put its .sav file in the saves folder with the name
+above (for example saves/platinum.sav). Back your saves up before you do.
+
+
+CONTROLS
+--------
+
+Controller (Xbox, PlayStation, Switch Pro and others): plays as a DS, with the touch screen's
+buttons shown in the view.
+
+Keyboard:
+  Arrow keys       D-pad
+  X / Z            A / B
+  S / A            X / Y
+  Q / W            L / R
+  Enter            START
+  Backspace        SELECT
+  Mouse            touch screen (click to touch)
+  Esc              menu (settings, save state, QUIT back to the game list)
+  F11              fullscreen
+  Tab              next screen layout
+  F1               show the other DS screen
+  Left Shift       fast forward while held
+
+
+SOURCE AND LICENCE
+------------------
+
+This program is free software under the GNU General Public License version 3 (LICENSE.txt),
+built on melonDS. Its source code:
+  https://github.com/mamesj/pokemon-ds-widescreen-switch
+SDL2 (SDL2.dll on Windows) is under the zlib licence (LICENSE-SDL2.txt).
+Pokemon is a trademark of Nintendo, Creatures and GAME FREAK. This project is not affiliated
+with or endorsed by them.

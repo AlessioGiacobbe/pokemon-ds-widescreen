@@ -678,7 +678,7 @@ struct WideAccess
         {
             const Box b = boxes[i];
             if (!b.side) continue;
-            const bool far = (s64)b.w1 * 10 >= (s64)farW * 9, distant = (s64)b.w1 * 10 >= (s64)farW * 6;
+            const bool farBox = (s64)b.w1 * 10 >= (s64)farW * 9, distant = (s64)b.w1 * 10 >= (s64)farW * 6;
             for (int side = 1; side <= 2; side++)
             {
                 if (!(b.side & side)) continue;
@@ -698,7 +698,7 @@ struct WideAccess
                     // the top of the view, what stands below its top, nor anything wholly further,
                     // which it covers, as it would on the DS: the land beside the lookout that
                     // Black 2 draws once it loads more of its map, frontend/bw2map.h.)
-                    if (far && b.y0 <= 0 && o.y0 > 0) continue;
+                    if (farBox && b.y0 <= 0 && o.y0 > 0) continue;
                     if (distant && o.w0 > b.w1) continue;
 
                     // (Touching counts: a neighbour sharing the corner to be moved would be bent.
@@ -719,7 +719,7 @@ struct WideAccess
         }
     }
 
-    // Moves a polygon's corners at one end (in its outer half, `near` being its middle, and
+    // Moves a polygon's corners at one end (in its outer half, `nearX` being its middle, and
     // beyond `limit`, the DS screen's edge: a slanted end's both corners) out to x = `edge`,
     // each along the edge of the polygon running inwards from it, with what is drawn carried
     // on: depth and 1/W (which change linearly across the screen) and the texture coordinates
@@ -729,7 +729,7 @@ struct WideAccess
     // many times over), a texture that does not repeat and would be continued past its end
     // (its last column drawn over and over, a band of one colour: the clouds by the pier), or
     // one that ends exactly at the corner (below).
-    static void Continue(Polygon* poly, int side, s32 near, s32 limit, s32 edge)
+    static void Continue(Polygon* poly, int side, s32 nearX, s32 limit, s32 edge)
     {
         const u32 n = poly->NumVertices;
         struct Corner { s32 x, y, z; float invW, s, t, r, g, b; s32 rs, rt; };
@@ -754,7 +754,7 @@ struct WideAccess
         for (u32 v = 0; v < n && carry; v++)
         {
             const Corner& o = c[v];
-            m[v].out = side == 1 ? o.x <= near && o.x < limit : o.x >= near && o.x > limit;
+            m[v].out = side == 1 ? o.x <= nearX && o.x < limit : o.x >= nearX && o.x > limit;
             if (!m[v].out) continue;
             // The neighbour furthest inwards: the other end of the polygon's top or bottom edge.
             const Corner& a = c[(v + n - 1) % n];
@@ -818,7 +818,7 @@ struct WideAccess
         }
         for (u32 v = 0; v < n; v++)
         {
-            const bool out = side == 1 ? c[v].x <= near && c[v].x < limit : c[v].x >= near && c[v].x > limit;
+            const bool out = side == 1 ? c[v].x <= nearX && c[v].x < limit : c[v].x >= nearX && c[v].x > limit;
             if (!out) continue;
             Vertex* p = poly->Vertices[v];
             p->HiresPosition[0] = edge;
