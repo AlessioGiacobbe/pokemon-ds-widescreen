@@ -142,13 +142,6 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFra
         framebufferEnd(&fb);
     }
     framebufferClose(&fb);
-    // libnx's window, once its buffers are released, is left with format 0 and size 0 x 0 where
-    // a new one has ~0 ("not set yet": the first buffers configured set it) and 1280 x 720. The
-    // game's renderer then set its buffers up in it differently, and putting each picture
-    // together took HeartGold 12 ms a frame on the Switch instead of 4 (measured with test runs
-    // started after the list and without it, "arg --show-list"). Put back as on a new window.
-    nwindowGetDefault()->format = ~0U;
-    nwindowSetDimensions(nwindowGetDefault(), 1280, 720);
     return result;
 }
 
@@ -325,19 +318,43 @@ bool Start(int& argc, char**& argv)
         }
         else
         {
-            // Each game's picture, if the player has one (Launcher::FindArt).
-            for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
-            // A game with no picture of its own takes one another copy of it has (the icon of its
-            // one-game program, say).
-            for (Launcher::Game& g : games)
-                for (const Launcher::Game& other : games)
-                    if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
-            chosen = PickGame(games, chosen);
-            if (chosen < 0) return false;
-            if (FILE* f = fopen(lastPath.c_str(), "w"))
+            // A game chosen from the list is played in a fresh start of the program: the list
+            // leaves something behind in the graphics (not the window's settings: those put back
+            // made no difference) that slowed the game drawn after it, putting each picture
+            // together taking HeartGold 12 ms a frame on the Switch instead of 4, and a start
+            // after it was as fast as ever (test runs, "arg --show-list"). So the choice is noted
+            // in last-game.txt and start-chosen, the program starts again (as QUIT does to show
+            // the list), and that start plays the game without showing the list.
+            const std::string chosenMarker = dir + "/start-chosen";
+            struct stat ms;
+            const bool alreadyChosen = stat(chosenMarker.c_str(), &ms) == 0;
+            if (alreadyChosen) remove(chosenMarker.c_str());
+            else
             {
-                fprintf(f, "%s\n", games[chosen].rom.c_str());
-                fclose(f);
+                // Each game's picture, if the player has one (Launcher::FindArt).
+                for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
+                // A game with no picture of its own takes one another copy of it has (the icon of
+                // its one-game program, say).
+                for (Launcher::Game& g : games)
+                    for (const Launcher::Game& other : games)
+                        if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
+                chosen = PickGame(games, chosen);
+                if (chosen < 0) return false;
+                if (FILE* f = fopen(lastPath.c_str(), "w"))
+                {
+                    fprintf(f, "%s\n", games[chosen].rom.c_str());
+                    fclose(f);
+                }
+                if (!g_self.empty() && envHasNextLoad())
+                {
+                    if (FILE* f = fopen(chosenMarker.c_str(), "wb")) fclose(f);
+                    const std::string cmd = g_self.find(' ') == std::string::npos ? g_self : "\"" + g_self + "\"";
+                    const Result rc = envSetNextLoad(g_self.c_str(), cmd.c_str());
+                    fprintf(stderr, "[switch] %s chosen: the program starts again to play it (0x%x)\n",
+                        games[chosen].rom.c_str(), (unsigned)rc);
+                    if (R_SUCCEEDED(rc)) return false;
+                    remove(chosenMarker.c_str());
+                }
             }
             g_canChange = true;
         }
