@@ -268,7 +268,7 @@ bool Start(int& argc, char**& argv)
     if (games.empty())
     {
         ShowMessage("  No game found. Copy your ROMs (Pokemon Black, White, Black 2 or White 2 in\n"
-                    "  English; SoulSilver or HeartGold US; Platinum in English) into\n  " + romsDir);
+                    "  English; SoulSilver, HeartGold or Platinum US) into\n  " + romsDir);
         return false;
     }
     int chosen = 0;

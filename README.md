@@ -10,12 +10,13 @@
 | **Pokémon Black 2 and White 2** | ✅ out now | [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
 | **Pokémon SoulSilver and HeartGold** | ✅ out now | [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
 | **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
-| **All six games in one** (one program, choose the game when it starts) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
+| **Pokémon Platinum** | ✅ out now | [pokemon-platinum-wide-switch.zip](../../releases/tag/platinum-v1) |
+| **All seven games in one** (one program, choose the game when it starts) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
-**Which one?** The **all six games** download is one program: start it and
+**Which one?** The **all seven games** download is one program: start it and
 pick the game from a list. The other downloads are one program per game, if
-you only want one pair. Every download is free of the games themselves: you
+you only want one or two. Every download is free of the games themselves: you
 bring your own ROMs, and the program reads what it needs from them when the
 game starts.
 
@@ -38,8 +39,8 @@ DS game, presented the way it should look on a Switch.
 
 ## Installing a separate download
 
-(For the all six games download, see
-[All six games in one program](#all-six-games-in-one-program) instead.)
+(For the all seven games download, see
+[All seven games in one program](#all-seven-games-in-one-program) instead.)
 
 1. Download the game's zip (table above) and unzip it to the root of the SD
    card. It makes a folder for each game in `/switch/`; a game whose ROM you
@@ -57,21 +58,21 @@ emulator or a flash cart, copy your save in under that name.
 use instead of the usual one) you can install a forwarder for each game: an
 icon on the Switch's HOME Menu that starts it directly, with no holding R. In
 sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`, or
-**Pokemon DS Widescreen** for the all six games download) and choose to install
+**Pokemon DS Widescreen** for the all seven games download) and choose to install
 a forwarder. Do it once per game; keep the game's folder
 where it is, as the forwarder starts the `.nro` in it. Each game then has its
 own entry, so sys-clk (below) can have its own settings for it.
 
 ---
 
-## All six games in one program
+## All seven games in one program
 
 ![The game list: Black, White, Black 2, White 2, HeartGold and SoulSilver in a grid, Black 2 chosen with its save found](docs/screenshots/all-games-launcher.png)
 
-`pokemon-ds-wide-all-switch.zip` is one program for all six games. It opens
-on a grid of your games, each showing whether it has a save yet; pick one and
-it starts. The separate downloads above are still there if you only want one
-pair.
+`pokemon-ds-wide-all-switch.zip` is one program for all seven games: Black,
+White, Black 2, White 2, HeartGold, SoulSilver and Platinum. It opens on a grid
+of your games, each showing whether it has a save yet; pick one and it starts.
+The separate downloads above are still there if you only want one or two.
 
 **Installing**
 
@@ -88,7 +89,8 @@ pair.
 With only one game found there is no list: it starts straight away.
 
 **Saves:** each game keeps its save under its own name (`black2.sav`,
-`white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`, `heartgold.sav`):
+`white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`, `heartgold.sav`,
+`platinum.sav`):
 in `/switch/pokemon-ds-wide/` for a ROM in `roms/`, or in a separate
 download's folder for a ROM there.
 
@@ -102,7 +104,7 @@ which folder it is in.
 of its separate program when that is installed. For your own, put a square
 JPEG or PNG in `/switch/pokemon-ds-wide/icons/` named after the game's code:
 `IRBO` Black, `IRAO` White, `IREO` Black 2, `IRDO` White 2, `IPKE` HeartGold,
-`IPGE` SoulSilver (e.g. `icons/IREO.jpg`).
+`IPGE` SoulSilver, `CPUE` Platinum (e.g. `icons/IREO.jpg`).
 
 The pause-menu settings are shared by all the games in this program (the
 separate programs keep their own).
@@ -168,6 +170,23 @@ separate programs keep their own).
 
 ---
 
+## Pokémon Platinum
+
+| | |
+|---|---|
+| ![Platinum: Infernape against a wild Machoke, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/platinum-infernape-battle.jpg) | ![Platinum: Snowpoint City in the snow, in widescreen](docs/screenshots/platinum-snowpoint.jpg) |
+
+- **Download:** [`pokemon-platinum-wide-switch.zip`](../../releases/tag/platinum-v1),
+  folder `/switch/pokemon-platinum-wide/`.
+- **ROM:** the English US version (game code `CPUE`), trimmed or not.
+- **Save:** `platinum.sav`.
+- **What you get:** Sinnoh in widescreen, the snow and rain reaching the edges
+  of the view; battles with their buttons and moves beside the action; the X
+  menu at the right edge of the view, and the Bag, party, Pokédex, map and
+  other menus laid out for one screen.
+
+---
+
 ## Recommended settings
 
 **sys-clk** (recommended for full speed), handheld. With a forwarder (above),
@@ -207,8 +226,10 @@ a Switch OLED in handheld mode. The full list of changes is in
 
 ## Known limits
 
-- Black, White, Black 2 and White 2: English (US/Europe) versions only. SoulSilver
-  and HeartGold: US versions only.
+- Black, White, Black 2 and White 2: English (US/Europe) versions only. SoulSilver,
+  HeartGold and Platinum: US versions only.
+- Platinum: the Pokétch (the watch on the touch screen) isn't shown during
+  normal play; its apps are one press of the screen-swap button away.
 - SoulSilver and HeartGold: at map borders (Route 29 and New Bark Town, Celadon
   City and Route 16), parts of the neighbouring map pop in and out at the sides
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should

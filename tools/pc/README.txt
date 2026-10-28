@@ -7,7 +7,7 @@ It plays your own copies of:
 
   Pokemon Black, White, Black 2 and White 2 (English, US or Europe)
   Pokemon SoulSilver and HeartGold (US)
-  Pokemon Platinum (English)
+  Pokemon Platinum (US)
 
 Nothing of the games comes with this download: you need your own ROMs (.nds files).
 

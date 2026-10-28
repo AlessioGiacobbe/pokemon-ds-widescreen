@@ -362,7 +362,7 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             const char* lines[] = { "NO GAMES FOUND", "",
                                     "PUT YOUR ROMS IN THE ROMS FOLDER BESIDE THIS PROGRAM.", "THEY SHOW UP HERE BY THEMSELVES.", "",
                                     "IT PLAYS POKEMON BLACK / WHITE / BLACK 2 / WHITE 2 (ENGLISH)",
-                                    "SOULSILVER / HEARTGOLD (US) AND PLATINUM (ENGLISH)" };
+                                    "SOULSILVER / HEARTGOLD / PLATINUM (US)" };
             int y = canvas.h / 3;
             for (const char* l : lines)
             {
