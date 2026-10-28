@@ -77,11 +77,21 @@ inline bool SsrWideCore0()
     return on;
 }
 
-// role: 0 for the DS-resolution 3D thread, 1, 2, ... for the widescreen drawing threads.
+// role: 0 for the DS-resolution 3D thread, 1, 2, ... for the widescreen drawing threads, -1
+// for the thread that builds the wide view's polygon lists (GPU3D_Wide.cpp, ListHelper).
 inline void SsrHelperThreadStart(int role)
 {
 #ifdef __SWITCH__
     const uint32_t currentThread = 0xFFFF8000; // libnx's CUR_THREAD_HANDLE
+    if (role < 0)
+    {
+        // Core 1 (or 2 when 1 is busy), at the main thread's priority: what it builds is
+        // waited for 23 lines after it starts.
+        const uint32_t rc = svcSetThreadCoreMask(currentThread, 1, (1u << 1) | (1u << 2));
+        const uint32_t prc = svcSetThreadPriority(currentThread, 0x2C);
+        fprintf(stderr, "[switch] polygon list thread on core 1: 0x%x 0x%x\n", (unsigned)rc, (unsigned)prc);
+        return;
+    }
     // The 3D thread: core 1 only, at the main thread's priority (0x2C; new threads get 0x3B).
     // Widescreen threads (0x3B): the first starts on core 2, the next on core 1, a third on
     // core 0; all may move between cores 1 and 2, and to core 0 unless SsrWideCore0() is off.

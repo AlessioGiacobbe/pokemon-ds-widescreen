@@ -27,7 +27,6 @@ namespace melonDS
 WideState Wide;
 
 bool YSort(Polygon* a, Polygon* b);
-extern u32 SubmitPolygonLimit, SubmitVertexLimit;
 
 namespace
 {
@@ -224,6 +223,7 @@ struct WideAccess
     {
         Wait();
         Pool.reset();
+        ListHelper::Stop();
     }
 
     // Blocks until the picture being drawn in the background is finished.
@@ -279,11 +279,15 @@ struct WideAccess
     // vertex is first moved halfway back towards where the same polygon was in the
     // previous frame; `matched` then counts the polygons found in both frames. The
     // horizontal clip coordinate is multiplied by xnum/xden.
+    // The frame is rawCur, the one before it rawPrev (g's own RawCurrent and RawPrevious, or
+    // copies of them when g is a helper's GPU3D, see ListHelper).
     static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 xden, Vertex* vram, Polygon* pram,
-        Polygon** list, u32& numPolys, u32& matched, u32 polyLimit = 2048, u32 vertLimit = 6144)
+        Polygon** list, u32& numPolys, u32& matched, const std::vector<GPU3D::RawPolygon>& rawCur,
+        const std::vector<GPU3D::RawPolygon>& rawPrev, u32 polyLimit = 2048, u32 vertLimit = 6144)
     {
-        SubmitPolygonLimit = polyLimit;
-        SubmitVertexLimit = vertLimit;
+        const u32 savedPolyLimit = g.PolygonLimit, savedVertLimit = g.VertexLimit;
+        g.PolygonLimit = polyLimit;
+        g.VertexLimit = vertLimit;
         typedef GPU3D::RawPolygon RawPolygon;
 
         // Everything SubmitPolygon touches is saved and put back afterwards.
@@ -361,16 +365,17 @@ struct WideAccess
         // The movement most pairings agree on: every polygon votes with each candidate it
         // could be paired with; the true pairings all say the same, the false ones scatter.
         s64 sceneX = 0, sceneY = 0;
-        if (interpolate && !g.RawPrevious.empty())
+        if (interpolate && !rawPrev.empty())
         {
-            static std::vector<u16> votes;
+            // (Per thread: the DS-resolution in-between frame and the wide one are built at once.)
+            static thread_local std::vector<u16> votes;
             votes.assign(129 * 129, 0);
-            const size_t np = g.RawPrevious.size(), nc = g.RawCurrent.size();
+            const size_t np = rawPrev.size(), nc = rawCur.size();
             const size_t step = nc > 600 ? nc / 600 : 1;
             int best = 0;
             for (size_t i = 0; i < nc; i += step)
             {
-                const RawPolygon& cur = g.RawCurrent[i];
+                const RawPolygon& cur = rawCur[i];
                 const int nverts = (cur.PolygonMode & 0x1) ? 4 : 3;
                 // The lists differ by whole objects that came or went, so the partner is
                 // near the same place counted from the front of the list or from its end.
@@ -382,7 +387,7 @@ struct WideAccess
                     for (s64 k = lo; k < hi; k++)
                     {
                         s64 mx, my;
-                        if (!sameKind(g.RawPrevious[k], cur) || !movement(g.RawPrevious[k], cur, nverts, mx, my)) continue;
+                        if (!sameKind(rawPrev[k], cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
                         const int bx = (int)(mx + 128) / 2, by = (int)(my + 128) / 2;
                         const int n = ++votes[by * 129 + bx];
                         if (n > best)
@@ -403,7 +408,7 @@ struct WideAccess
         s64 dbgOff = 0;
         if (dbgPair) fprintf(stderr, "[pair] --- frame, scene motion %lld,%lld\n", (long long)sceneX, (long long)sceneY);
         matched = 0;
-        for (const RawPolygon& cur : g.RawCurrent)
+        for (const RawPolygon& cur : rawCur)
         {
             const int nverts = (cur.PolygonMode & 0x1) ? 4 : 3;
             memcpy(g.TempVertexBuffer, cur.Vertices, sizeof(cur.Vertices));
@@ -435,21 +440,21 @@ struct WideAccess
                 // lists run in step, and that also pairs what moves by itself (a windmill's
                 // blades, a walking person) and what is so close to the camera that it moves
                 // unlike the rest. A neighbouring tile or model is further off than this allows.
-                if (ia < g.RawPrevious.size() && !loose)
+                if (ia < rawPrev.size() && !loose)
                 {
                     s64 mx, my;
-                    if (sameKind(g.RawPrevious[ia], cur) && movement(g.RawPrevious[ia], cur, nverts, mx, my) &&
-                        unlike(g.RawPrevious[ia], cur, nverts, sceneX, sceneY) <= nverts * 40)
+                    if (sameKind(rawPrev[ia], cur) && movement(rawPrev[ia], cur, nverts, mx, my) &&
+                        unlike(rawPrev[ia], cur, nverts, sceneX, sceneY) <= nverts * 40)
                     {
                         bestMove = 0;
                         bestIndex = ia;
                     }
                 }
-                for (size_t k = ia; bestMove < 0 && k < g.RawPrevious.size() && k < ia + 512; k++)
+                for (size_t k = ia; bestMove < 0 && k < rawPrev.size() && k < ia + 512; k++)
                 {
                     s64 mx, my;
-                    if (!sameKind(g.RawPrevious[k], cur) || !movement(g.RawPrevious[k], cur, nverts, mx, my)) continue;
-                    s64 m = unlike(g.RawPrevious[k], cur, nverts, sceneX, sceneY);
+                    if (!sameKind(rawPrev[k], cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
+                    s64 m = unlike(rawPrev[k], cur, nverts, sceneX, sceneY);
                     if (m > limit) continue;
                     if (bestMove < 0 || m < bestMove)
                     {
@@ -460,7 +465,7 @@ struct WideAccess
                 }
                 if (bestMove >= 0)
                 {
-                    prev = &g.RawPrevious[bestIndex];
+                    prev = &rawPrev[bestIndex];
                     ia = bestIndex + 1;
                 }
                 const s64 pairIndex = prev ? (s64)bestIndex : -1;
@@ -468,11 +473,11 @@ struct WideAccess
                 lastPair = pairIndex;
                 if (dbgPair)
                 {
-                    const size_t ci = &cur - g.RawCurrent.data();
+                    const size_t ci = &cur - rawCur.data();
                     const s64 off = pairIndex < 0 ? INT64_MIN : pairIndex - (s64)ci;
                     if (off != dbgOff)
-                        fprintf(stderr, "[pair] cur %zu/%zu -> prev %lld/%zu (mode %u, unlike %lld)\n", ci, g.RawCurrent.size(),
-                            (long long)pairIndex, g.RawPrevious.size(), cur.PolygonMode, (long long)bestMove);
+                        fprintf(stderr, "[pair] cur %zu/%zu -> prev %lld/%zu (mode %u, unlike %lld)\n", ci, rawCur.size(),
+                            (long long)pairIndex, rawPrev.size(), cur.PolygonMode, (long long)bestMove);
                     dbgOff = off;
                 }
                 if (prev)
@@ -561,8 +566,8 @@ struct WideAccess
             }
             std::stable_sort(list, list + ((g.FlushAttributes & 0x1) ? g.NumOpaquePolygons : g.NumPolygons), YSort);
         }
-        SubmitPolygonLimit = 2048;
-        SubmitVertexLimit = 6144;
+        g.PolygonLimit = savedPolyLimit;
+        g.VertexLimit = savedVertLimit;
 
         g.InReplay = false;
         memcpy(g.TempVertexBuffer, savedTemp, sizeof(savedTemp));
@@ -584,8 +589,153 @@ struct WideAccess
         g.CurPolygonRAM = savedPolygonRAM;
     }
 
-    // A frame has been flushed: builds the wide polygon lists for it.
-    static void OnFlush(GPU3D& g)
+    // The wide view's polygon lists built on a thread of their own (on the Switch, core 1,
+    // where the DS-resolution 3D thread has little to do while the graphics chip draws the 3D),
+    // instead of by the emulation as the frame is flushed. Measured in White 2's Aspertia City
+    // on the Switch they took 5 ms of every frame the game drew its 3D (every other frame
+    // there), the in-between frame's 3 ms more. The in-between lists are needed when the
+    // in-between frame is drawn, 23 lines later, and are built first, while the emulation builds
+    // the DS-resolution in-between frame itself; the real frame's lists are needed only a frame
+    // later. Each list is built by a GPU3D of its own (only its SubmitPolygon is used), from
+    // copies of the frame's raw polygons, so nothing the emulation goes on with is touched.
+    struct ListHelper
+    {
+        // A GPU3D that only builds polygon lists: no renderer.
+        struct NoRenderer : Renderer3D
+        {
+            NoRenderer() : Renderer3D(false) {}
+            void Reset(GPU&) override {}
+            void RenderFrame(GPU&) override {}
+            u32* GetLine(int) override { return Line; }
+            u32 Line[256] {};
+        };
+        struct Job
+        {
+            // (No initialisers: a static object is zeroed, and they could not be used here.)
+            std::unique_ptr<GPU3D> Engine;
+            bool Interpolate;
+            bool Busy, Started; // queued (or being built) / taken by the thread
+        };
+        static inline Job Jobs[2]; // 0: the in-between frame's lists, 1: the real frame's
+        static inline std::vector<GPU3D::RawPolygon> Cur, Prev;
+        static inline s64 XNum = 1, XDen = 1;
+        static inline float View = 256;
+        static inline std::thread Thread;
+        static inline std::mutex Mutex;
+        static inline std::condition_variable Wake, Done;
+        static inline bool Quit = false;
+
+        static void Loop()
+        {
+            SsrHelperThreadStart(-1);
+            std::unique_lock<std::mutex> lock(Mutex);
+            for (;;)
+            {
+                Wake.wait(lock, [] { return Quit || (Jobs[0].Busy && !Jobs[0].Started) || (Jobs[1].Busy && !Jobs[1].Started); });
+                if (Quit) return;
+                Job& job = Jobs[0].Busy && !Jobs[0].Started ? Jobs[0] : Jobs[1];
+                job.Started = true;
+                lock.unlock();
+                Build(job);
+                lock.lock();
+                job.Busy = false;
+                Done.notify_all();
+            }
+        }
+        static void Build(Job& job)
+        {
+            u32 matched;
+            if (job.Interpolate)
+            {
+                Replay(*job.Engine, true, XNum, XDen, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched,
+                    Cur, Prev, MaxPolygons, MaxVertices);
+                ExtendToEdges(ListInterp.data(), NumInterp, View);
+            }
+            else
+            {
+                Replay(*job.Engine, false, XNum, XDen, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched,
+                    Cur, Prev, MaxPolygons, MaxVertices);
+                ExtendToEdges(ListReal.data(), NumReal, View);
+            }
+        }
+        // Waits for the in-between frame's lists (0) or for both (1).
+        static void Join(int which)
+        {
+            if (!Thread.joinable()) return;
+            std::unique_lock<std::mutex> lock(Mutex);
+            Done.wait(lock, [which] { return !Jobs[0].Busy && (which == 0 || !Jobs[1].Busy); });
+        }
+        static void Start(GPU3D& g, bool interpolate, s64 xnum, s64 xden, float view)
+        {
+            Join(1);
+            if (!Thread.joinable())
+            {
+                for (Job& j : Jobs) j.Engine = std::make_unique<GPU3D>(g.GetNDS(), std::make_unique<NoRenderer>());
+                Quit = false;
+                Thread = std::thread(Loop);
+            }
+            Cur = g.RawCurrent;
+            Prev = g.RawPrevious;
+            XNum = xnum;
+            XDen = xden;
+            View = view;
+            NumInterp = 0;
+            {
+                std::lock_guard<std::mutex> lock(Mutex);
+                for (int i = 0; i < 2; i++)
+                {
+                    Job& j = Jobs[i];
+                    // (What SubmitPolygon reads besides the polygon itself.)
+                    j.Engine->FlushAttributes = g.FlushAttributes;
+                    j.Engine->ZeroDotWLimit = g.ZeroDotWLimit;
+                    j.Interpolate = i == 0;
+                    j.Busy = i == 1 || (interpolate && !Prev.empty());
+                    j.Started = false;
+                }
+            }
+            Wake.notify_all();
+        }
+        static void Stop()
+        {
+            if (!Thread.joinable()) return;
+            {
+                std::lock_guard<std::mutex> lock(Mutex);
+                Quit = true;
+            }
+            Wake.notify_all();
+            Thread.join();
+            for (Job& j : Jobs)
+            {
+                j.Engine.reset();
+                j.Busy = j.Started = false;
+            }
+        }
+    };
+
+    // Where the wide lists are built: on the helper thread on the Switch (SSR_WIDE_LISTS=0
+    // keeps them with the emulation), elsewhere only with SSR_WIDE_LISTS=1; never for the
+    // OpenGL 3D renderer, which is handed the lists themselves rather than a copy.
+    static bool ListsOnHelper()
+    {
+        static const int env = [] {
+            const char* v = getenv("SSR_WIDE_LISTS");
+            return v ? (v[0] == '1' ? 1 : 0) : -1;
+        }();
+#ifdef __SWITCH__
+        const bool on = env != 0;
+#else
+        const bool on = env == 1;
+#endif
+        if (!on) return false;
+#ifdef OGLRENDERER_ENABLED
+        if (GLThreadRenderer::Current) return false;
+#endif
+        return true;
+    }
+
+    // A frame has been flushed: builds the wide polygon lists for it, with the in-between
+    // frame's if `interpolate`.
+    static void OnFlush(GPU3D& g, bool interpolate)
     {
         if (VtxReal.empty())
         {
@@ -609,16 +759,24 @@ struct WideAccess
         }
         float view = Wide.ViewWidth < 256 ? 256 : Wide.ViewWidth;
         const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view + 0.5f);
+        Dirty = true;
+        if (ListsOnHelper())
+        {
+            ListHelper::Start(g, interpolate, xnum, xden, view);
+            return;
+        }
+        ListHelper::Stop();
         u32 matched;
-        Replay(g, false, xnum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, MaxPolygons, MaxVertices);
+        Replay(g, false, xnum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, g.RawCurrent,
+            g.RawPrevious, MaxPolygons, MaxVertices);
         ExtendToEdges(ListReal.data(), NumReal, view);
         NumInterp = 0;
-        if (g.InterpPending)
+        if (interpolate)
         {
-            Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices);
+            Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched,
+                g.RawCurrent, g.RawPrevious, MaxPolygons, MaxVertices);
             ExtendToEdges(ListInterp.data(), NumInterp, view);
         }
-        Dirty = true;
     }
 
     // The game leaves out what its own screen cannot show, so the wide view can come to the end
@@ -646,7 +804,7 @@ struct WideAccess
         // side: 1 ends in the left strip, 2 the right; w0, w1: its nearest and furthest W (clip
         // space, comparable between polygons, unlike the W normalised for each polygon)
         struct Box { s32 x0, x1, y0, y1, w0, w1; u8 side; };
-        static std::vector<Box> boxes;
+        static thread_local std::vector<Box> boxes;
         boxes.assign(count, Box { 0, -1, 0, -1, 0, 0, 0 });
         bool any = false;
         for (u32 i = 0; i < count; i++)
@@ -859,6 +1017,9 @@ struct WideAccess
             Publish();
             PendingPublish = false;
         }
+        // The lists built on the helper thread (ListHelper): the in-between frame's for it, or
+        // both.
+        ListHelper::Join(showingInterp ? 0 : 1);
         if (Wide.Width <= 0 || Wide.Height <= 0) return;
         if (showingInterp && NumInterp)
         {
@@ -1538,11 +1699,12 @@ void WideWaitForTextures()
 }
 void WideShutdown() { WideAccess::Shutdown(); }
 void WideReleaseGpu() { WideAccess::ReleaseGpu(); }
-void WideOnFlush(GPU3D& g) { WideAccess::OnFlush(g); }
+void WideOnFlush(GPU3D& g, bool interpolate) { WideAccess::OnFlush(g, interpolate); }
+bool WideListsOnHelper() { return WideAccess::ListsOnHelper(); }
 void WideOnRender(GPU& gpu, bool showingInterp) { WideAccess::OnRender(gpu, showingInterp); }
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched)
 {
-    WideAccess::Replay(g, interpolate, 1, 1, vram, pram, list, numPolys, matched);
+    WideAccess::Replay(g, interpolate, 1, 1, vram, pram, list, numPolys, matched, g.RawCurrent, g.RawPrevious);
 }
 }

@@ -36,8 +36,8 @@ namespace melonDS
 void WideWait();
 // How many polygons and vertices SubmitPolygon accepts. The hardware's limits, except while
 // the frame is submitted again for the widescreen picture, which shows more of the scene.
-u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
-void WideOnFlush(GPU3D& g);
+void WideOnFlush(GPU3D& g, bool interpolate);
+bool WideListsOnHelper();
 void WideOnRender(GPU& gpu, bool showingInterp);
 void WideWaitForTextures();
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
@@ -1136,7 +1136,7 @@ void GPU3D::SubmitPolygon() noexcept
 
     // reject the polygon if it's not going to fit in polygon/vertex RAM
 
-    if (NumPolygons >= SubmitPolygonLimit || NumVertices+nverts > SubmitVertexLimit)
+    if (NumPolygons >= PolygonLimit || NumVertices+nverts > VertexLimit)
     {
         LastStripPolygon = NULL;
         DispCnt |= (1<<13);
@@ -2579,15 +2579,26 @@ void GPU3D::VBlank() noexcept
                 if (InterpolationEnabled || Wide.Owner == this)
                 {
                     const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;
-                    if (InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing)
+                    const bool interpolate = InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing;
+                    // ssrecomp: the wide view's lists are built on a helper thread where there is
+                    // one (WideListsOnHelper), started first so that they are ready by the time
+                    // the in-between frame is drawn; they are built with the in-between lists
+                    // whenever one may be needed, as the DS-resolution one decides below.
+                    const bool helper = Wide.Owner == this && WideListsOnHelper();
+                    if (helper)
+                    {
+                        SsrProf::Scope prof(SsrProf::WideFlush);
+                        WideOnFlush(*this, interpolate);
+                    }
+                    if (interpolate)
                     {
                         SsrProf::Scope prof(SsrProf::Interp);
                         BuildInterpolatedFrame();
                     }
-                    if (Wide.Owner == this)
+                    if (Wide.Owner == this && !helper)
                     {
                         SsrProf::Scope prof(SsrProf::WideFlush);
-                        WideOnFlush(*this);
+                        WideOnFlush(*this, InterpPending);
                     }
                     RawPrevious.swap(RawCurrent);
                     RawCurrent.clear();

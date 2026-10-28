@@ -132,6 +132,8 @@ public:
     void Write16(u32 addr, u16 val) noexcept;
     void Write32(u32 addr, u32 val) noexcept;
     void Blit(const GPU& gpu) noexcept;
+    // ssrecomp: for a second GPU3D that only builds polygon lists (GPU3D_Wide.cpp).
+    melonDS::NDS& GetNDS() noexcept { return NDS; }
 private:
     melonDS::NDS& NDS;
     typedef union
@@ -357,6 +359,9 @@ public:
     std::vector<RawPolygon> RawCurrent;   // frame being submitted
     std::vector<RawPolygon> RawPrevious;  // last frame that was flushed
     bool InReplay = false;
+    // ssrecomp: how many polygons and vertices SubmitPolygon takes (the DS's memory; the wide
+    // view's lists are given more room).
+    u32 PolygonLimit = 2048, VertexLimit = 6144;
     u64 VBlankCount = 0, LastFlushVBlank = 0;
     bool InterpPending = false;   // an in-between frame is ready to be shown
     bool InterpShowReal = false;  // the real frame must be drawn on the next display frame
