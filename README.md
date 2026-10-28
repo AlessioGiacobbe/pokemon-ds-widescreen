@@ -1,7 +1,8 @@
-# Pokémon DS games on the Nintendo Switch
+# Pokémon DS games on the Nintendo Switch and PC
 
-**Your favourite DS Pokémon games on a modded Switch: one screen, widescreen,
-720p, 60 fps.** No more squinting at two tiny stacked DS screens.
+**Your favourite DS Pokémon games on a modded Switch or a PC (Windows and
+Linux): one screen, widescreen, 60 fps, at 720p on the Switch and up to 4K on a
+PC.** No more squinting at two tiny stacked DS screens.
 
 ![Black 2: cycling along Castelia City's waterfront in widescreen, with the in-between frames on](docs/screenshots/black2-castelia-bike-60fps.gif)
 
