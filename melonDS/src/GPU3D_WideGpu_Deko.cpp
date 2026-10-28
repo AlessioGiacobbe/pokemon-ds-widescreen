@@ -390,8 +390,11 @@ public:
         dkImageViewDefaults(&depthView, &DepthImage);
         // (The final pass's target: the slot's own memory as a pitch-linear image, or an image
         // of its own whose picture is copied there after. A pitch-linear target needs rows a
-        // multiple of 32 bytes.)
-        const bool direct = Sh->Direct && ((u32)W * 4) % DK_IMAGE_LINEAR_STRIDE_ALIGNMENT == 0 && SlotImage(slot);
+        // multiple of 32 bytes, and a height a multiple of 16 here: at 752x423, the 423 lines
+        // LOWER DETAIL WHEN BUSY comes down to from 720, the console crashed at once; 1280x720
+        // and 1152x648 drew fine, and every size does through the copy.)
+        const bool direct = Sh->Direct && ((u32)W * 4) % DK_IMAGE_LINEAR_STRIDE_ALIGNMENT == 0 && H % 16 == 0 &&
+            SlotImage(slot);
         dkImageViewDefaults(&finalView, direct ? &Slots[slot].Image : &FinalImage);
         const DkImageView* targets[2] = { &colorView, &attrView };
         dkCmdBufBindRenderTargets(Cmd, targets, 2, &depthView);

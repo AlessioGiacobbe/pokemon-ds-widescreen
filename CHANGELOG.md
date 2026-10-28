@@ -6,8 +6,13 @@
   controller): hold it for up to 4x speed. It was the left trigger. With STICK TOUCH CURSOR on,
   the left trigger now presses the touch screen instead of the right.
 - **Fast forward goes faster and looks smoother.** Of the frames it runs at once only the last
-  is shown, so the others are no longer drawn (their 2D and widescreen world), and the 60 FPS
-  in-between frames pause while it is held.
+  is shown, so the others are no longer drawn (their 2D and widescreen world); the 60 FPS
+  in-between frames pause and the widescreen world is drawn at 360 lines while it is held (back
+  to your WORLD DETAIL as soon as you let go); and where the console cannot run 4 frames at once
+  any faster than 3 (the Switch), it runs 3 and shows more of them.
+- **Switch: fixed a crash when LOWER DETAIL WHEN BUSY brought the world down to 423 lines**
+  (in heavy scenes, and nearly always while fast forwarding): at that size the world is now
+  drawn the way it is at the other sizes the detail goes through.
 - **Switch: fewer late frames in towns and battles.** Preparing the 3D pictures for the
   graphics chip, sending them and collecting them now happens on the Switch's spare cores
   instead of between the game's own work, about 1 ms less a frame. Measured from save states,

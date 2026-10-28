@@ -3721,6 +3721,7 @@ int main(int argc, char** argv)
         M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
+    double ffFrameMs = 0; // emulation time of one frame while fast forwarding (see speed)
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
     static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440, 2160 };
     const int detailCount = (int)(sizeof(detailLines) / sizeof(detailLines[0]));
@@ -3915,6 +3916,7 @@ int main(int argc, char** argv)
     EmuThread emuThread;
     int emuSpeed = 1, emuGot = 0;
     double emuMs = 0, perfEmu = 0;
+    uint64_t perfDsFrames = 0; // DS frames emulated since the last timing line (several a frame when fast forwarding)
 
     // The emulation of one frame (several when fast-forwarding; only the first one's sound
     // is played).
@@ -4161,6 +4163,12 @@ int main(int argc, char** argv)
                     snprintf(extra, sizeof(extra), "; pipeline: waited for the emulation %.2f ms", perfAcc[1] / perfN);
                     tail += extra;
                 }
+                if (perfDsFrames > (uint64_t)perfN)
+                {
+                    snprintf(extra, sizeof(extra), "; fast forward: %.2f DS frames a frame", (double)perfDsFrames / perfN);
+                    tail += extra;
+                }
+                perfDsFrames = 0;
                 fprintf(stderr, "[perf] input %.2f  emulate %.2f  scene %.2f  compose %.2f  present %.2f  wait %.2f ms; worst frame %.1f ms%s\n",
                     perfAcc[0] / perfN, (pipelined ? perfEmu : perfAcc[1]) / perfN, perfAcc[2] / perfN, perfAcc[3] / perfN, perfAcc[4] / perfN,
                     perfAcc[5] / perfN, perfWorst, tail.c_str());
@@ -4684,7 +4692,12 @@ int main(int argc, char** argv)
         }
         // Fast forward (4x) while the right trigger (ZR on the Switch) or Left Shift is held, or
         // locked on from the menu.
-        if (!paused && (fastLock || kbFast || ps.rt > 0.5f)) speed = 4;
+        // Fast forward runs several frames at once and shows the last, up to 4. As many as fit
+        // in about 33 ms by the last time's measure (ffFrameMs): where the emulation itself is
+        // the limit (the Switch, 10 ms or more a frame) running 4 at once is no faster than 3, it
+        // only shows fewer of them.
+        if (!paused && (fastLock || kbFast || ps.rt > 0.5f))
+            speed = ffFrameMs > 0 && !opt.headless ? std::clamp((int)(33.3 / ffFrameMs), 2, 4) : 4; // (tests: always 4)
         prevPad = ps;
 
         // A decompilation build with SINGLE_SCREEN puts everything on the engine of the touch
@@ -4751,7 +4764,10 @@ int main(int argc, char** argv)
                 const uint64_t busy = melonDS::WideGpuBusyNs.load();
                 window += busy >= lastBusy ? busy - lastBusy : 0;
                 lastBusy = busy;
-                if (++windowFrames >= 30)
+                // (Fast forward has a fixed lower detail, below; its frames say nothing of
+                // normal play.)
+                if (speed > 1) window = windowFrames = 0;
+                else if (++windowFrames >= 30)
                 {
                     const double perFrame = window / 1e6 / windowFrames;
                     window = 0;
@@ -4777,7 +4793,8 @@ int main(int argc, char** argv)
                 const uint64_t ns = SsrStats().WaitWideNs.load();
                 const uint64_t waited = ns >= lastWideNs ? ns - lastWideNs : ns; // (the timing lines reset it)
                 lastWideNs = ns;
-                if (waited > 1500000)
+                if (speed > 1) {} // (fast forward: see above)
+                else if (waited > 1500000)
                 {
                     calmFrames = 0;
                     if (++slowFrames >= 3 && adaptLines > 192)
@@ -4797,6 +4814,9 @@ int main(int argc, char** argv)
                 }
             }
             WideLinesNow = std::min(adaptLines, cfg.wideLines);
+            // While fast forwarding, at most 360 lines (not in the tests without a window): it
+            // shows one frame in several, and the detail comes straight back when it stops.
+            if (speed > 1 && !opt.headless) WideLinesNow = std::min(WideLinesNow, 360);
             if (wh > WideLinesNow)
             {
                 ww = ww * WideLinesNow / wh;
@@ -5156,6 +5176,8 @@ int main(int argc, char** argv)
                 if (pipelined) perfEmu += emuMs;
             }
             got = emuGot;
+            perfDsFrames += emuSpeed;
+            if (emuSpeed > 1) ffFrameMs = ffFrameMs > 0 ? ffFrameMs * 0.8 + 0.2 * emuMs / emuSpeed : emuMs / emuSpeed;
             // (Silent while the C-Gear's question is answered unseen.)
             if (cgearHidden && got > 0) std::fill(audioBuf.begin(), audioBuf.begin() + (size_t)got * 2, (int16_t)0);
         }
