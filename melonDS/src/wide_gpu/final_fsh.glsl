@@ -30,8 +30,31 @@ void main()
     uint stored = uint(c.a * 255.0 + 0.5);
     if (stored == 0u)
     {
-        oColor = vec4(0.0);
-        return;
+        // A pixel left out between two polygons that meet (the graphics chip's rules for which
+        // pixels an edge covers are not the DS's: dotted black lines along the seams of
+        // SoulSilver's ground): the pixel beside it, when there is something drawn on both sides
+        // of it, across or up and down. (Nothing drawn on one side is the end of the world.)
+        ivec2 last = ivec2(uSize.xy) - 1;
+        ivec2 l = clamp(p - ivec2(1, 0), ivec2(0), last), r = clamp(p + ivec2(1, 0), ivec2(0), last);
+        ivec2 u = clamp(p - ivec2(0, 1), ivec2(0), last), d = clamp(p + ivec2(0, 1), ivec2(0), last);
+        vec4 cl = texelFetch(uColor, l, 0), cr = texelFetch(uColor, r, 0);
+        vec4 cu = texelFetch(uColor, u, 0), cd = texelFetch(uColor, d, 0);
+        if (l != p && r != p && cl.a > 0.0 && cr.a > 0.0)
+        {
+            p = l;
+            c = cl;
+        }
+        else if (u != p && d != p && cu.a > 0.0 && cd.a > 0.0)
+        {
+            p = u;
+            c = cu;
+        }
+        else
+        {
+            oColor = vec4(0.0);
+            return;
+        }
+        stored = uint(c.a * 255.0 + 0.5);
     }
     uvec3 rgb = uvec3(c.rgb * 255.0 + 0.5);
     // (alpha + 1) / 32 back to alpha, and to 8 bits.

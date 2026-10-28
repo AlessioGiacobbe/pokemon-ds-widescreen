@@ -7,7 +7,12 @@
   every frame; each button is now a few pieces.
 - **No more stretched trees at the edges of the wide view:** a tree, house or flower bed that
   ended just short of the screen's edge was sometimes stretched out to it (SoulSilver and
-  HeartGold by New Bark Town, Black 2). It now stays its own size.
+  HeartGold by New Bark Town, Black 2). It now stays its own size, and SoulSilver, HeartGold and
+  Platinum no longer have anything continued to the edges at all (only the Black games' skies
+  and lookouts need it).
+- **No more dotted black lines in the wide world (WORLD ON GPU):** pixels the graphics chip left
+  out where two polygons meet (along the ground's seams in SoulSilver and HeartGold) are filled
+  from beside them.
 - **Switch: the log of the game you just played is kept.** QUIT back to the game list used to
   replace `game.log` with the list's few lines; the previous one is now kept as
   `game-previous.log`.

@@ -4670,6 +4670,8 @@ int main(int argc, char** argv)
                 (fieldActive() || menuReturn > 0 || scene.edgeFill || (singleView() && singleFieldFrame && rc_current_frame() - singleFieldFrame < 20)));
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
+            // (Only the Black games' views need polygons continued to the edges: see WideState.)
+            melonDS::Wide.ExtendEdges = funcWatchOn && !pt.on;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;

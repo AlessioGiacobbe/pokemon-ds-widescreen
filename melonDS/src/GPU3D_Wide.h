@@ -20,6 +20,11 @@ struct WideState
     GPU3D* Owner = nullptr;   // the console whose scene is drawn wide; nullptr turns it off
     int Width = 0, Height = 0; // size to draw at, set by the frontend
     float ViewWidth = 256;    // width of the view in DS pixels (256 = no extra width)
+    // Polygons ending a little short of the view's edge are continued to it (GPU3D_Wide.cpp,
+    // ExtendToEdges): for Black and White's skies and lookouts. Off for SoulSilver, HeartGold
+    // and Platinum, whose overhead views have none and where it only stretched trees and opened
+    // cracks between the ground's tiles.
+    bool ExtendEdges = true;
 
     // The image that belongs to the frame the 2D renderer has just output: XRGB, with
     // the top byte 0 where no polygon was drawn. Three buffers take turns, so it stays as it

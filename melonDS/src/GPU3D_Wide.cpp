@@ -639,7 +639,7 @@ struct WideAccess
     {
         static const bool off = getenv("SSR_WIDE_NO_EXTEND") != nullptr; // (to compare)
         static const bool log = getenv("SSR_WIDE_EXTEND_LOG") != nullptr; // (development aid)
-        if (off) return;
+        if (off || !Wide.ExtendEdges) return;
         constexpr s32 full = 256 * 16;      // the view's width in HiresPosition's units
         const s32 dsLeft = (s32)(full / 2 - (full / 2) * 256.0f / view), dsRight = full - dsLeft;
         const s32 gap = full / 12;
@@ -708,7 +708,7 @@ struct WideAccess
                     if (o.x0 <= sx1 && o.x1 >= sx0 && rows > 0 && rows * 3 > b.y1 - b.y0) blocker = (s32)j;
                 }
                 if (log)
-                    fprintf(stderr, "[extend] polygon %u (x %d-%d, y %d-%d of %d, w %d-%d) %s on the %s\n", i, b.x0, b.x1, b.y0, b.y1, full, b.w0, b.w1,
+                    fprintf(stderr, "[extend] polygon %u (x %d-%d, y %d-%d of %d, w %d-%d of %d) %s on the %s\n", i, b.x0, b.x1, b.y0, b.y1, full, b.w0, b.w1, farW,
                         blocker < 0 ? "continued" : "left (something beside it)", side == 1 ? "left" : "right");
                 if (log && blocker >= 0)
                     fprintf(stderr, "[extend]   beside it: polygon %d (x %d-%d, y %d-%d, w %d-%d)\n", blocker, boxes[blocker].x0, boxes[blocker].x1,
