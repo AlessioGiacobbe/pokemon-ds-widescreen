@@ -67,7 +67,7 @@ own entry, so sys-clk (below) can have its own settings for it.
 
 ## All seven games in one program
 
-![The game list: Black, White, Black 2, White 2, HeartGold and SoulSilver in a grid, Black 2 chosen with its save found](docs/screenshots/all-games-launcher.png)
+![The game list: Black, White, Black 2, White 2, HeartGold, SoulSilver and Platinum in a grid on black, Black 2 chosen in red with its save found](docs/screenshots/all-games-launcher.png)
 
 `pokemon-ds-wide-all-switch.zip` is one program for all seven games: Black,
 White, Black 2, White 2, HeartGold, SoulSilver and Platinum. It opens on a grid

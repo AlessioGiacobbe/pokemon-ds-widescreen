@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A new look for the game list** (Switch and PC): black with white text and red details, and
+  four games across when there are more than six, so all seven fit on one screen.
 - **PC all-games download (new, Windows and Linux):** unpack it, put your ROMs in its roms
   folder and pick a game from the list (keyboard, controller or mouse); QUIT in the menu goes
   back to the list. Saves go in its saves folder, one per game.

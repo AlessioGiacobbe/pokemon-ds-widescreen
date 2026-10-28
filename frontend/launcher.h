@@ -266,24 +266,25 @@ inline void Sort(std::vector<Game>& games)
     });
 }
 
-// The list's colours (ARGB).
+// The list's colours (ARGB): near-black with white text and red details, on the Switch and on a PC.
 struct Theme
 {
-    uint32_t bg = 0xFF101A2E, band = 0xFF1C2A44, bandLine = 0xFF3D6FD1, title = 0xFFFFD75E;
-    uint32_t tile = 0xFF1C2A44, frame = 0xFFFFD75E;
-    uint32_t name = 0xFFC8D0E0, nameSel = 0xFFFFFFFF, sub = 0xFF8FA0C0, subSel = 0xFFDDE6FF, bad = 0xFFE07A6A;
-    uint32_t hint = 0xFF8FA0C0;
+    uint32_t bg = 0xFF0B0B0C, band = 0xFF141416, bandLine = 0xFFE0242C, title = 0xFFFFFFFF;
+    uint32_t tile = 0xFF1A1A1D, frame = 0xFFE0242C;
+    uint32_t name = 0xFFB8B8BC, nameSel = 0xFFFFFFFF, sub = 0xFF707076, subSel = 0xFFE0242C, bad = 0xFFE0242C;
+    uint32_t hint = 0xFF8A8A90;
     int bandLineH = 1;       // the band's line, in font pixels
     int frameW = 2;          // the chosen game's frame, in font pixels
     uint32_t selBar = 0;     // a bar under the chosen game's name (0: none)
 };
 
-// Where the list's tiles go on a canvas (Draw, and TileAt for a mouse).
+// Where the list's tiles go on a canvas (Draw, and TileAt for a mouse): three across, or four
+// when there are more than six games (all seven on one screen).
 struct Grid
 {
     int s, gap, labelH, top, bottom, tile, cols, rows, gx;
 };
-inline Grid Layout(const Canvas& c)
+inline Grid Layout(const Canvas& c, int count)
 {
     Grid g;
     g.s = std::max(1, c.h / 240); // the font's scale: 3 at 720 lines
@@ -294,7 +295,7 @@ inline Grid Layout(const Canvas& c)
     g.top = 28 * g.s;
     g.bottom = c.h - 16 * g.s;
     g.tile = std::max(32, std::min(Art * c.h / 720, (g.bottom - g.top) / 2 - g.labelH - g.gap));
-    g.cols = std::max(1, std::min(3, (c.w - g.gap) / (g.tile + g.gap * 3)));
+    g.cols = std::max(1, std::min(count > 6 ? 4 : 3, (c.w - g.gap) / (g.tile + g.gap * 3)));
     g.rows = std::max(1, (g.bottom - g.top) / (g.tile + g.labelH + g.gap));
     const int gridW = g.cols * g.tile + (g.cols - 1) * g.gap * 3;
     g.gx = (c.w - gridW) / 2;
@@ -304,7 +305,7 @@ inline Grid Layout(const Canvas& c)
 // The game whose tile (with its name below it) is at x, y on the canvas, or -1.
 inline int TileAt(const Canvas& c, int count, int first, int x, int y)
 {
-    const Grid g = Layout(c);
+    const Grid g = Layout(c, count);
     for (int i = first * g.cols; i < count && i < (first + g.rows) * g.cols; i++)
     {
         const int tx = g.gx + (i % g.cols) * (g.tile + g.gap * 3), ty = g.top + (i / g.cols - first) * (g.tile + g.labelH + g.gap);
@@ -320,7 +321,7 @@ inline int TileAt(const Canvas& c, int count, int first, int x, int y)
 inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& first, const std::string& note,
                 const std::string& hintText = std::string(), const Theme& th = Theme())
 {
-    const Grid grid = Layout(c);
+    const Grid grid = Layout(c, (int)games.size());
     const int s = grid.s;
     c.Fill(0, 0, c.w, c.h, th.bg);
     // A band along the top with the title.
