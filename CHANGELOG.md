@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Switch: a game picked from the game list runs as smoothly as one started on its own.** The
+  list left the Switch's graphics slower for the game played after it (HeartGold took 12 ms a
+  frame to put its picture together instead of 4, and one frame in ten ran late). The program
+  now starts itself again for the game you pick (a second of black screen, as QUIT already
+  has), and the game runs at full speed.
 - **Switch: smoother in towns, 60 FPS where it dropped to the mid-50s** (White 2's Aspertia City,
   Black 2's Castelia City). Where a game draws its 3D every other frame, each new 3D frame
   meant building the wide view's polygon lists and the 60 FPS in-between frames, about 8 ms of

@@ -16,6 +16,8 @@
 //   input walk.txt            input script (as --input, frames counted from the snapshot)
 //   set wide_lines=720        a setting for this run only (as in ssrecomp.cfg)
 //   arg --no-wide             any other option, as on the command line
+//   arg --show-list           (the all-games program) the game list first, for 90 frames, then
+//                             the game played last, as if chosen
 //
 // test-results/progress.txt records each run as it starts and ends: a run that started and
 // never ended (it crashed or hung, and the console was restarted) is marked as failed and
