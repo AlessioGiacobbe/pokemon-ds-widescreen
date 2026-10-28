@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Platinum battles:** "Use next Pokemon?" after a faint shows its two buttons (Use next
+  Pokemon and Flee) instead of a cut-off red bar.
 - **Black, White, Black 2 and White 2 (playtest notes):** no more trees drawn as thin slivers at
   the edge of the wide view (Castelia City's plaza); calm side bars instead of streaks while
   a door's zoom, a key item's cut-in or Fly covers the world; Black and White's start menu

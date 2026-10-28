@@ -44,6 +44,28 @@ struct PtFuncs
     int battle = -1;         // any battle
     int battleInput = -1;    // the battle waiting for a command or a move on the touch screen
     int battleBag = -1, battleParty = -1; // the Bag and the party in a battle (touch screen)
+    // The touch-screen panels a battle draws: the commands (FIGHT, BAG, RUN, POKeMON), the first
+    // battle's FIGHT alone, the four moves, and the others (YES / NO, "Use next Pokemon?", forget
+    // a move, a target...). Which was drawn last says what the touch screen shows: the colours
+    // alone take "Use next Pokemon?" (a red bar on top) for the first battle's FIGHT.
+    int battleActionMenu = -1, battleFirstMenu = -1, battleMoveMenu = -1;
+    std::vector<int> battleOtherMenus;
+    // The last of these panels drawn: 1 the commands, 2 FIGHT alone, 3 the moves, 4 another, 0
+    // none seen yet (a snapshot loaded in a battle).
+    int BattlePanel(const FuncWatch& fw) const
+    {
+        uint32_t best = 0;
+        int kind = 0;
+        auto take = [&](int f, int k) {
+            const uint32_t t = fw.LastFrame(f);
+            if (t && t >= best) { best = t; kind = k; }
+        };
+        for (int f : battleOtherMenus) take(f, 4);
+        take(battleActionMenu, 1);
+        take(battleFirstMenu, 2);
+        take(battleMoveMenu, 3);
+        return kind;
+    }
     int saving = -1;         // the save being written (several seconds, nothing else running)
     // The weathers with particles (sprites over the world): each one's task, every frame while
     // it lasts (pokeplatinum's src/overlay005/ov5_021D5EB8.c, its table of weathers: rain, heavy
@@ -92,6 +114,13 @@ struct PtFuncs
         battleInput = find("BattleSystem_MenuInput");
         battleBag = find("BattleBagTask_Tick");
         battleParty = find("BattlePartyTask_Tick");
+        battleActionMenu = find("BattleSubscreen_DrawActionMenu");
+        battleFirstMenu = find("BattleSubscreen_DrawFirstBattleMenu");
+        battleMoveMenu = find("BattleSubscreen_DrawMoveSelectMenu");
+        for (const char* m : { "BattleSubscreen_DrawPalParkMenu", "BattleSubscreen_DrawYesNoMenu", "BattleSubscreen_DrawForgetMoveMenu",
+                               "BattleSubscreen_DrawGiveUpMoveMenu", "BattleSubscreen_DrawStopMenu", "BattleSubscreen_DrawUseNextMonMenu",
+                               "BattleSubscreen_DrawSwitchMonMenu", "BattleSubscreen_DrawTargetSelectMenu" })
+            battleOtherMenus.push_back(find(m));
         saving = find("SaveData_CardSave_Main");
         for (const char* w : { "ov5_021D7658", "ov5_021D9FF8", "ov5_021D9F0C", "ov5_021D79F0", "ov5_021D7E54", "ov5_021D8FF8",
                                "ov5_021DA244", "ov5_021D8D08", "ov5_021D9464", "ov5_021DA8A0", "ov5_021D823C", "ov5_021D8948" })

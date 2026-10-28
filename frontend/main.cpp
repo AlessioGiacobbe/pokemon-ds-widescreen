@@ -2079,11 +2079,17 @@ int main(int argc, char** argv)
         auto red = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return r > 180 && g < 120 && bl < 120; };
         auto orange = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return r > 180 && g > 110 && g < 200 && bl < 110; };
         // (Platinum's first battle has FIGHT alone: no Bag, no running, no party yet.)
-        battleFightOnly = pt.on && red(128, 60) && !orange(40, 160) && !blue(128, 166) && !blue(40, 166);
-        const bool cmd = (red(128, 60) && orange(40, 160) && blue(128, 166)) || battleFightOnly;
-        const bool moves = !cmd && blue(40, 166) && blue(128, 166) && blue(216, 166);
+        // (Platinum: which panel the battle drew last, when known. Its "Use next Pokemon?" is a
+        // red bar on top like the first battle's FIGHT, with RUN below it in neither colour.)
+        const int ptPanel = pt.on ? pt.BattlePanel(funcWatch) : 0;
+        battleFightOnly = pt.on && (ptPanel == 0 || ptPanel == 2) &&
+            red(128, 60) && !orange(40, 160) && !blue(128, 166) && !blue(40, 166);
+        const bool cmd = (red(128, 60) && orange(40, 160) && blue(128, 166) && ptPanel != 4) || battleFightOnly;
+        const bool moves = !cmd && ptPanel != 4 && blue(40, 166) && blue(128, 166) && blue(216, 166);
         const bool idle = AutoFocus::Blank(screens[1].pixels) || (!blue(128, 166) && !red(128, 60));
         battleUnknown = (cmd || moves || idle) ? 0 : battleUnknown + 1;
+        // (Another of Platinum's panels, known for what it is: the touch screen shown at once.)
+        if (ptPanel == 4 && !cmd && !moves && !AutoFocus::Blank(screens[1].pixels)) battleUnknown = std::max(battleUnknown, 20);
         // Only after the commands (FIGHT): after a move is chosen the battle goes on and
         // its messages must not be covered.
         if (cmd) battleStripUntil = frame + 20;
