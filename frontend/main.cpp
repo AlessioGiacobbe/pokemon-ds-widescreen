@@ -2147,11 +2147,12 @@ int main(int argc, char** argv)
                     piece(c.sx, c.sw, dx + (dw - c.sw * scl) / 2);
                     return;
                 }
-                // (Overlapping by half: each piece is drawn on whole output pixels, and
-                // tiles exactly side by side could leave a column between them.)
-                const float tile = c.tileW * scl;
-                for (float x = dx; x < dx + dw - 0.01f; x += tile / 2)
-                    piece(c.tileX, c.tileW, std::min(x, dx + dw - tile));
+                // The plain columns widened across the whole button as one piece, the ends and
+                // the label over them. (Once repeated a few pixels at a time: some 90 pieces a
+                // button, each its own picture to upload, which on the Switch dropped the frame
+                // rate whenever a battle waited for a command.)
+                piece(c.tileX, c.tileW, dx);
+                sc.items.back().stretchX = dw / (c.tileW * scl);
                 piece(c.sx, c.lx0 - c.sx, dx);
                 piece(c.lx1, c.sx + c.sw - c.lx1, dx + dw - (c.sx + c.sw - c.lx1) * scl);
                 piece(c.lx0, c.lx1 - c.lx0, dx + (dw - (c.lx1 - c.lx0) * scl) / 2);

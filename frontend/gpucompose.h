@@ -54,7 +54,7 @@ public:
             SDL_Rect dst;
             dst.x = (int)(v.originX + el.dx * v.unit);
             dst.y = (int)(v.originY + el.dy * v.unit);
-            dst.w = (int)(el.sw * s + 0.5f);
+            dst.w = (int)(el.sw * s * el.stretchX + 0.5f);
             dst.h = (int)(el.sh * s + 0.5f);
             if (dst.w <= 0 || dst.h <= 0 || el.sw <= 0 || el.sh <= 0) continue;
             if (el.screen < 0)

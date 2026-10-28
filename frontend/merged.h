@@ -63,6 +63,9 @@ struct Element
     // Mirrors the piece left to right / top to bottom (to close a box the game leaves open
     // at the screen's edge with a copy of its other side).
     bool flipX = false, flipY = false;
+    // Drawn this many times wider than `scale` makes it (a strip of one colour across, widened
+    // as one piece: the battle buttons' plain middles).
+    float stretchX = 1.0f;
     // Draws a dark outline around the piece, for a panel that floats over another picture.
     bool border = false;
     uint32_t borderColor = 0x282830;
@@ -679,7 +682,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     struct Piece
     {
         Element el;
-        float s;
+        float s, sx; // scale down and across
         int x0, y0, w, h, xa, xb, border;
         bool nearest;
         std::vector<int> col;
@@ -696,9 +699,10 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
         if (useWide && !placed && pieces.empty()) p.el.drop |= LAYER_3D;
         if (!useWide) p.el.holeCount = 0;
         p.s = v.unit * p.el.scale;
+        p.sx = p.s * p.el.stretchX;
         p.x0 = (int)(v.originX + p.el.dx * v.unit);
         p.y0 = (int)(v.originY + p.el.dy * v.unit);
-        p.w = (int)(p.el.sw * p.s + 0.5f);
+        p.w = (int)(p.el.sw * p.sx + 0.5f);
         p.h = (int)(p.el.sh * p.s + 0.5f);
         p.border = 0;
         if (p.el.border)
@@ -714,7 +718,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
             p.col.resize(p.w);
             for (int x = p.xa; x < p.xb; x++)
             {
-                int sx = (int)((x + 0.5f) / p.s);
+                int sx = (int)((x + 0.5f) / p.sx);
                 if (sx >= p.el.sw) sx = p.el.sw - 1;
                 p.col[x] = p.el.sx + (p.el.flipX ? p.el.sw - 1 - sx : sx);
             }
@@ -912,7 +916,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                 continue;
             }
             const ScreenImage& src = screens[el.screen];
-            const float s = p.s;
+            const float s = p.s, sX = p.sx;
             // (Over the world, the first piece's backdrop where the world has something is left
             // out: see MergedWideCovers.)
             const bool overWorld = useWide && !placed && &p == &pieces[0];
@@ -986,7 +990,7 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                 {
                     int ox = x0 + x;
                     if (ox < 0 || ox >= outW) continue;
-                    float fx = (x + 0.5f) / s - 0.5f;
+                    float fx = (x + 0.5f) / sX - 0.5f;
                     if (fx < 0) fx = 0;
                     int ix = (int)fx;
                     float wx = fx - ix;
@@ -1043,7 +1047,7 @@ inline bool MergedTouch(const Scene& scene, float bx, float by, int& tx, int& ty
     for (int i = (int)scene.items.size() - 1; i >= 0; i--)
     {
         const Element& el = scene.items[i];
-        float lx = (bx - el.dx) / el.scale, ly = (by - el.dy) / el.scale;
+        float lx = (bx - el.dx) / (el.scale * el.stretchX), ly = (by - el.dy) / el.scale;
         if (lx < 0 || ly < 0 || lx >= el.sw || ly >= el.sh) continue;
         if (el.screen != 1) continue; // top-screen elements and plain rectangles are not touchable but do not block
         tx = el.sx + (int)lx;

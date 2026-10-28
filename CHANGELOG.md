@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **SoulSilver and HeartGold: smoother while a battle waits for your command.** The battle
+  buttons were drawn from hundreds of small pieces, each sent to the Switch's graphics chip
+  every frame; each button is now a few pieces.
 - **No more stretched trees at the edges of the wide view:** a tree, house or flower bed that
   ended just short of the screen's edge was sometimes stretched out to it (SoulSilver and
   HeartGold by New Bark Town, Black 2). It now stays its own size.
