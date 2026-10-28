@@ -2867,6 +2867,9 @@ int main(int argc, char** argv)
                 }
             }
             only("start-menu", 0);
+            // (Not while the touch screen is black, the menu closing into an application or
+            // the save: it was a black box over the world for a few frames.)
+            if (screens && screens[1].pixels && AutoFocus::Blank(screens[1].pixels)) return;
             // On a wide view the panel stands at the right edge, mostly beside the overworld.
             const float menuScale = viewWidth >= 300 ? 0.8f : 0.75f;
             const float menuX = viewWidth >= 300 ? 128 + viewWidth / 2 - 161 * menuScale - 2 : 131;
@@ -2894,6 +2897,9 @@ int main(int argc, char** argv)
             sc.bgX = 2;
             sc.bgY = 96;
         }
+        else if (appActive("PokemonSummary") && AutoFocus::Blank(screens[0].pixels))
+            // Fading in or out: black, not the card's empty frames on black.
+            only("summary", 0);
         else if (appActive("PokemonSummary"))
         {
             // The page's card is one tall card split across the screens; its two halves stand
@@ -3038,8 +3044,10 @@ int main(int argc, char** argv)
             sc.bgY = 100;
         }
         else if (appActive("Bag"))
-            // Just the bag screen; the description box on the other screen is left out.
-            sc = Stack("bag", { Crop(1, 0, 0, 256, 192) }, false, viewWidth);
+            // The bag screen with the description of the chosen item above it (the box at the
+            // bottom of the other screen, rows 142-191; the picture of the bag above it is left
+            // out).
+            sc = Stack("bag", { Crop(0, 0, 142, 256, 50), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
         else if (appActive("PCBox"))
             // The selected Pokemon's info card from the other screen beside the box.
         {
@@ -5152,6 +5160,33 @@ int main(int argc, char** argv)
             Scene picked = funcWatchOn ? pickSceneBw2(view.width, screenImages)
                                        : pickScene(frame < cursorShownUntil, view.width, screenImages);
             if (funcWatchOn) bw1.Adjust(picked, view.width, screenImages); // Pokemon Black and White
+            // A whole screen shown alone whose sides are one colour, not black (a fade to white:
+            // the starter chosen, whiting out and its message on white) fills the view with that
+            // colour instead of a 4:3 square with black bars beside it.
+            // (SoulSilver and HeartGold: the Black games have layouts of their own for theirs.)
+            if (!funcWatchOn && picked.items.size() == 1 && !picked.wide && picked.bgScreen < 0)
+            {
+                const Element& el = picked.items[0];
+                if (el.screen >= 0 && el.sx == 0 && el.sy == 0 && el.sw == 256 && el.sh == 192 && screenImages[el.screen].pixels)
+                {
+                    const uint32_t* px = screenImages[el.screen].pixels;
+                    const uint32_t c0 = px[0] & 0xFFFFFF;
+                    bool uniform = c0 != 0;
+                    for (int y = 0; y < 192 && uniform; y++)
+                        for (int x : { 0, 1, 2, 3, 252, 253, 254, 255 })
+                            if ((px[y * 256 + x] & 0xFFFFFF) != c0)
+                            {
+                                uniform = false;
+                                break;
+                            }
+                    if (uniform)
+                    {
+                        picked.bgScreen = el.screen;
+                        picked.bgX = 0;
+                        picked.bgY = 0;
+                    }
+                }
+            }
             // An application's own layout stays while it fades out: the game is still ending it
             // (and its picture is still what is on the screens) when only a general layout
             // would be chosen, until the overworld runs again or a moment has passed.

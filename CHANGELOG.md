@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **SoulSilver and HeartGold menus:** the Bag shows the chosen item's description above the
+  items; no black box where the X menu was while it closes into the save or a menu; the
+  Pokemon summary no longer flashes empty frames while it fades; a fade to white (choosing
+  your starter, whiting out) fills the whole view instead of a white square with black bars.
 - **SoulSilver and HeartGold: smoother while a battle waits for your command.** The battle
   buttons were drawn from hundreds of small pieces, each sent to the Switch's graphics chip
   every frame; each button is now a few pieces.
