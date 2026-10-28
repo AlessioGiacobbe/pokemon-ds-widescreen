@@ -313,50 +313,76 @@ struct WideAccess
         // Polygons are matched in submission order. When the two frames do not line up (an
         // object entered or left), the search skips ahead a little; an unmatched polygon is
         // drawn at its new position.
-        auto sameKind = [](const RawPolygon& a, const RawPolygon& b) {
-            return a.PolygonMode == b.PolygonMode && a.PolygonAttr == b.PolygonAttr &&
-                a.TexParam == b.TexParam && a.TexPalette == b.TexPalette;
+        // What makes two polygons the same kind, for each polygon of the previous frame, side by
+        // side: the searches below compare thousands of candidates a frame, and these four
+        // fields are 300 bytes apart in the polygons themselves.
+        struct Kind
+        {
+            u32 Mode, Attr, Tex, Palette;
         };
-        // How a polygon moved between the two frames: the mean movement of its vertices in
-        // clip space relative to depth (1024 = the full screen width). Returns false if any
-        // vertex moved more than an eighth of the screen: that is a different polygon or a
-        // camera cut, not motion to smooth out.
-        auto movement = [](const RawPolygon& a, const RawPolygon& b, int nverts, s64& mx, s64& my) -> bool {
-            s64 sum[2] = { 0, 0 };
+        static thread_local std::vector<Kind> prevKinds;
+        if (interpolate)
+        {
+            prevKinds.resize(rawPrev.size());
+            for (size_t k = 0; k < rawPrev.size(); k++)
+                prevKinds[k] = { rawPrev[k].PolygonMode, rawPrev[k].PolygonAttr, rawPrev[k].TexParam, rawPrev[k].TexPalette };
+        }
+        // Whether rawPrev[k] is the same kind of polygon as b.
+        auto sameKind = [](size_t k, const RawPolygon& b) {
+            const Kind& a = prevKinds[k];
+            return a.Mode == b.PolygonMode && a.Attr == b.PolygonAttr && a.Tex == b.TexParam && a.Palette == b.TexPalette;
+        };
+        // How each vertex of a polygon moved between the two frames (x and y, in turn), in clip
+        // space relative to depth (1024 = the full screen width). Returns false if any vertex
+        // moved more than an eighth of the screen (more than 128): that is a different polygon
+        // or a camera cut, not motion to smooth out. That is tested with a multiplication before
+        // any division: most candidates fail it, and these divisions were most of the replay's
+        // time (on the Switch, 3 ms of every frame with new 3D in White 2's Aspertia City).
+        // (n / w truncates towards zero: it is above 128 exactly when n >= 129 * w, below -128
+        // exactly when n <= -129 * w.)
+        auto deltas = [](const RawPolygon& a, const RawPolygon& b, int nverts, s64 (&d)[8]) -> bool {
+            s64 w[4], n[8];
             for (int i = 0; i < nverts; i++)
             {
                 s64 wa = a.Vertices[i].Position[3], wb = b.Vertices[i].Position[3];
                 if (wa < 0) wa = -wa;
                 if (wb < 0) wb = -wb;
-                s64 w = (wa > wb ? wa : wb);
-                if (w < 4096) w = 4096;
+                w[i] = (wa > wb ? wa : wb);
+                if (w[i] < 4096) w[i] = 4096;
+                const s64 limit = 129 * w[i];
                 for (int c = 0; c < 2; c++)
                 {
-                    s64 d = ((s64)b.Vertices[i].Position[c] - a.Vertices[i].Position[c]) * 512 / w;
-                    if (d > 128 || d < -128) return false;
-                    sum[c] += d;
+                    const s64 v = ((s64)b.Vertices[i].Position[c] - a.Vertices[i].Position[c]) * 512;
+                    if (v >= limit || v <= -limit) return false;
+                    n[i * 2 + c] = v;
                 }
             }
+            for (int i = 0; i < nverts; i++)
+                for (int c = 0; c < 2; c++) d[i * 2 + c] = n[i * 2 + c] / w[i];
+            return true;
+        };
+        // How a polygon moved between the two frames: the mean movement of its vertices.
+        auto movement = [&deltas](const RawPolygon& a, const RawPolygon& b, int nverts, s64& mx, s64& my) -> bool {
+            s64 d[8];
+            if (!deltas(a, b, nverts, d)) return false;
+            s64 sum[2] = { 0, 0 };
+            for (int i = 0; i < nverts; i++)
+                for (int c = 0; c < 2; c++) sum[c] += d[i * 2 + c];
             mx = sum[0] / nverts;
             my = sum[1] / nverts;
             return true;
         };
-        // How far a pairing is from what the rest of the picture does: the scene as a whole
-        // moves with the camera, so the right partner of a polygon is the one that moved
-        // like its neighbours, not the nearest one. (Taking the nearest paired a polygon
-        // with a different one of the same model whenever the picture moved by more than
-        // half the distance between them: running, and most at the bottom of the screen.)
-        auto unlike = [](const RawPolygon& a, const RawPolygon& b, int nverts, s64 rx, s64 ry) -> s64 {
+        // How far a pairing is from what the rest of the picture does (its vertices' movements,
+        // from deltas): the scene as a whole moves with the camera, so the right partner of a
+        // polygon is the one that moved like its neighbours, not the nearest one. (Taking the
+        // nearest paired a polygon with a different one of the same model whenever the picture
+        // moved by more than half the distance between them: running, and most at the bottom of
+        // the screen.)
+        auto unlike = [](const s64 (&d)[8], int nverts, s64 rx, s64 ry) -> s64 {
             s64 total = 0;
             for (int i = 0; i < nverts; i++)
             {
-                s64 wa = a.Vertices[i].Position[3], wb = b.Vertices[i].Position[3];
-                if (wa < 0) wa = -wa;
-                if (wb < 0) wb = -wb;
-                s64 w = (wa > wb ? wa : wb);
-                if (w < 4096) w = 4096;
-                s64 dx = ((s64)b.Vertices[i].Position[0] - a.Vertices[i].Position[0]) * 512 / w - rx;
-                s64 dy = ((s64)b.Vertices[i].Position[1] - a.Vertices[i].Position[1]) * 512 / w - ry;
+                const s64 dx = d[i * 2] - rx, dy = d[i * 2 + 1] - ry;
                 total += (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
             }
             return total;
@@ -387,7 +413,7 @@ struct WideAccess
                     for (s64 k = lo; k < hi; k++)
                     {
                         s64 mx, my;
-                        if (!sameKind(rawPrev[k], cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
+                        if (!sameKind(k, cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
                         const int bx = (int)(mx + 128) / 2, by = (int)(my + 128) / 2;
                         const int n = ++votes[by * 129 + bx];
                         if (n > best)
@@ -442,9 +468,9 @@ struct WideAccess
                 // unlike the rest. A neighbouring tile or model is further off than this allows.
                 if (ia < rawPrev.size() && !loose)
                 {
-                    s64 mx, my;
-                    if (sameKind(rawPrev[ia], cur) && movement(rawPrev[ia], cur, nverts, mx, my) &&
-                        unlike(rawPrev[ia], cur, nverts, sceneX, sceneY) <= nverts * 40)
+                    s64 d[8];
+                    if (sameKind(ia, cur) && deltas(rawPrev[ia], cur, nverts, d) &&
+                        unlike(d, nverts, sceneX, sceneY) <= nverts * 40)
                     {
                         bestMove = 0;
                         bestIndex = ia;
@@ -452,9 +478,9 @@ struct WideAccess
                 }
                 for (size_t k = ia; bestMove < 0 && k < rawPrev.size() && k < ia + 512; k++)
                 {
-                    s64 mx, my;
-                    if (!sameKind(rawPrev[k], cur) || !movement(rawPrev[k], cur, nverts, mx, my)) continue;
-                    s64 m = unlike(rawPrev[k], cur, nverts, sceneX, sceneY);
+                    s64 d[8];
+                    if (!sameKind(k, cur) || !deltas(rawPrev[k], cur, nverts, d)) continue;
+                    s64 m = unlike(d, nverts, sceneX, sceneY);
                     if (m > limit) continue;
                     if (bestMove < 0 || m < bestMove)
                     {
