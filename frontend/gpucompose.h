@@ -57,15 +57,9 @@ public:
             dst.w = (int)(el.sw * s * el.stretchX + 0.5f);
             dst.h = (int)(el.sh * s + 0.5f);
             if (dst.w <= 0 || dst.h <= 0 || el.sw <= 0 || el.sh <= 0) continue;
-            if (el.screen < 0)
-            {
-                SDL_SetRenderDrawBlendMode(R, el.alpha == 255 ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(R, (el.keys[0] >> 16) & 0xFF, (el.keys[0] >> 8) & 0xFF, el.keys[0] & 0xFF, el.alpha);
-                SDL_RenderFillRect(R, &dst);
-                continue;
-            }
-            const ScreenImage& src = screens[el.screen];
-
+            // The outline first, for a plain rectangle as for a piece (the chosen battle button's
+            // outline is drawn around its backing rectangle: here it was left out, so the Switch
+            // showed no outline on the chosen button).
             if (el.border)
             {
                 int t = (int)(v.unit * (el.borderWidth ? el.borderWidth : 6) / 8.0f + 0.5f);
@@ -91,13 +85,37 @@ public:
                 }
             }
 
+            if (el.screen < 0)
+            {
+                SDL_SetRenderDrawBlendMode(R, el.alpha == 255 ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(R, (el.keys[0] >> 16) & 0xFF, (el.keys[0] >> 8) & 0xFF, el.keys[0] & 0xFF, el.alpha);
+                SDL_RenderFillRect(R, &dst);
+                continue;
+            }
+            const ScreenImage& src = screens[el.screen];
+
             const bool nearest = el.crisp || !smooth;
             const bool keyed = el.keys[0] != 0xFFFFFFFF;
             const bool spriteKey = el.dropSpriteCorner > 0 && src.flags;
             const bool plain = !(el.drop && src.flags) && !keyed && !spriteKey && el.alpha == 255 && el.cutX >= 256 && !el.holeCount;
-            SDL_Texture* tex = Slot(slot++, el.sw, el.sh);
+            const int slotIndex = slot++;
+            SDL_Texture* tex = Slot(slotIndex, el.sw, el.sh);
             if (!tex) continue;
             SDL_SetTextureScaleMode(tex, nearest ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
+            // Uploading every piece every frame cost the Switch 13 ms a frame in a Gen 4
+            // battle waiting for a command (the strip's thirty-odd pieces, none of them
+            // changing): a piece the same as last frame keeps its texture. (Not the piece under
+            // the widescreen world, whose holes follow the world's picture.)
+            Tex& cached = Slots[slotIndex];
+            const uint64_t sig = overWorld ? 0 : Signature(el, src, plain, nearest);
+            if (!overWorld && cached.hasSig && cached.sig == sig)
+            {
+                SDL_SetTextureBlendMode(tex, plain ? SDL_BLENDMODE_NONE : (!nearest && slotIndex < (int)CachedPremul.size() && CachedPremul[slotIndex]) ? Premultiplied : SDL_BLENDMODE_BLEND);
+                DrawPiece(tex, dst, el);
+                continue;
+            }
+            cached.hasSig = !overWorld;
+            cached.sig = sig;
             if (plain)
             {
                 SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
@@ -108,6 +126,8 @@ public:
                 // Pixels that are left out get alpha 0.
                 bool premul = !nearest && SDL_SetTextureBlendMode(tex, Premultiplied) == 0;
                 if (!premul) SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+                if ((int)CachedPremul.size() <= slotIndex) CachedPremul.resize(slotIndex + 1);
+                CachedPremul[slotIndex] = premul;
                 Buf.resize((size_t)el.sw * el.sh);
                 const uint32_t al = el.alpha;
                 for (int y = 0; y < el.sh; y++)
@@ -138,27 +158,72 @@ public:
                 }
                 SDL_UpdateTexture(tex, nullptr, Buf.data(), el.sw * 4);
             }
-            // (A mirrored piece, as MergedCompose draws it: the message box's closing edge in
-            // the battle strip was drawn the wrong way round here, a dark line beside the text.)
-            if (el.flipX || el.flipY)
-                SDL_RenderCopyEx(R, tex, nullptr, &dst, 0.0, nullptr,
-                    (SDL_RendererFlip)((el.flipX ? SDL_FLIP_HORIZONTAL : 0) | (el.flipY ? SDL_FLIP_VERTICAL : 0)));
-            else
-                SDL_RenderCopy(R, tex, nullptr, &dst);
+            DrawPiece(tex, dst, el);
         }
     }
 
 private:
-    struct Tex { SDL_Texture* t = nullptr; int w = 0, h = 0; };
+    // A texture, and for the pieces' slots what was last uploaded to it (Signature): a piece
+    // whose pixels and settings are as last frame's is not uploaded again.
+    struct Tex { SDL_Texture* t = nullptr; int w = 0, h = 0; uint64_t sig = 0; bool hasSig = false; };
 
     SDL_Texture* Make(Tex& x, int w, int h)
     {
         if (x.t && x.w == w && x.h == h) return x.t;
         if (x.t) SDL_DestroyTexture(x.t);
         x.t = SDL_CreateTexture(R, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+        x.hasSig = false;
         x.w = w;
         x.h = h;
         return x.t;
+    }
+
+    void DrawPiece(SDL_Texture* tex, const SDL_Rect& dst, const Element& el)
+    {
+        // (A mirrored piece, as MergedCompose draws it: the message box's closing edge in
+        // the battle strip was drawn the wrong way round here, a dark line beside the text.)
+        if (el.flipX || el.flipY)
+            SDL_RenderCopyEx(R, tex, nullptr, &dst, 0.0, nullptr,
+                (SDL_RendererFlip)((el.flipX ? SDL_FLIP_HORIZONTAL : 0) | (el.flipY ? SDL_FLIP_VERTICAL : 0)));
+        else
+            SDL_RenderCopy(R, tex, nullptr, &dst);
+    }
+
+    // What a piece's texture is made from: its source pixels (and their layers, when they
+    // decide what is left out) and everything else that goes into the upload.
+    static uint64_t Signature(const Element& el, const ScreenImage& src, bool plain, bool nearest)
+    {
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+        mix((uint64_t)(el.screen + 1) << 48 | (uint64_t)el.sx << 32 | (uint64_t)el.sy << 16 | (uint64_t)el.sw);
+        mix((uint64_t)el.sh << 32 | (uint64_t)el.alpha << 24 | (uint64_t)el.drop << 16 | (plain ? 1u : 0u) | (nearest ? 2u : 0u));
+        for (uint32_t k : el.keys) mix(k);
+        mix((uint64_t)el.keyTolerance << 32 | (uint32_t)el.keyRing);
+        mix((uint64_t)el.cutX << 32 | (uint32_t)el.cutY);
+        mix((uint64_t)el.dropSpriteCorner << 32 | (uint32_t)el.holeCount);
+        for (int i = 0; i < el.holeCount; i++)
+            for (int j = 0; j < 4; j++) mix((uint32_t)el.holes[i][j]);
+        const bool flags = !plain && src.flags;
+        for (int y = 0; y < el.sh; y++)
+        {
+            const uint32_t* row = src.pixels + (el.sy + y) * 256 + el.sx;
+            // (Two pixels a step: the words of a row are mixed as 64-bit values.)
+            int x = 0;
+            for (; x + 1 < el.sw; x += 2) mix((uint64_t)row[x] << 32 | row[x + 1]);
+            if (x < el.sw) mix(row[x]);
+            if (flags)
+            {
+                const uint8_t* f = src.flags + (el.sy + y) * 256 + el.sx;
+                uint64_t acc = 0;
+                for (int i = 0; i < el.sw; i++)
+                {
+                    acc = acc << 8 | f[i];
+                    if ((i & 7) == 7) { mix(acc); acc = 0; }
+                }
+                mix(acc);
+            }
+        }
+        return h;
     }
 
     SDL_Texture* Slot(int i, int w, int h)
@@ -375,6 +440,7 @@ private:
     SDL_Renderer* R;
     SDL_BlendMode Premultiplied;
     std::vector<Tex> Slots;
+    std::vector<bool> CachedPremul; // (each slot's last blend mode, for a texture not uploaded again)
     Tex WideTex, EdgeTex[2], FillTex[2], NarrowTex[2], WeatherTex[2];
     uint32_t Fill[16 * 192];
     std::vector<SDL_Rect> Spans;

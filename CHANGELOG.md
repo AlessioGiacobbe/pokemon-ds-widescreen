@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Switch: smoother battles while you choose a command** (SoulSilver, HeartGold, Platinum):
+  the buttons beside the battle are only sent to the graphics chip when they change, instead of
+  every frame; and the chosen button has its white outline on the Switch too.
 - **SoulSilver, HeartGold and Platinum battles:** the message box beside the buttons ends
   cleanly again on the Switch (its closing edge was drawn the wrong way round, a dark line
   beside the text); the party's Poke Balls sit in two straight rows with room between them,
