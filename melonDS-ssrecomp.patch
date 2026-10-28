@@ -1,8 +1,32 @@
 diff --git a/src/ARM.cpp b/src/ARM.cpp
-index 827fcb01..2b2f80a8 100644
+index 827fcb0..3be7517 100644
 --- a/src/ARM.cpp
 +++ b/src/ARM.cpp
-@@ -359,6 +359,39 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
+@@ -22,6 +22,7 @@
+ #include "NDS.h"
+ #include "DSi.h"
+ #include "ARM.h"
++#include "SsrWatch.h"
+ #include "ARMInterpreter.h"
+ #include "AREngine.h"
+ #include "ARMJIT.h"
+@@ -31,6 +32,7 @@
+ 
+ namespace melonDS
+ {
++SsrWatchState SsrWatch;
+ using Platform::Log;
+ using Platform::LogLevel;
+ 
+@@ -356,9 +358,47 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
+         return;
+     }
+ 
++    // ssrecomp: a jump into a watched function (SsrWatch.h). Every change of the PC in the
++    // interpreter comes through here, calls included, so this is all it takes there.
++    if (SsrWatch.Test(addr))
++        SsrWatch.Hook(SsrWatch.User, addr, CPSR & 0x20);
++
      NDS.MonitorARM9Jump(addr);
  }
  
@@ -42,7 +66,19 @@ index 827fcb01..2b2f80a8 100644
  void ARMv4::JumpTo(u32 addr, bool restorecpsr)
  {
      if (restorecpsr)
-@@ -657,7 +690,11 @@ void ARMv5::Execute()
+@@ -629,6 +669,11 @@ void ARMv5::Execute()
+                 return;
+             }
+ 
++            // ssrecomp: a block starting at a watched address (see SsrWatch.h). Checked before
++            // the lookup, as the first run of a block happens while it is compiled.
++            if (SsrWatch.Test(instrAddr))
++                SsrWatch.Hook(SsrWatch.User, instrAddr, CPSR & 0x20);
++
+             JitBlockEntry block = NDS.JIT.LookUpBlock(0, FastBlockLookup,
+                 instrAddr - FastBlockLookupStart, instrAddr);
+             if (block)
+@@ -657,7 +702,11 @@ void ARMv5::Execute()
          else
  #endif
          {
@@ -55,7 +91,7 @@ index 827fcb01..2b2f80a8 100644
              {
                  if constexpr (mode == CPUExecuteMode::InterpreterGDB)
                      GdbCheckC();
-@@ -698,6 +735,8 @@ void ARMv5::Execute()
+@@ -698,6 +747,8 @@ void ARMv5::Execute()
                      AddCycles_C();
              }
  
@@ -64,7 +100,7 @@ index 827fcb01..2b2f80a8 100644
              // TODO optimize this shit!!!
              if (Halted)
              {
-@@ -729,6 +768,9 @@ template void ARMv5::Execute<CPUExecuteMode::InterpreterGDB>();
+@@ -729,6 +780,9 @@ template void ARMv5::Execute<CPUExecuteMode::InterpreterGDB>();
  template void ARMv5::Execute<CPUExecuteMode::JIT>();
  #endif
  
@@ -74,7 +110,7 @@ index 827fcb01..2b2f80a8 100644
  template <CPUExecuteMode mode>
  void ARMv4::Execute()
  {
-@@ -796,6 +838,7 @@ void ARMv4::Execute()
+@@ -796,6 +850,7 @@ void ARMv4::Execute()
          else
  #endif
          {
@@ -82,7 +118,7 @@ index 827fcb01..2b2f80a8 100644
              if (CPSR & 0x20) // THUMB
              {
                  if constexpr (mode == CPUExecuteMode::InterpreterGDB)
-@@ -1121,7 +1164,8 @@ u32 ARMv5::ReadMem(u32 addr, int size)
+@@ -1121,7 +1176,8 @@ u32 ARMv5::ReadMem(u32 addr, int size)
  
  void ARMv4::DataRead8(u32 addr, u32* val)
  {
@@ -92,7 +128,7 @@ index 827fcb01..2b2f80a8 100644
      DataRegion = addr;
      DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
  }
-@@ -1130,7 +1174,8 @@ void ARMv4::DataRead16(u32 addr, u32* val)
+@@ -1130,7 +1186,8 @@ void ARMv4::DataRead16(u32 addr, u32* val)
  {
      addr &= ~1;
  
@@ -102,7 +138,7 @@ index 827fcb01..2b2f80a8 100644
      DataRegion = addr;
      DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
  }
-@@ -1139,7 +1184,8 @@ void ARMv4::DataRead32(u32 addr, u32* val)
+@@ -1139,7 +1196,8 @@ void ARMv4::DataRead32(u32 addr, u32* val)
  {
      addr &= ~3;
  
@@ -112,7 +148,7 @@ index 827fcb01..2b2f80a8 100644
      DataRegion = addr;
      DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
  }
-@@ -1148,13 +1194,15 @@ void ARMv4::DataRead32S(u32 addr, u32* val)
+@@ -1148,13 +1206,15 @@ void ARMv4::DataRead32S(u32 addr, u32* val)
  {
      addr &= ~3;
  
@@ -130,7 +166,7 @@ index 827fcb01..2b2f80a8 100644
      DataRegion = addr;
      DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
  }
-@@ -1163,7 +1211,8 @@ void ARMv4::DataWrite16(u32 addr, u16 val)
+@@ -1163,7 +1223,8 @@ void ARMv4::DataWrite16(u32 addr, u16 val)
  {
      addr &= ~1;
  
@@ -140,7 +176,7 @@ index 827fcb01..2b2f80a8 100644
      DataRegion = addr;
      DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
  }
-@@ -1172,7 +1221,8 @@ void ARMv4::DataWrite32(u32 addr, u32 val)
+@@ -1172,7 +1233,8 @@ void ARMv4::DataWrite32(u32 addr, u32 val)
  {
      addr &= ~3;
  
@@ -150,7 +186,7 @@ index 827fcb01..2b2f80a8 100644
      DataRegion = addr;
      DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
  }
-@@ -1181,7 +1231,8 @@ void ARMv4::DataWrite32S(u32 addr, u32 val)
+@@ -1181,7 +1243,8 @@ void ARMv4::DataWrite32S(u32 addr, u32 val)
  {
      addr &= ~3;
  
@@ -160,7 +196,7 @@ index 827fcb01..2b2f80a8 100644
      DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
  }
  
-@@ -1293,6 +1344,7 @@ u32 ARMv4::BusRead32(u32 addr)
+@@ -1293,6 +1356,7 @@ u32 ARMv4::BusRead32(u32 addr)
      return NDS.ARM7Read32(addr);
  }
  
@@ -169,7 +205,7 @@ index 827fcb01..2b2f80a8 100644
  {
      NDS.ARM7Write8(addr, val);
 diff --git a/src/ARM.h b/src/ARM.h
-index 96ed66f0..a193e70c 100644
+index 96ed66f..a193e70 100644
 --- a/src/ARM.h
 +++ b/src/ARM.h
 @@ -229,6 +229,10 @@ protected:
@@ -215,19 +251,851 @@ index 96ed66f0..a193e70c 100644
  
      void DataRead8(u32 addr, u32* val) override;
      void DataRead16(u32 addr, u32* val) override;
+diff --git a/src/ARMJIT.cpp b/src/ARMJIT.cpp
+index a9489ca..3907990 100644
+--- a/src/ARMJIT.cpp
++++ b/src/ARMJIT.cpp
+@@ -17,6 +17,7 @@
+ */
+ 
+ #include "ARMJIT.h"
++#include "SsrWatch.h"
+ #include "ARMJIT_Memory.h"
+ #include <string.h>
+ #include <assert.h>
+@@ -777,8 +778,9 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
+                         JIT_DEBUGPRINT("found %s idle loop %d in block %08x\n", thumb ? "thumb" : "arm", cpu->Num, blockAddr);
+                     }
+                 }
+-                else if (hasBranched && !isBackJump && i + 1 < MaxBlockSize)
++                else if (hasBranched && !isBackJump && i + 1 < MaxBlockSize && !(cpu->Num == 0 && SsrWatch.Test(target)))
+                 {
++                    // (ssrecomp: not into a watched address, which has to start a block of its own.)
+                     if (link)
+                     {
+                         lr = linkAddr;
+@@ -819,7 +821,9 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
+         bool secondaryFlagReadCond = !canCompile || (instrs[i - 1].BranchFlags & (branch_FollowCondTaken | branch_FollowCondNotTaken));
+         if (instrs[i - 1].Info.ReadFlags != 0 || secondaryFlagReadCond)
+             FloodFillSetFlags(instrs, i - 2, !secondaryFlagReadCond ? instrs[i - 1].Info.ReadFlags : 0xF);
+-    } while(!instrs[i - 1].Info.EndBlock && i < MaxBlockSize && !cpu->Halted && (!cpu->IRQ || (cpu->CPSR & 0x80)));
++    } while(!instrs[i - 1].Info.EndBlock && i < MaxBlockSize && !cpu->Halted && (!cpu->IRQ || (cpu->CPSR & 0x80))
++        // ssrecomp: a watched address starts a block of its own (SsrWatch.h).
++        && !(cpu->Num == 0 && SsrWatch.Test(nextInstrAddr[0])));
+ 
+     if (numLiterals)
+     {
+diff --git a/src/ARMJIT_A64/ARMJIT_Compiler.cpp b/src/ARMJIT_A64/ARMJIT_Compiler.cpp
+index e5355f2..1db2041 100644
+--- a/src/ARMJIT_A64/ARMJIT_Compiler.cpp
++++ b/src/ARMJIT_A64/ARMJIT_Compiler.cpp
+@@ -16,6 +16,10 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#ifdef __SWITCH__
++#include <switch.h>
++#endif
++
+ #include "ARMJIT_Compiler.h"
+ 
+ #include "../ARMJIT_Internal.h"
+@@ -25,11 +29,18 @@
+ #include "../ARMJIT_Global.h"
+ 
+ #include <stdlib.h>
++#include <stdio.h>
+ 
+ using namespace Arm64Gen;
+ 
+ extern "C" void ARM_Ret();
+ 
++#ifdef __SWITCH__
++// The start of the program in memory (libnx); the code memory goes just below it, within
++// branch range of the emulator's own functions.
++extern "C" char __start__;
++#endif
++
+ namespace melonDS
+ {
+ 
+@@ -209,6 +220,12 @@ void Compiler::PopRegs(bool saveHiRegs, bool saveRegsToBeChanged)
+ Compiler::Compiler(melonDS::NDS& nds) : Arm64Gen::ARM64XEmitter(), NDS(nds)
+ {
+ #ifdef __SWITCH__
++    // ssrecomp: the code memory is a heap buffer made executable with svcMapProcessCodeMemory,
++    // and written through a second, writable view of it (svcMapProcessMemory). JitMemSize was
++    // missing from melonDS 1.1; 32 MB is the size of a code memory slice elsewhere.
++    ARMJIT_Global::Init();
++    CodeMemBase = nullptr;
++    constexpr size_t JitMemSize = ARMJIT_Global::CodeMemorySliceSize;
+     JitRWBase = aligned_alloc(0x1000, JitMemSize);
+ 
+     JitRXStart = (u8*)&__start__ - JitMemSize - 0x1000;
+@@ -231,14 +248,20 @@ Compiler::Compiler(melonDS::NDS& nds) : Arm64Gen::ARM64XEmitter(), NDS(nds)
+         }
+     }
+ 
+-    assert(JitRXStart != NULL);
+-
+-    bool succeded = R_SUCCEEDED(svcMapProcessCodeMemory(envGetOwnProcessHandle(), (u64)JitRXStart, (u64)JitRWBase, JitMemSize));
+-    assert(succeded);
+-    succeded = R_SUCCEEDED(svcSetProcessMemoryPermission(envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize, Perm_Rx));
+-    assert(succeded);
+-    succeded = R_SUCCEEDED(svcMapProcessMemory(JitRWStart, envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize));
+-    assert(succeded);
++    // (Each step says in the log whether it worked: on the Switch nothing else would.)
++    Result rc = JitRXStart ? svcMapProcessCodeMemory(envGetOwnProcessHandle(), (u64)JitRXStart, (u64)JitRWBase, JitMemSize) : (Result)-1;
++    fprintf(stderr, "[jit] code memory at %p: 0x%x\n", JitRXStart, (unsigned)rc);
++    if (R_SUCCEEDED(rc))
++    {
++        rc = svcSetProcessMemoryPermission(envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize, Perm_Rx);
++        fprintf(stderr, "[jit] made executable: 0x%x\n", (unsigned)rc);
++    }
++    if (R_SUCCEEDED(rc))
++    {
++        rc = svcMapProcessMemory(JitRWStart, envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize);
++        fprintf(stderr, "[jit] writable view at %p: 0x%x\n", JitRWStart, (unsigned)rc);
++    }
++    fflush(stderr);
+ 
+     virtmemUnlock();
+ 
+@@ -453,6 +476,7 @@ Compiler::Compiler(melonDS::NDS& nds) : Arm64Gen::ARM64XEmitter(), NDS(nds)
+ Compiler::~Compiler()
+ {
+ #ifdef __SWITCH__
++    constexpr size_t JitMemSize = ARMJIT_Global::CodeMemorySliceSize;
+     if (JitRWStart != NULL)
+     {
+         bool succeded = R_SUCCEEDED(svcUnmapProcessMemory(JitRWStart, envGetOwnProcessHandle(), (u64)JitRXStart, JitMemSize));
+@@ -463,7 +487,7 @@ Compiler::~Compiler()
+     }
+ #endif
+ 
+-    ARMJIT_Global::FreeCodeMem(CodeMemBase);
++    if (CodeMemBase) ARMJIT_Global::FreeCodeMem(CodeMemBase);
+     ARMJIT_Global::DeInit();
+ }
+ 
+diff --git a/src/ARMJIT_A64/ARMJIT_Linkage.S b/src/ARMJIT_A64/ARMJIT_Linkage.S
+index beaec00..b7a16c5 100644
+--- a/src/ARMJIT_A64/ARMJIT_Linkage.S
++++ b/src/ARMJIT_A64/ARMJIT_Linkage.S
+@@ -95,6 +95,60 @@ ARM_RestoreContext:
+ 
+     br x18
+ 
++#ifdef __SWITCH__
++// ssrecomp: back to the JIT code that faulted, from the Switch's exception handler
++// (ARMJIT_Memory.cpp). x0: libnx's ThreadExceptionDump, x1: where to go on. Every register is
++// put back as it was, the NEON registers and the flags too, but for x17, which carries the
++// address of the jump at the end (no JIT code keeps a value in x17).
++.global ARM_RestoreExceptionDump
++ARM_RestoreExceptionDump:
++    str x1, [x0, #272]
++
++    add x2, x0, #288
++    ldp q0, q1, [x2, #0]
++    ldp q2, q3, [x2, #32]
++    ldp q4, q5, [x2, #64]
++    ldp q6, q7, [x2, #96]
++    ldp q8, q9, [x2, #128]
++    ldp q10, q11, [x2, #160]
++    ldp q12, q13, [x2, #192]
++    ldp q14, q15, [x2, #224]
++    ldp q16, q17, [x2, #256]
++    ldp q18, q19, [x2, #288]
++    ldp q20, q21, [x2, #320]
++    ldp q22, q23, [x2, #352]
++    ldp q24, q25, [x2, #384]
++    ldp q26, q27, [x2, #416]
++    ldp q28, q29, [x2, #448]
++    ldp q30, q31, [x2, #480]
++
++    ldr w2, [x0, #800]
++    and w2, w2, #0xF0000000
++    msr nzcv, x2
++
++    mov x16, x0
++    ldp x0, x1, [x16, #16]
++    ldp x2, x3, [x16, #32]
++    ldp x4, x5, [x16, #48]
++    ldp x6, x7, [x16, #64]
++    ldp x8, x9, [x16, #80]
++    ldp x10, x11, [x16, #96]
++    ldp x12, x13, [x16, #112]
++    ldp x14, x15, [x16, #128]
++    ldp x18, x19, [x16, #160]
++    ldp x20, x21, [x16, #176]
++    ldp x22, x23, [x16, #192]
++    ldp x24, x25, [x16, #208]
++    ldp x26, x27, [x16, #224]
++    ldr x28, [x16, #240]
++    ldp x29, x30, [x16, #248]
++    ldr x17, [x16, #264]
++    mov sp, x17
++    ldr x17, [x16, #272]
++    ldr x16, [x16, #144]
++    br x17
++#endif
++
+ #if !defined(__APPLE__) && !defined(__WIN32__)
+ .section .note.GNU-stack,"",@progbits
+ #endif
+diff --git a/src/ARMJIT_Global.cpp b/src/ARMJIT_Global.cpp
+index e4aa42f..dac46f0 100644
+--- a/src/ARMJIT_Global.cpp
++++ b/src/ARMJIT_Global.cpp
+@@ -1,7 +1,9 @@
+ #include "ARMJIT_Global.h"
+ #include "ARMJIT_Memory.h"
+ 
+-#ifdef _WIN32
++#if defined(__SWITCH__)
++// ssrecomp: on the Switch the ARM64 compiler makes its own code memory (ARMJIT_Compiler.cpp).
++#elif defined(_WIN32)
+ #include <windows.h>
+ #else
+ #include <sys/mman.h>
+@@ -25,7 +27,7 @@ std::mutex globalMutex;
+ #define APPLE_AARCH64
+ #endif
+ 
+-#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__)
++#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__SWITCH__)
+ static constexpr size_t NumCodeMemSlices = 4;
+ static constexpr size_t CodeMemoryAlignedSize = NumCodeMemSlices * CodeMemorySliceSize;
+ 
+@@ -46,7 +48,7 @@ void* AllocateCodeMem()
+ {
+     std::lock_guard guard(globalMutex);
+ 
+-#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__)
++#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__SWITCH__)
+     if (AvailableCodeMemSlices)
+     {
+         int slice = __builtin_ctz(AvailableCodeMemSlices);
+@@ -57,7 +59,9 @@ void* AllocateCodeMem()
+ #endif
+ 
+     // allocate
+-#ifdef _WIN32
++#if defined(__SWITCH__)
++    return nullptr;
++#elif defined(_WIN32)
+     return VirtualAlloc(nullptr, CodeMemorySliceSize, MEM_RESERVE|MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+ #elif defined(APPLE_AARCH64)
+     return mmap(NULL, CodeMemorySliceSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT,-1, 0);
+@@ -73,7 +77,7 @@ void FreeCodeMem(void* codeMem)
+ {
+     std::lock_guard guard(globalMutex);
+ 
+-#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__)
++#if !defined(APPLE_AARCH64) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__SWITCH__)
+     for (int i = 0; i < NumCodeMemSlices; i++)
+     {
+         if (codeMem == &GetAlignedCodeMemoryStart()[CodeMemorySliceSize * i])
+@@ -85,7 +89,9 @@ void FreeCodeMem(void* codeMem)
+     }
+ #endif
+ 
+-#ifdef _WIN32
++#if defined(__SWITCH__)
++    (void)codeMem;
++#elif defined(_WIN32)
+     VirtualFree(codeMem, CodeMemorySliceSize, MEM_RELEASE|MEM_DECOMMIT);
+ #else
+     munmap(codeMem, CodeMemorySliceSize);
+@@ -99,7 +105,8 @@ void Init()
+     RefCounter++;
+     if (RefCounter == 1)
+     {
+-        #ifdef _WIN32
++        #if defined(__SWITCH__)
++        #elif defined(_WIN32)
+             DWORD dummy;
+             VirtualProtect(GetAlignedCodeMemoryStart(), CodeMemoryAlignedSize, PAGE_EXECUTE_READWRITE, &dummy);
+         #elif defined(APPLE_AARCH64) || defined(__NetBSD__) || defined(__OpenBSD__)
+diff --git a/src/ARMJIT_Memory.cpp b/src/ARMJIT_Memory.cpp
+index 09bad07..25770a6 100644
+--- a/src/ARMJIT_Memory.cpp
++++ b/src/ARMJIT_Memory.cpp
+@@ -17,7 +17,19 @@
+ */
+ 
+ #if defined(__SWITCH__)
++// ssrecomp: melonDS 1.1's Switch code for fast memory had not been kept up to date with the
++// rest of the JIT (it would not build). It is redone here after RSDuck's Switch port of
++// melonDS, where it worked: the DS's memory is a heap buffer turned into code memory
++// (svcMapProcessCodeMemory), which can be mapped as many times as needed into two 4 GB
++// address spaces (svcMapProcessMemory), one for each DS processor; an access that misses
++// comes to the process's exception handler (end of this file), which maps the memory there
++// or rewrites the access to the slower checked path, and goes back to the code.
++// If any of it fails, or SSR_JIT_NOFASTMEM is set, the JIT runs without fast memory, with
++// the DS's memory a plain buffer.
+ #include <switch.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
+ #elif defined(_WIN32)
+ #include <windows.h>
+ #else
+@@ -102,6 +114,12 @@
+     #endif
+ #endif
+ 
++#if defined(__SWITCH__)
++// The start of the program in memory (libnx). The JIT's code goes just below it
++// (ARMJIT_Compiler.cpp).
++extern "C" char __start__;
++#endif
++
+ namespace melonDS
+ {
+ 
+@@ -116,48 +134,7 @@ using Platform::LogLevel;
+ #endif
+ 
+ #if defined(__SWITCH__)
+-// with LTO the symbols seem to be not properly overriden
+-// if they're somewhere else
+-
+-void HandleFault(u64 pc, u64 lr, u64 fp, u64 faultAddr, u32 desc);
+-
+-extern "C"
+-{
+-
+-void ARM_RestoreContext(u64* registers) __attribute__((noreturn));
+-
+-extern char __start__;
+-extern char __rodata_start;
+-
+-alignas(16) u8 __nx_exception_stack[0x8000];
+-u64 __nx_exception_stack_size = 0x8000;
+-
+-void __libnx_exception_handler(ThreadExceptionDump* ctx)
+-{
+-    ARMJIT_Memory::FaultDescription desc;
+-    u8* curArea = (u8*)(NDS::CurCPU == 0 ? ARMJIT_Memory::FastMem9Start : ARMJIT_Memory::FastMem7Start);
+-    desc.EmulatedFaultAddr = (u8*)ctx->far.x - curArea;
+-    desc.FaultPC = (u8*)ctx->pc.x;
+-
+-    u64 integerRegisters[33];
+-    memcpy(integerRegisters, &ctx->cpu_gprs[0].x, 8*29);
+-    integerRegisters[29] = ctx->fp.x;
+-    integerRegisters[30] = ctx->lr.x;
+-    integerRegisters[31] = ctx->sp.x;
+-    integerRegisters[32] = ctx->pc.x;
+-
+-    if (Melon::FaultHandler(desc))
+-    {
+-        integerRegisters[32] = (u64)desc.FaultPC;
+-
+-        ARM_RestoreContext(integerRegisters);
+-    }
+-
+-    HandleFault(ctx->pc.x, ctx->lr.x, ctx->fp.x, ctx->far.x, ctx->error_desc);
+-}
+-
+-}
+-
++// (The Switch's exception handler is at the end of this file.)
+ #elif defined(_WIN32)
+ 
+ static LPVOID ExceptionHandlerHandle = nullptr;
+@@ -289,8 +266,14 @@ bool ARMJIT_Memory::MapIntoRange(u32 addr, u32 num, u32 offset, u32 size) noexce
+ 
+     u8* dst = (u8*)(num == 0 ? FastMem9Start : FastMem7Start) + addr;
+ #ifdef __SWITCH__
+-    Result r = (svcMapProcessMemory(dst, envGetOwnProcessHandle(),
+-        (u64)(MemoryBaseCodeMem + offset), size));
++    Result r = svcMapProcessMemory(dst, envGetOwnProcessHandle(), (u64)(MemoryBaseCodeMem + offset), size);
++    if (R_FAILED(r))
++    {
++        // (A mapping that fails is not fatal: the accesses there take the slower path.)
++        static int failures = 0;
++        if (failures++ < 8)
++            fprintf(stderr, "[jit] fast memory: mapping %x (+%x) of %d failed: 0x%x\n", addr, size, num, (unsigned)r);
++    }
+     return R_SUCCEEDED(r);
+ #elif defined(_WIN32)
+     uintptr_t uintptrDst = reinterpret_cast<uintptr_t>(dst);
+@@ -347,8 +330,13 @@ bool ARMJIT_Memory::UnmapFromRange(u32 addr, u32 num, u32 offset, u32 size) noex
+ 
+     u8* dst = (u8*)(num == 0 ? FastMem9Start : FastMem7Start) + addr;
+ #ifdef __SWITCH__
+-    Result r = svcUnmapProcessMemory(dst, envGetOwnProcessHandle(),
+-        (u64)(MemoryBaseCodeMem + offset), size);
++    Result r = svcUnmapProcessMemory(dst, envGetOwnProcessHandle(), (u64)(MemoryBaseCodeMem + offset), size);
++    if (R_FAILED(r))
++    {
++        static int failures = 0;
++        if (failures++ < 8)
++            fprintf(stderr, "[jit] fast memory: unmapping %x (+%x) of %d failed: 0x%x\n", addr, size, num, (unsigned)r);
++    }
+     return R_SUCCEEDED(r);
+ #elif defined(_WIN32)
+     if (!UnmapViewOfFileEx(dst, MEM_PRESERVE_PLACEHOLDER))
+@@ -462,7 +450,7 @@ void ARMJIT_Memory::Mapping::Unmap(int region, melonDS::NDS& nds) noexcept
+             {
+                 u32 segmentSize = offset - segmentOffset;
+                 Log(LogLevel::Debug, "unmapping %x %x %x %x\n", Addr + segmentOffset, Num, segmentOffset + LocalOffset + OffsetsPerRegion[region], segmentSize);
+-                bool success = memory.UnmapFromRange(Addr + segmentOffset, Num, segmentOffset + LocalOffset + OffsetsPerRegion[region], segmentSize);
++                bool success = nds.JIT.Memory.UnmapFromRange(Addr + segmentOffset, Num, segmentOffset + LocalOffset + OffsetsPerRegion[region], segmentSize);
+                 assert(success);
+             }
+ #endif
+@@ -743,7 +731,11 @@ u32 ARMJIT_Memory::PageShift = 0;
+ 
+ bool ARMJIT_Memory::IsFastMemSupported()
+ {
+-#if defined(__APPLE__) || defined(__OpenBSD__)
++#if defined(__SWITCH__)
++    PageSize = 0x1000;
++    PageShift = 12;
++    return SwitchFastMem;
++#elif defined(__APPLE__) || defined(__OpenBSD__)
+     return false;
+ #else
+     static bool initialised = false;
+@@ -769,7 +761,8 @@ bool ARMJIT_Memory::IsFastMemSupported()
+ 
+ void ARMJIT_Memory::RegisterFaultHandler()
+ {
+-#ifdef _WIN32
++#if defined(__SWITCH__)
++#elif defined(_WIN32)
+     ExceptionHandlerHandle = AddVectoredExceptionHandler(1, ExceptionHandler);
+ 
+     KernelBaseDll = LoadLibrary("KernelBase.dll");
+@@ -798,7 +791,8 @@ void ARMJIT_Memory::RegisterFaultHandler()
+ 
+ void ARMJIT_Memory::UnregisterFaultHandler()
+ {
+-#ifdef _WIN32
++#if defined(__SWITCH__)
++#elif defined(_WIN32)
+     if (ExceptionHandlerHandle)
+     {
+         RemoveVectoredExceptionHandler(ExceptionHandlerHandle);
+@@ -845,28 +839,16 @@ ARMJIT_Memory::ARMJIT_Memory(melonDS::NDS& nds) : NDS(nds)
+ {
+     ARMJIT_Global::Init();
+ #if defined(__SWITCH__)
+-    MemoryBase = (u8*)aligned_alloc(0x1000, MemoryTotalSize);
+-    virtmemLock();
+-    MemoryBaseCodeMem = (u8*)virtmemFindCodeMemory(MemoryTotalSize, 0x1000);
+-
+-    bool succeded = R_SUCCEEDED(svcMapProcessCodeMemory(envGetOwnProcessHandle(), (u64)MemoryBaseCodeMem,
+-        (u64)MemoryBase, MemoryTotalSize));
+-    assert(succeded);
+-    succeded = R_SUCCEEDED(svcSetProcessMemoryPermission(envGetOwnProcessHandle(), (u64)MemoryBaseCodeMem,
+-        MemoryTotalSize, Perm_Rw));
+-    assert(succeded);
+-
+-    // 8 GB of address space, just don't ask...
+-    FastMem9Start = virtmemFindAslr(AddrSpaceSize, 0x1000);
+-    assert(FastMem9Start);
+-    FastMem7Start = virtmemFindAslr(AddrSpaceSize, 0x1000);
+-    assert(FastMem7Start);
+-
+-    FastMem9Reservation = virtmemAddReservation(FastMem9Start, AddrSpaceSize);
+-    FastMem7Reservation = virtmemAddReservation(FastMem7Start, AddrSpaceSize);
+-    virtmemUnlock();
+-
+-    u8* basePtr = MemoryBaseCodeMem;
++    MemoryHeap = (u8*)aligned_alloc(0x1000, MemoryTotalSize);
++    memset(MemoryHeap, 0, MemoryTotalSize);
++    MemoryBase = MemoryHeap;
++    FastMem9Start = nullptr;
++    FastMem7Start = nullptr;
++    SwitchFastMem = false;
++    if (getenv("SSR_JIT_NOFASTMEM"))
++        fprintf(stderr, "[jit] fast memory: off\n");
++    else
++        SwitchFastMem = SetUpSwitchFastMem();
+ #elif defined(_WIN32)
+     if (virtualAlloc2Ptr)
+     {
+@@ -923,26 +905,24 @@ ARMJIT_Memory::ARMJIT_Memory(melonDS::NDS& nds) : NDS(nds)
+ 
+     mmap(MemoryBase, MemoryTotalSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, MemoryFile, 0);
+ #endif
++#if defined(__SWITCH__)
++    // (FastMem9Start and FastMem7Start are set by SetUpSwitchFastMem.)
++#else
+     FastMem9Start = MemoryBase+MemoryTotalSize;
+     FastMem7Start = static_cast<u8*>(FastMem9Start)+AddrSpaceSize;
++#endif
++    // ssrecomp: the page size is also used without fast memory (code tracking); it is set here.
++    IsFastMemSupported();
+ }
+ 
+ ARMJIT_Memory::~ARMJIT_Memory() noexcept
+ {
+ #if defined(__SWITCH__)
+-    virtmemLock();
+-    if (FastMem9Reservation)
+-        virtmemRemoveReservation(FastMem9Reservation);
+-
+-    if (FastMem7Reservation)
+-        virtmemRemoveReservation(FastMem7Reservation);
+-
+-    FastMem9Reservation = nullptr;
+-    FastMem7Reservation = nullptr;
+-    virtmemUnlock();
+-
+-    svcUnmapProcessCodeMemory(envGetOwnProcessHandle(), (u64)MemoryBaseCodeMem, (u64)MemoryBase, MemoryTotalSize);
+-    free(MemoryBase);
++    if (MemoryBaseCodeMem)
++        TearDownSwitchFastMem();
++    else
++        free(MemoryHeap);
++    MemoryHeap = nullptr;
+     MemoryBase = nullptr;
+ #elif defined(_WIN32)
+     if (virtualAlloc2Ptr)
+@@ -1001,6 +981,200 @@ ARMJIT_Memory::~ARMJIT_Memory() noexcept
+     ARMJIT_Global::DeInit();
+ }
+ 
++#if defined(__SWITCH__)
++bool ARMJIT_Memory::SwitchFastMem = false;
++
++// A test of the exception handler when fast memory is set up: a read in the address space,
++// where nothing is mapped yet, that the handler skips. It comes back with the read's
++// register, the flags and a NEON register as they were, or the program ends there (and the
++// next start goes without fast memory: see SwitchPlatform::Start).
++static volatile int SwitchProbeState = 0; // 1 while testing, 2 once the handler has been
++static volatile u64 SwitchProbeAddr = 0;
++
++static bool ProbeSwitchExceptions(u8* addr)
++{
++    SwitchProbeAddr = (u64)addr;
++    SwitchProbeState = 1;
++    u64 value = 0x5353, zero = 0, neon = 0;
++    asm volatile(
++        "fmov d16, %3\n"
++        "cmp xzr, xzr\n"
++        "ldr %0, [%4]\n"
++        "cset %1, eq\n"
++        "fmov %2, d16\n"
++        : "+r"(value), "=&r"(zero), "=&r"(neon)
++        : "r"(0x0123456789ABCDEFull), "r"(addr)
++        : "v16", "cc", "memory");
++    const bool ok = SwitchProbeState == 2 && value == 0x5353 && zero == 1 && neon == 0x0123456789ABCDEFull;
++    if (!ok)
++        fprintf(stderr, "[jit] fast memory: the exception test went wrong (%d, %llx, %llu, %llx)\n",
++            SwitchProbeState, (unsigned long long)value, (unsigned long long)zero, (unsigned long long)neon);
++    SwitchProbeState = 0;
++    return ok;
++}
++
++bool ARMJIT_Memory::SetUpSwitchFastMem() noexcept
++{
++    const Handle self = envGetOwnProcessHandle();
++    virtmemLock();
++    // While the address spaces are placed, the 512 MB below the program are kept out of
++    // reach: the JIT's code goes there, within branch range of the program.
++    ::VirtmemReservation* keepOut = virtmemAddReservation(&__start__ - 0x20000000, 0x20000000);
++    u8* codeMem = (u8*)virtmemFindCodeMemory(MemoryTotalSize, 0x1000);
++    Result rc = codeMem
++        ? svcMapProcessCodeMemory(self, (u64)codeMem, (u64)MemoryHeap, MemoryTotalSize)
++        : MAKERESULT(Module_Libnx, LibnxError_OutOfMemory);
++    fprintf(stderr, "[jit] fast memory: the DS's memory as code memory at %p: 0x%x\n", codeMem, (unsigned)rc);
++    const bool isCodeMem = R_SUCCEEDED(rc);
++    if (isCodeMem)
++    {
++        rc = svcSetProcessMemoryPermission(self, (u64)codeMem, MemoryTotalSize, Perm_Rw);
++        fprintf(stderr, "[jit] fast memory: made writable: 0x%x\n", (unsigned)rc);
++    }
++    void* area9 = nullptr;
++    void* area7 = nullptr;
++    if (R_SUCCEEDED(rc))
++    {
++        // (Each one reserved before the next is looked for, so that the two cannot overlap.)
++        area9 = virtmemFindAslr(AddrSpaceSize, 0x1000);
++        if (area9) FastMem9Reservation = virtmemAddReservation(area9, AddrSpaceSize);
++        area7 = virtmemFindAslr(AddrSpaceSize, 0x1000);
++        if (area7) FastMem7Reservation = virtmemAddReservation(area7, AddrSpaceSize);
++        fprintf(stderr, "[jit] fast memory: address spaces at %p and %p\n", area9, area7);
++    }
++    if (keepOut) virtmemRemoveReservation(keepOut);
++    virtmemUnlock();
++
++    bool ok = R_SUCCEEDED(rc) && FastMem9Reservation && FastMem7Reservation;
++    if (ok)
++    {
++        MemoryBaseCodeMem = codeMem;
++        MemoryBase = codeMem; // (the heap buffer cannot be reached while it is code memory)
++        FastMem9Start = area9;
++        FastMem7Start = area7;
++        ok = ProbeSwitchExceptions((u8*)area9 + 0x1000);
++    }
++    if (!ok)
++    {
++        virtmemLock();
++        if (FastMem9Reservation) virtmemRemoveReservation(FastMem9Reservation);
++        if (FastMem7Reservation) virtmemRemoveReservation(FastMem7Reservation);
++        virtmemUnlock();
++        FastMem9Reservation = FastMem7Reservation = nullptr;
++        FastMem9Start = FastMem7Start = nullptr;
++        MemoryBaseCodeMem = nullptr;
++        MemoryBase = MemoryHeap;
++        if (isCodeMem)
++        {
++            rc = svcUnmapProcessCodeMemory(self, (u64)codeMem, (u64)MemoryHeap, MemoryTotalSize);
++            if (R_FAILED(rc))
++            {
++                // The buffer cannot be had back: a new one, and the old one left as it is.
++                fprintf(stderr, "[jit] fast memory: could not undo the code memory: 0x%x\n", (unsigned)rc);
++                MemoryHeap = (u8*)aligned_alloc(0x1000, MemoryTotalSize);
++                memset(MemoryHeap, 0, MemoryTotalSize);
++                MemoryBase = MemoryHeap;
++            }
++        }
++    }
++    fprintf(stderr, "[jit] fast memory: %s\n", ok ? "on" : "off");
++    fflush(stderr);
++    return ok;
++}
++
++void ARMJIT_Memory::TearDownSwitchFastMem() noexcept
++{
++    SwitchFastMem = false;
++    const Handle self = envGetOwnProcessHandle();
++    // What is still mapped in the address spaces goes first: code memory cannot be undone
++    // while it is mapped somewhere. Each mapping's mapped pages go in runs, or a page at a
++    // time where a run will not go (a run can take in pages of another region: the DTCM's
++    // in main RAM's mirrors).
++    for (int region = 0; region < memregions_Count; region++)
++    {
++        for (int i = 0; i < Mappings[region].Length; i++)
++        {
++            const Mapping& m = Mappings[region][i];
++            u8* statuses = m.Num == 0 ? MappingStatus9 : MappingStatus7;
++            u8* area = (u8*)(m.Num == 0 ? FastMem9Start : FastMem7Start);
++            auto unmap = [&](u32 from, u32 size) {
++                return R_SUCCEEDED(svcUnmapProcessMemory(area + m.Addr + from, self,
++                    (u64)(MemoryBaseCodeMem + OffsetsPerRegion[region] + m.LocalOffset + from), size));
++            };
++            u32 off = 0;
++            while (off < m.Size)
++            {
++                if (statuses[(m.Addr + off) >> 12] != memstate_MappedRW)
++                {
++                    off += 0x1000;
++                    continue;
++                }
++                u32 end = off;
++                while (end < m.Size && statuses[(m.Addr + end) >> 12] == memstate_MappedRW) end += 0x1000;
++                const bool all = unmap(off, end - off);
++                for (u32 p = off; p < end; p += 0x1000)
++                    if (all || unmap(p, 0x1000)) statuses[(m.Addr + p) >> 12] = memstate_Unmapped;
++                off = end;
++            }
++        }
++        Mappings[region].Clear();
++    }
++
++    virtmemLock();
++    if (FastMem9Reservation) virtmemRemoveReservation(FastMem9Reservation);
++    if (FastMem7Reservation) virtmemRemoveReservation(FastMem7Reservation);
++    virtmemUnlock();
++    FastMem9Reservation = FastMem7Reservation = nullptr;
++
++    const Result rc = svcUnmapProcessCodeMemory(self, (u64)MemoryBaseCodeMem, (u64)MemoryHeap, MemoryTotalSize);
++    if (R_SUCCEEDED(rc))
++        free(MemoryHeap);
++    else
++        fprintf(stderr, "[jit] fast memory: could not undo the code memory: 0x%x\n", (unsigned)rc);
++    MemoryBaseCodeMem = nullptr;
++    FastMem9Start = FastMem7Start = nullptr;
++}
++
++bool ARMJIT_Memory::SwitchFault(u64 faultAddr, u64& pc) noexcept
++{
++    melonDS::NDS* nds = melonDS::NDS::Current;
++    if (!SwitchFastMem || !nds) return false;
++    ARMJIT_Memory& mem = nds->JIT.Memory;
++    const u64 area = (u64)(nds->CurCPU == 0 ? mem.FastMem9Start : mem.FastMem7Start);
++    if (!area || faultAddr < area || faultAddr - area >= AddrSpaceSize) return false;
++    FaultDescription desc {};
++    desc.EmulatedFaultAddr = (u32)(faultAddr - area);
++    desc.FaultPC = (u8*)pc;
++    if (!FaultHandler(desc, *nds)) return false;
++    pc = (u64)desc.FaultPC;
++    return true;
++}
++
++// For an exception that is not fast memory's: where it happened, in game.log, before the
++// program ends.
++static volatile bool SwitchCrashing = false;
++
++static void SwitchCrashReport(const ThreadExceptionDump* ctx)
++{
++    if (SwitchCrashing) return; // (an exception while reporting one)
++    SwitchCrashing = true;
++    const u64 base = (u64)&__start__;
++    fprintf(stderr, "[crash] exception 0x%x at %p (lr %p, address %p); the program is at %p\n",
++        ctx->error_desc, (void*)ctx->pc.x, (void*)ctx->lr.x, (void*)ctx->far.x, (void*)base);
++    // The calls that led there, by the frame pointers (as far as they look like frames).
++    u64 fp = ctx->fp.x;
++    const u64 sp = ctx->sp.x;
++    for (int i = 0; i < 24 && fp && !(fp & 7) && fp >= sp && fp - sp < 0x400000; i++)
++    {
++        const u64 next = ((const u64*)fp)[0], lr = ((const u64*)fp)[1];
++        fprintf(stderr, "[crash]   called from %p (program + 0x%llx)\n", (void*)lr, (unsigned long long)(lr - base));
++        if (next <= fp) break;
++        fp = next;
++    }
++    fflush(stderr);
++}
++#endif
++
+ void ARMJIT_Memory::Reset() noexcept
+ {
+     for (int region = 0; region < memregions_Count; region++)
+@@ -1609,3 +1783,42 @@ void* ARMJIT_Memory::GetFuncForAddr(ARM* cpu, u32 addr, bool store, int size) co
+     return NULL;
+ }
+ }
++
++#if defined(__SWITCH__)
++// The process's exception handler (libnx calls it on the exception stack below, after the
++// kernel has let go of the exception). A memory access of the JIT in an address space
++// goes back to the code; anything else ends the program as before, now with a note.
++extern "C"
++{
++
++// Back to the code that faulted with every register as it was, but for the program counter
++// and x17 (ARMJIT_A64/ARMJIT_Linkage.S).
++void ARM_RestoreExceptionDump(ThreadExceptionDump* ctx, u64 pc) __attribute__((noreturn));
++
++// libnx's own exception stack is 1 KB: too little for mapping memory and rewriting code.
++alignas(16) u8 __nx_exception_stack[0x10000];
++u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
++
++void __libnx_exception_handler(ThreadExceptionDump* ctx)
++{
++    if (melonDS::SwitchProbeState == 1 && ctx->far.x == melonDS::SwitchProbeAddr)
++    {
++        melonDS::SwitchProbeState = 2;
++        ARM_RestoreExceptionDump(ctx, ctx->pc.x + 4);
++    }
++    u64 pc = ctx->pc.x;
++    if (melonDS::ARMJIT_Memory::SwitchFault(ctx->far.x, pc))
++        ARM_RestoreExceptionDump(ctx, pc);
++    melonDS::SwitchCrashReport(ctx);
++    // On return libnx ends the program (svcBreak), as an exception without a handler would.
++}
++
++}
++
++static_assert(offsetof(ThreadExceptionDump, cpu_gprs) == 16, "ARM_RestoreExceptionDump");
++static_assert(offsetof(ThreadExceptionDump, fp) == 248, "ARM_RestoreExceptionDump");
++static_assert(offsetof(ThreadExceptionDump, sp) == 264, "ARM_RestoreExceptionDump");
++static_assert(offsetof(ThreadExceptionDump, pc) == 272, "ARM_RestoreExceptionDump");
++static_assert(offsetof(ThreadExceptionDump, fpu_gprs) == 288, "ARM_RestoreExceptionDump");
++static_assert(offsetof(ThreadExceptionDump, pstate) == 800, "ARM_RestoreExceptionDump");
++#endif
+diff --git a/src/ARMJIT_Memory.h b/src/ARMJIT_Memory.h
+index 960b996..60ee4a2 100644
+--- a/src/ARMJIT_Memory.h
++++ b/src/ARMJIT_Memory.h
+@@ -27,7 +27,9 @@
+ #  include "TinyVector.h"
+ #  include "ARM.h"
+ #  if defined(__SWITCH__)
+-#    include <switch.h>
++     // ssrecomp: libnx's own header is not included here (its names would clash with
++     // melonDS's in every file that includes this one); the one type needed is declared.
++     struct VirtmemReservation;
+ #  elif defined(_WIN32)
+ #    include <vector>
+ #    include <windows.h>
+@@ -173,8 +175,19 @@ private:
+     u8* MemoryBase = nullptr;
+ 
+ #if defined(__SWITCH__)
+-    VirtmemReservation* FastMem9Reservation, *FastMem7Reservation;
+-    u8* MemoryBaseCodeMem;
++public:
++    // ssrecomp: fast memory on the Switch (ARMJIT_Memory.cpp). SwitchFault is the part of the
++    // process's exception handler for memory accesses of the JIT: true, with the address to
++    // go on at, when the access was dealt with.
++    static bool SwitchFault(u64 faultAddr, u64& pc) noexcept;
++private:
++    bool SetUpSwitchFastMem() noexcept;
++    void TearDownSwitchFastMem() noexcept;
++    ::VirtmemReservation* FastMem9Reservation = nullptr;
++    ::VirtmemReservation* FastMem7Reservation = nullptr;
++    u8* MemoryHeap = nullptr;        // the heap buffer that holds the DS's memory
++    u8* MemoryBaseCodeMem = nullptr; // the same memory as code memory, mappable into the address spaces
++    static bool SwitchFastMem;       // fast memory is set up (and works)
+ #elif defined(_WIN32)
+     struct VirtmemPlaceholder
+     {
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index e85dd429..f2273793 100644
+index e85dd42..d2e36ef 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -38,6 +38,7 @@ add_library(core STATIC
+@@ -38,6 +38,8 @@ add_library(core STATIC
      GPU2D_Soft.cpp
      GPU3D.cpp
      GPU3D_Soft.cpp
 +    GPU3D_Wide.cpp
++    GPU3D_WideGpu.cpp
      GPU3D_Texcache.cpp
      GPU3D_Texcache.h
      melonDLDI.h
-@@ -235,3 +236,21 @@ endif()
+@@ -95,9 +97,29 @@ if (ENABLE_OGLRENDERER)
+         GPU3D_TexcacheOpenGL.cpp
+         GPU3D_TexcacheOpenGL.h
+         GPU3D_OpenGL_shaders.h
+-        OpenGLSupport.cpp)
++        OpenGLSupport.cpp
++        # ssrecomp: the OpenGL renderer on its own thread, and the function loader.
++        GPU3D_GLThread.cpp
++        frontend/glad/glad.c
++        # ssrecomp: the widescreen view on the graphics chip through OpenGL (PC tests).
++        GPU3D_WideGpu_GL.cpp)
++    # Its shaders (wide_gpu/*.glsl, shared with deko3D) built in as text.
++    set(SSR_WIDE_GPU_TEXT "${CMAKE_CURRENT_BINARY_DIR}/wide_gpu")
++    file(MAKE_DIRECTORY "${SSR_WIDE_GPU_TEXT}")
++    foreach(name wide_vsh wide_fsh final_vsh final_fsh)
++        add_custom_command(OUTPUT "${SSR_WIDE_GPU_TEXT}/${name}_text.h"
++            COMMAND "${CMAKE_COMMAND}" "-DIN=${CMAKE_CURRENT_SOURCE_DIR}/wide_gpu/${name}.glsl"
++                "-DOUT=${SSR_WIDE_GPU_TEXT}/${name}_text.h" "-DNAME=${name}_text"
++                -P "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/switch/embed.cmake"
++            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/wide_gpu/${name}.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/switch/embed.cmake"
++            VERBATIM)
++        target_sources(core PRIVATE "${SSR_WIDE_GPU_TEXT}/${name}_text.h")
++    endforeach()
++    target_include_directories(core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+ 
+     target_compile_definitions(core PUBLIC OGLRENDERER_ENABLED)
++    # ssrecomp: the bundled glad loader (PlatformOGL.h's default spelling of it does not expand).
++    target_compile_definitions(core PRIVATE [[MELONDS_GL_HEADER="frontend/glad/glad.h"]])
+ endif()
+ 
+ if (ENABLE_JIT)
+@@ -115,7 +137,12 @@ if (ENABLE_JIT)
+     if (WIN32)
+         # Required for memory mapping-related functions introduced in Windows 8
+         target_compile_definitions(core PRIVATE -D_WIN32_WINNT=_WIN32_WINNT_WIN8)
+-        target_link_libraries(core PRIVATE onecore)
++        # (ssrecomp: only where the toolchain has it; Ubuntu's MinGW-w64 has none. The two
++        # functions it is for are looked up when the JIT starts, ARMJIT_Memory.cpp.)
++        find_library(SSR_ONECORE_LIB onecore)
++        if (SSR_ONECORE_LIB)
++            target_link_libraries(core PRIVATE onecore)
++        endif()
+     endif()
+ 
+     if (CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+@@ -235,3 +262,21 @@ endif()
  #  )
  #endif()
  
@@ -249,8 +1117,48 @@ index e85dd429..f2273793 100644
 +    endif()
 +endif()
 +set_source_files_properties(GPU3D_Wide.cpp PROPERTIES COMPILE_OPTIONS "${SSR_WIDE_FLAGS}")
+diff --git a/src/DMA.cpp b/src/DMA.cpp
+index 8db1cca..15bdc00 100644
+--- a/src/DMA.cpp
++++ b/src/DMA.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "SsrProf.h" // ssrecomp
+ #include <stdio.h>
+ #include "NDS.h"
+ #include "DSi.h"
+@@ -696,6 +697,7 @@ void DMA::Run7()
+ void DMA::Run()
+ {
+     if (!Running) return;
++    SsrProf::Scope prof(SsrProf::DMA); // ssrecomp
+     if (CPU == 0) return Run9();
+     else          return Run7();
+ }
+diff --git a/src/GPU.cpp b/src/GPU.cpp
+index e1c7ddc..6de99f2 100644
+--- a/src/GPU.cpp
++++ b/src/GPU.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "SsrProf.h" // ssrecomp
+ #include <string.h>
+ #include "NDS.h"
+ #include "GPU.h"
+@@ -884,6 +885,7 @@ void GPU::StartHBlank(u32 line) noexcept
+     {
+         // draw
+         // note: this should start 48 cycles after the scanline start
++        SsrProf::Scope prof(SsrProf::Draw2D); // ssrecomp
+         if (line < 192)
+         {
+             GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
 diff --git a/src/GPU2D_Soft.cpp b/src/GPU2D_Soft.cpp
-index 2f8afcba..90044d1d 100644
+index 2f8afcb..ef7b777 100644
 --- a/src/GPU2D_Soft.cpp
 +++ b/src/GPU2D_Soft.cpp
 @@ -16,10 +16,16 @@
@@ -280,10 +1188,82 @@ index 2f8afcba..90044d1d 100644
  {
      u32 coloreffect = 0;
      u32 eva, evb;
-@@ -102,6 +109,60 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
+@@ -102,6 +109,136 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
      return val1;
  }
  
++void SoftRenderer::RecordEdges(u32 line)
++{
++    // The 6 bits per channel of a layer pixel as the finished line has them (see the end of
++    // DrawScanline).
++    auto toXRGB = [](u32 v) -> u32 {
++        u32 r = (v << 18) & 0xFC0000, g = (v << 2) & 0xFC00, b = (v >> 14) & 0xFC;
++        u32 c = r | g | b;
++        return c | ((c & 0xC0C0C0) >> 6);
++    };
++    const u32 blendCnt = CurUnit->BlendCnt;
++    for (int side = 0; side < 2; side++)
++    {
++        const int i = side ? 255 : 0;
++        const u32 val1 = BGOBJLine[i], val2 = BGOBJLine[256 + i];
++        const u32 flag1 = val1 >> 24, flag2 = val2 >> 24;
++        u32 eva = 16, evb = 0; // shows as it is
++        if ((flag1 & 0xC0) == 0x40)
++            eva = 0, evb = 16; // the 3D layer is on top
++        else if ((flag2 & 0xC0) == 0x40)
++        {
++            // Over a 3D pixel: blended with it? The same choice as ColorComposite's.
++            if ((flag1 & 0x80) && (blendCnt & 0x0100))
++            {
++                // A semi-transparent sprite.
++                if (flag1 & 0x40) eva = flag1 & 0x1F, evb = 16 - eva;
++                else eva = CurUnit->EVA, evb = CurUnit->EVB;
++            }
++            else
++            {
++                const u32 target1 = (flag1 & 0x80) ? 0x10 : flag1;
++                if ((blendCnt & target1) && (WindowMask[i] & 0x20) && ((blendCnt >> 6) & 3) == 1 && (blendCnt & 0x0100))
++                    eva = CurUnit->EVA, evb = CurUnit->EVB;
++            }
++        }
++        // The colour as the screen shows it: with the brightening or darkening of the colour
++        // effects where it applies (as ColorComposite), then the master brightness (as the end
++        // of DrawScanline). Fades to black or white are made with either; without them the
++        // continuation beside the screen stayed bright while the screen went dark (the message
++        // box's border lines at the end of a battle).
++        u32 shown = val1;
++        if (eva == 16 && evb == 0 && (flag1 & 0xC0) != 0x40)
++        {
++            const u32 target1 = (flag1 & 0x80) ? 0x10 : flag1;
++            if ((blendCnt & target1) && (WindowMask[i] & 0x20))
++            {
++                const u32 effect = (blendCnt >> 6) & 3;
++                if (effect == 2) shown = ColorBrightnessUp(val1, CurUnit->EVY, 0x8);
++                else if (effect == 3) shown = ColorBrightnessDown(val1, CurUnit->EVY, 0x7);
++            }
++        }
++        const u32 master = CurUnit->MasterBrightness;
++        const u32 factor = std::min<u32>(master & 0x1F, 16);
++        if ((master >> 14) == 1) shown = ColorBrightnessUp(shown, factor, 0x0);
++        else if ((master >> 14) == 2) shown = ColorBrightnessDown(shown, factor, 0xF);
++        EdgeColour[CurUnit->Num][line * 2 + side] = toXRGB(shown);
++        EdgeBlend[CurUnit->Num][line * 2 + side] = (u16)(eva | evb << 8);
++        bool flat = true;
++        for (int k = 1; k < 8 && flat; k++)
++        {
++            const u32 v = BGOBJLine[side ? 255 - k : k];
++            flat = (v & 0x3F3F3F) == (val1 & 0x3F3F3F) && (v >> 24) == flag1;
++        }
++        // A bitmap background: where the game shows a captured picture of the screen
++        // (BG2 or BG3 as an extended bitmap, or BG2 in the large-bitmap mode).
++        const u32 mode = CurUnit->DispCnt & 7;
++        const bool bitmap = (flag1 & 0xC0) == 0 &&
++            (((flag1 & 0x04) && ((mode == 5 && (CurUnit->BGCnt[2] & 0x80)) || mode == 6)) ||
++             ((flag1 & 0x08) && mode >= 3 && mode <= 5 && (CurUnit->BGCnt[3] & 0x80)));
++        EdgeFlat[CurUnit->Num][line * 2 + side] = (flat ? 1 : 0) | (bitmap ? 2 : 0);
++    }
++}
++
 +// ssrecomp: most lines of a frame come out the same as in the frame before (a menu on the
 +// bottom screen, the overworld standing still). A line is drawn again only if something it
 +// is made from changed: the engine's registers, the sprite pixels of the line (drawn
@@ -300,6 +1280,10 @@ index 2f8afcba..90044d1d 100644
 +    u8 objWindow[256];
 +    u32 line3D[256];
 +    u32 out[256];
++    // How far drawing the line moved the affine backgrounds' internal reference points
++    // (BG2 x, BG3 x, BG2 y, BG3 y): a copied line has to move them as well, or every line
++    // below it samples the wrong row (the Black 2 Town Map turned into streaks and drifted).
++    s32 refStep[4];
 +};
 +LineCache Cache[2][192];
 +u32 CacheEpoch[2] = { 1, 1 };
@@ -341,7 +1325,7 @@ index 2f8afcba..90044d1d 100644
  void SoftRenderer::DrawScanline(u32 line, Unit* unit)
  {
      CurUnit = unit;
-@@ -115,20 +176,22 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+@@ -115,20 +252,22 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
      if (CurUnit->Num == 0)
      {
          auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
@@ -370,7 +1354,7 @@ index 2f8afcba..90044d1d 100644
      }
  
      bool forceblank = false;
-@@ -170,6 +233,40 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+@@ -170,8 +309,56 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
      u32 dispmode = CurUnit->DispCnt >> 16;
      dispmode &= (CurUnit->Num ? 0x1 : 0x3);
  
@@ -396,6 +1380,11 @@ index 2f8afcba..90044d1d 100644
 +            else
 +                CurUnit->BGMosaicY++;
 +            CurUnit->UpdateMosaicCounters(line);
++            for (int k = 0; k < 2; k++)
++            {
++                CurUnit->BGXRefInternal[k] += cache->refStep[k];
++                CurUnit->BGYRefInternal[k] += cache->refStep[2 + k];
++            }
 +            memcpy(dst, cache->out, sizeof(cache->out));
 +            return;
 +        }
@@ -409,9 +1398,20 @@ index 2f8afcba..90044d1d 100644
 +    }
 +
      // always render regular graphics
++    const s32 refsBefore[4] = { CurUnit->BGXRefInternal[0], CurUnit->BGXRefInternal[1],
++                                CurUnit->BGYRefInternal[0], CurUnit->BGYRefInternal[1] };
      DrawScanline_BGOBJ(line);
++    if (cache)
++    {
++        cache->refStep[0] = CurUnit->BGXRefInternal[0] - refsBefore[0];
++        cache->refStep[1] = CurUnit->BGXRefInternal[1] - refsBefore[1];
++        cache->refStep[2] = CurUnit->BGYRefInternal[0] - refsBefore[2];
++        cache->refStep[3] = CurUnit->BGYRefInternal[1] - refsBefore[3];
++    }
      CurUnit->UpdateMosaicCounters(line);
-@@ -303,6 +400,12 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+ 
+     switch (dispmode)
+@@ -303,6 +490,12 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
  
          *(u64*)&dst[i] = c | ((c & 0x00C0C0C000C0C0C0) >> 6) | 0xFF000000FF000000;
      }
@@ -424,7 +1424,7 @@ index 2f8afcba..90044d1d 100644
  }
  
  void SoftRenderer::VBlankEnd(Unit* unitA, Unit* unitB)
-@@ -576,7 +679,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
+@@ -576,7 +769,7 @@ void SoftRenderer::DoCapture(u32 line, u32 width)
  template<u32 bgmode>
  void SoftRenderer::DrawScanlineBGMode(u32 line)
  {
@@ -433,7 +1433,7 @@ index 2f8afcba..90044d1d 100644
      u16* bgCnt = CurUnit->BGCnt;
      for (int i = 3; i >= 0; i--)
      {
-@@ -631,7 +734,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
+@@ -631,7 +824,7 @@ void SoftRenderer::DrawScanlineBGMode(u32 line)
  
  void SoftRenderer::DrawScanlineBGMode6(u32 line)
  {
@@ -442,7 +1442,7 @@ index 2f8afcba..90044d1d 100644
      u16* bgCnt = CurUnit->BGCnt;
      for (int i = 3; i >= 0; i--)
      {
-@@ -659,7 +762,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
+@@ -659,7 +852,7 @@ void SoftRenderer::DrawScanlineBGMode6(u32 line)
  
  void SoftRenderer::DrawScanlineBGMode7(u32 line)
  {
@@ -451,7 +1451,7 @@ index 2f8afcba..90044d1d 100644
      u16* bgCnt = CurUnit->BGCnt;
      // mode 7 only has text-mode BG0 and BG1
  
-@@ -691,11 +794,29 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
+@@ -691,11 +884,29 @@ void SoftRenderer::DrawScanlineBGMode7(u32 line)
  
  void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  {
@@ -481,11 +1481,12 @@ index 2f8afcba..90044d1d 100644
  
          return;
      }
-@@ -741,11 +862,16 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -741,11 +952,17 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  
      if (!GPU.GPU3D.IsRendererAccelerated())
      {
 +        u8* layerFlags = line < 192 ? &LayerFlags[CurUnit->Num][line * 256] : nullptr;
++        if (line < 192) RecordEdges(line);
 +        u8* objPrio = line < 192 ? &ObjPrio[CurUnit->Num][line * 256] : nullptr;
 +        const u32* objLine = OBJLine[CurUnit->Num];
          for (int i = 0; i < 256; i++)
@@ -498,7 +1499,7 @@ index 2f8afcba..90044d1d 100644
              BGOBJLine[i] = ColorComposite(i, val1, val2);
          }
      }
-@@ -859,16 +985,6 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
+@@ -859,16 +1076,6 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
  }
  
  
@@ -515,7 +1516,7 @@ index 2f8afcba..90044d1d 100644
  
  void SoftRenderer::DrawPixel_Accel(u32* dst, u16 color, u32 flag)
  {
-@@ -965,6 +1081,57 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
+@@ -965,6 +1172,57 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
      else
          tilemapaddr += ((yoff & 0xF8) << 3);
  
@@ -573,7 +1574,7 @@ index 2f8afcba..90044d1d 100644
      u16 curtile;
      u16* curpal;
      u32 pixelsaddr;
-@@ -1599,19 +1766,60 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+@@ -1599,19 +1857,60 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
  
          CurUnit->OBJMosaicY = 0;
          CurUnit->OBJMosaicYCount = 0;
@@ -637,7 +1638,7 @@ index 2f8afcba..90044d1d 100644
      NumSprites[CurUnit->Num] = 0;
      memset(OBJLine[CurUnit->Num], 0, 256*4);
      memset(OBJWindow[CurUnit->Num], 0, 256);
-@@ -1634,15 +1842,29 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
+@@ -1634,15 +1933,29 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
          64, 32, 64, 8
      };
  
@@ -673,10 +1674,10 @@ index 2f8afcba..90044d1d 100644
  
              u32 sprline;
 diff --git a/src/GPU2D_Soft.h b/src/GPU2D_Soft.h
-index 4beaf8f9..61a3e491 100644
+index 4beaf8f..bf419de 100644
 --- a/src/GPU2D_Soft.h
 +++ b/src/GPU2D_Soft.h
-@@ -35,7 +35,26 @@ public:
+@@ -35,7 +35,36 @@ public:
  
      void DrawScanline(u32 line, Unit* unit) override;
      void DrawSprites(u32 line, Unit* unit) override;
@@ -686,6 +1687,16 @@ index 4beaf8f9..61a3e491 100644
 +    // ssrecomp: which layer supplied the topmost pixel, per 2D engine, for the frame being drawn.
 +    // Bits 0-3 are BG0-BG3, 0x20 the backdrop, 0x40 the 3D layer, 0x80 a sprite.
 +    u8 LayerFlags[2][256*192] = {};
++    // ssrecomp: the first and last pixel of each line (index line * 2 + side), for continuing
++    // them beside the screen in a wide view (frontend/merged.h). EdgeColour: the topmost
++    // layer's own colour before any blending (XRGB8888, as the finished line has it).
++    // EdgeBlend: how it mixes with the 3D world, eva | evb << 8 (in 16ths, as the DS blends:
++    // own * eva + 3D * evb): 16 if it covers it (or there is no 3D below), 16 << 8 if the 3D
++    // layer is on top. EdgeFlat: bit 0 if the 8 pixels at that edge all have that colour and
++    // layer (a fill, as opposed to a picture), bit 1 if that layer is a bitmap background.
++    u32 EdgeColour[2][192 * 2] = {};
++    u16 EdgeBlend[2][192 * 2] = {};
++    u8 EdgeFlat[2][192 * 2] = {};
 +    // ssrecomp: each line's background scroll registers (BG0-3 x and y), per 2D engine.
 +    u16 LineScroll[2][192][4][2] = {};
 +    // ssrecomp: each line's colour effect and master brightness registers (BLDCNT, BLDY,
@@ -703,7 +1714,15 @@ index 4beaf8f9..61a3e491 100644
  private:
      melonDS::GPU& GPU;
      alignas(8) u32 BGOBJLine[256*3];
-@@ -124,7 +143,16 @@ private:
+@@ -118,13 +147,24 @@ private:
+         return rb | g | 0xFF000000;
+     }
+     u32 ColorComposite(int i, u32 val1, u32 val2) const;
++    // ssrecomp: fills EdgeColour and EdgeFlat for a line (before it is composited).
++    void RecordEdges(u32 line);
+ 
+     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
+     void DrawScanlineBGMode6(u32 line);
      void DrawScanlineBGMode7(u32 line);
      void DrawScanline_BGOBJ(u32 line);
  
@@ -722,10 +1741,18 @@ index 4beaf8f9..61a3e491 100644
  
      typedef void (*DrawPixel)(u32* dst, u16 color, u32 flag);
 diff --git a/src/GPU3D.cpp b/src/GPU3D.cpp
-index 1204741d..b3332a5d 100644
+index 1204741..cf5a11e 100644
 --- a/src/GPU3D.cpp
 +++ b/src/GPU3D.cpp
-@@ -26,8 +26,21 @@
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "SsrProf.h" // ssrecomp
+ #include <stdio.h>
+ #include <string.h>
+ #include <algorithm>
+@@ -26,8 +27,23 @@
  #include "Platform.h"
  #include "GPU3D.h"
  
@@ -738,16 +1765,57 @@ index 1204741d..b3332a5d 100644
 +void WideWait();
 +// How many polygons and vertices SubmitPolygon accepts. The hardware's limits, except while
 +// the frame is submitted again for the widescreen picture, which shows more of the scene.
-+u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
-+void WideOnFlush(GPU3D& g);
++void WideOnFlush(GPU3D& g, bool interpolate);
++bool WideListsOnHelper();
++bool WideReplayPaired(GPU3D& g, Vertex* vram, Polygon* pram, Polygon** list, u32& numPolys, u32& matched, size_t& frameSize);
 +void WideOnRender(GPU& gpu, bool showingInterp);
++void WideWaitForTextures();
 +void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
 +    u32& numPolys, u32& matched);
 +
  using Platform::Log;
  using Platform::LogLevel;
  
-@@ -971,6 +984,19 @@ void GPU3D::SubmitPolygon() noexcept
+@@ -198,6 +214,7 @@ void GPU3D::Reset() noexcept
+ 
+     memset(ExecParams, 0, 32*4);
+     ExecParamCount = 0;
++    ExecCommand = 0xFF;
+ 
+     CycleCount = 0;
+     VertexPipeline = 0;
+@@ -366,6 +383,7 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
+ 
+     file->VarArray(ExecParams, 32*4);
+     file->Var32(&ExecParamCount);
++    if (!file->Saving) ExecCommand = 0xFF;
+     file->Var32((u32*)&CycleCount);
+     file->Var64(&Timestamp);
+ 
+@@ -493,7 +511,21 @@ void GPU3D::DoSavestate(Savestate* file) noexcept
+         }
+     }
+ 
+-    CmdStallQueue.DoSavestate(file);
++    {
++        // The savestate keeps melonDS's 64-entry layout for the stall queue (see GPU3D.h);
++        // at a frame's end it is all but always empty.
++        FIFO<CmdFIFOEntry, 64> stall;
++        if (file->Saving)
++            for (u32 i = 0; i < CmdStallQueue.Level() && i < 64; i++)
++                stall.Write(CmdStallQueue.Peek(i));
++        stall.DoSavestate(file);
++        if (!file->Saving)
++        {
++            CmdStallQueue.Clear();
++            while (!stall.IsEmpty())
++                CmdStallQueue.Write(stall.Read());
++        }
++    }
+ 
+     file->Var32((u32*)&VertexPipeline);
+     file->Var32((u32*)&NormalPipeline);
+@@ -971,6 +1003,19 @@ void GPU3D::SubmitPolygon() noexcept
      // TODO: work out how it works on the real thing
      // the normalization part is a wild guess
  
@@ -767,16 +1835,16 @@ index 1204741d..b3332a5d 100644
      Vertex *v0, *v1, *v2, *v3;
      s64 normalX, normalY, normalZ;
      s64 dot;
-@@ -1092,7 +1118,7 @@ void GPU3D::SubmitPolygon() noexcept
+@@ -1092,7 +1137,7 @@ void GPU3D::SubmitPolygon() noexcept
  
      // reject the polygon if it's not going to fit in polygon/vertex RAM
  
 -    if (NumPolygons >= 2048 || NumVertices+nverts > 6144)
-+    if (NumPolygons >= SubmitPolygonLimit || NumVertices+nverts > SubmitVertexLimit)
++    if (NumPolygons >= PolygonLimit || NumVertices+nverts > VertexLimit)
      {
          LastStripPolygon = NULL;
          DispCnt |= (1<<13);
-@@ -1589,6 +1615,15 @@ void GPU3D::BoxTest(const u32* params) noexcept
+@@ -1589,6 +1634,15 @@ void GPU3D::BoxTest(const u32* params) noexcept
          cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
      }
  
@@ -792,7 +1860,39 @@ index 1204741d..b3332a5d 100644
      // front face (-Z)
      face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
      res = ClipPolygon<false>(*this, face, 4, 0);
-@@ -2456,8 +2491,28 @@ bool YSort(Polygon* a, Polygon* b)
+@@ -1764,6 +1818,13 @@ void GPU3D::ExecuteCommand() noexcept
+     {
+         // fast path for command which only have a single parameter
+ 
++        // ssrecomp: every FIFO entry carries its command, so one that arrives while another
++        // command still waits for parameters means that command lost some (dropped by the
++        // old 64-entry stall queue, and kept in savestates made then). Without this, every
++        // later command took its neighbour's parameters until another loss happened to undo
++        // it; a valid command stream never gets here.
++        ExecParamCount = 0;
++
+         /*printf("[GXS:%08X] 0x%02X,  0x%08X", GXStat, entry.Command, entry.Param);*/
+ 
+         switch (entry.Command)
+@@ -2116,6 +2177,9 @@ void GPU3D::ExecuteCommand() noexcept
+     }
+     else
+     {
++        if (ExecParamCount && ExecCommand != 0xFF && entry.Command != ExecCommand)
++            ExecParamCount = 0; // the same as above
++        ExecCommand = entry.Command;
+         ExecParams[ExecParamCount] = entry.Param;
+         ExecParamCount++;
+ 
+@@ -2375,6 +2439,7 @@ void GPU3D::FinishWork(s32 cycles) noexcept
+ 
+ void GPU3D::Run() noexcept
+ {
++    SsrProf::Scope prof(SsrProf::Geometry); // ssrecomp
+     if (!GeometryEnabled || FlushRequest ||
+         (CmdPIPE.IsEmpty() && !(GXStat & (1<<27))))
+     {
+@@ -2456,8 +2521,39 @@ bool YSort(Polygon* a, Polygon* b)
      return a->SortKey < b->SortKey;
  }
  
@@ -801,7 +1901,9 @@ index 1204741d..b3332a5d 100644
 +void GPU3D::BuildInterpolatedFrame() noexcept
 +{
 +    InterpPending = false;
-+    if (RawCurrent.empty() || RawPrevious.empty()) return;
++    const bool deferred = InterpDeferred;
++    InterpDeferred = false;
++    if (!deferred && (RawCurrent.empty() || RawPrevious.empty())) return;
 +
 +    if (InterpVertexRAM.empty())
 +    {
@@ -810,9 +1912,18 @@ index 1204741d..b3332a5d 100644
 +    }
 +
 +    u32 matched = 0;
-+    WideReplay(*this, true, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
-+        InterpNumPolygons, matched);
-+    InterpPending = InterpNumPolygons && matched * 2 >= RawCurrent.size();
++    size_t frameSize = RawCurrent.size();
++    if (deferred)
++    {
++        // ssrecomp: the frame flushed at VBlank, as the wide view's helper thread copied it.
++        if (!WideReplayPaired(*this, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
++                InterpNumPolygons, matched, frameSize))
++            return;
++    }
++    else
++        WideReplay(*this, true, InterpVertexRAM.data(), InterpPolygonRAM.data(), InterpRenderPolygonRAM.data(),
++            InterpNumPolygons, matched);
++    InterpPending = InterpNumPolygons && matched * 2 >= frameSize;
 +}
 +
  void GPU3D::VBlank() noexcept
@@ -821,7 +1932,7 @@ index 1204741d..b3332a5d 100644
      if (GeometryEnabled)
      {
          if (RenderingEnabled)
-@@ -2487,6 +2542,20 @@ void GPU3D::VBlank() noexcept
+@@ -2487,6 +2583,41 @@ void GPU3D::VBlank() noexcept
  
                  RenderNumPolygons = NumPolygons;
                  RenderFrameIdentical = false;
@@ -833,8 +1944,29 @@ index 1204741d..b3332a5d 100644
 +                if (InterpolationEnabled || Wide.Owner == this)
 +                {
 +                    const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;
-+                    if (InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing) BuildInterpolatedFrame();
-+                    if (Wide.Owner == this) WideOnFlush(*this);
++                    const bool interpolate = InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing;
++                    // ssrecomp: the wide view's lists are built on a helper thread where there is
++                    // one (WideListsOnHelper), started first so that they are ready by the time
++                    // the in-between frame is drawn; they are built with the in-between lists
++                    // whenever one may be needed, as the DS-resolution one decides below.
++                    const bool helper = Wide.Owner == this && WideListsOnHelper();
++                    if (helper)
++                    {
++                        SsrProf::Scope prof(SsrProf::WideFlush);
++                        WideOnFlush(*this, interpolate);
++                    }
++                    if (interpolate && helper)
++                        InterpDeferred = true; // built when it is drawn, from the helper's pairs
++                    else if (interpolate)
++                    {
++                        SsrProf::Scope prof(SsrProf::Interp);
++                        BuildInterpolatedFrame();
++                    }
++                    if (Wide.Owner == this && !helper)
++                    {
++                        SsrProf::Scope prof(SsrProf::WideFlush);
++                        WideOnFlush(*this, InterpPending);
++                    }
 +                    RawPrevious.swap(RawCurrent);
 +                    RawCurrent.clear();
 +                }
@@ -842,7 +1974,7 @@ index 1204741d..b3332a5d 100644
              }
              else
              {
-@@ -2499,6 +2568,13 @@ void GPU3D::VBlank() noexcept
+@@ -2499,6 +2630,13 @@ void GPU3D::VBlank() noexcept
                      && memcmp(RenderEdgeTable, EdgeTable, 8*2) == 0
                      && memcmp(RenderFogDensityTable + 1, FogDensityTable, 32) == 0
                      && memcmp(RenderToonTable, ToonTable, 32*2) == 0;
@@ -856,13 +1988,21 @@ index 1204741d..b3332a5d 100644
              }
  
              RenderDispCnt = DispCnt;
-@@ -2535,7 +2611,27 @@ void GPU3D::VBlank() noexcept
+@@ -2535,7 +2673,35 @@ void GPU3D::VBlank() noexcept
  
  void GPU3D::VCount215(GPU& gpu) noexcept
  {
++    SsrProf::Scope prof(SsrProf::Render3D); // ssrecomp
++    if (InterpDeferred)
++    {
++        // ssrecomp: the in-between frame of the frame flushed at VBlank (see VBlank).
++        SsrProf::Scope prof(SsrProf::Interp);
++        BuildInterpolatedFrame();
++    }
 +    // ssrecomp: the widescreen picture drawn in the background reads texture memory, which
-+    // rendering a frame is about to bring up to date.
-+    WideWait();
++    // rendering a frame is about to bring up to date. (Not one drawn by the graphics chip
++    // through GPU3D_WideGpu.h: its data was copied when it was sent.)
++    WideWaitForTextures();
 +    if (InterpPending)
 +    {
 +        // ssrecomp: draw the in-between frame now; the real one follows on the next display frame.
@@ -885,7 +2025,7 @@ index 1204741d..b3332a5d 100644
  
  void GPU3D::SetRenderXPos(u16 xpos) noexcept
 diff --git a/src/GPU3D.h b/src/GPU3D.h
-index 08c2208c..c0abc14b 100644
+index 08c2208..8b5664e 100644
 --- a/src/GPU3D.h
 +++ b/src/GPU3D.h
 @@ -20,6 +20,7 @@
@@ -908,7 +2048,43 @@ index 08c2208c..c0abc14b 100644
  public:
      GPU3D(melonDS::NDS& nds, std::unique_ptr<Renderer3D>&& renderer = nullptr) noexcept;
      ~GPU3D() noexcept = default;
-@@ -273,6 +277,12 @@ public:
+@@ -128,6 +132,8 @@ public:
+     void Write16(u32 addr, u16 val) noexcept;
+     void Write32(u32 addr, u32 val) noexcept;
+     void Blit(const GPU& gpu) noexcept;
++    // ssrecomp: for a second GPU3D that only builds polygon lists (GPU3D_Wide.cpp).
++    melonDS::NDS& GetNDS() noexcept { return NDS; }
+ private:
+     melonDS::NDS& NDS;
+     typedef union
+@@ -195,7 +201,15 @@ public:
+     FIFO<CmdFIFOEntry, 256> CmdFIFO {};
+     FIFO<CmdFIFOEntry, 4> CmdPIPE {};
+ 
+-    FIFO<CmdFIFOEntry, 64> CmdStallQueue {};
++    // ssrecomp: melonDS keeps 64 here, enough for one STM. A JIT block only stops after its
++    // last instruction, though, so a block of unrolled stores to the geometry ports (Black 2's
++    // and White 2's battles and overworld) can write well over 64 commands after the FIFO is
++    // full. The extra ones were dropped, which left every later command reading its
++    // neighbour's parameters: White 2's overworld not drawn after a battle (its projection
++    // matrix one word out), black battle backgrounds after a faint, missing summary sprites.
++    // 2048 covers the worst case of a 32-instruction block (32 STMs of 16 words, packed 4 to a
++    // word). Savestates still hold the first 64, as before (GPU3D::DoSavestate).
++    FIFO<CmdFIFOEntry, 2048> CmdStallQueue {};
+ 
+     u32 ZeroDotWLimit = 0xFFFFFF;
+ 
+@@ -203,6 +217,9 @@ public:
+ 
+     u32 ExecParams[32] {};
+     u32 ExecParamCount = 0;
++    // ssrecomp: the command whose parameters ExecParams holds (0xFF: not known, after a
++    // savestate load), to start again in step with the FIFO if a command was cut short.
++    u8 ExecCommand = 0xFF;
+ 
+     s32 CycleCount = 0;
+     s32 VertexPipeline = 0;
+@@ -273,6 +290,12 @@ public:
  
      bool RenderFrameIdentical = false; // not part of the hardware state, don't serialize
  
@@ -921,7 +2097,7 @@ index 08c2208c..c0abc14b 100644
      bool AbortFrame = false;
  
      u64 Timestamp = 0;
-@@ -322,6 +332,28 @@ public:
+@@ -322,6 +345,33 @@ public:
      u32 CurRAMBank = 0;
  
      std::array<Polygon*,2048> RenderPolygonRAM {};
@@ -939,9 +2115,14 @@ index 08c2208c..c0abc14b 100644
 +    std::vector<RawPolygon> RawCurrent;   // frame being submitted
 +    std::vector<RawPolygon> RawPrevious;  // last frame that was flushed
 +    bool InReplay = false;
++    // ssrecomp: how many polygons and vertices SubmitPolygon takes (the DS's memory; the wide
++    // view's lists are given more room).
++    u32 PolygonLimit = 2048, VertexLimit = 6144;
 +    u64 VBlankCount = 0, LastFlushVBlank = 0;
 +    bool InterpPending = false;   // an in-between frame is ready to be shown
 +    bool InterpShowReal = false;  // the real frame must be drawn on the next display frame
++    bool InterpDeferred = false;  // ssrecomp: the in-between frame is built at VCount215 (from the
++                                  // pairs the wide view's helper thread works out, GPU3D_Wide.cpp)
 +    std::vector<Vertex> InterpVertexRAM;
 +    std::vector<Polygon> InterpPolygonRAM;
 +    std::array<Polygon*,2048> InterpRenderPolygonRAM {};
@@ -950,12 +2131,652 @@ index 08c2208c..c0abc14b 100644
      u32 RenderNumPolygons = 0;
  
      u32 FlushRequest = 0;
+diff --git a/src/GPU3D_OpenGL.cpp b/src/GPU3D_OpenGL.cpp
+index 706c75e..ad97fc5 100644
+--- a/src/GPU3D_OpenGL.cpp
++++ b/src/GPU3D_OpenGL.cpp
+@@ -85,9 +85,14 @@ void SetupDefaultTexParams(GLuint tex)
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ }
+ 
+-GLRenderer::GLRenderer(GLCompositor&& compositor) noexcept :
+-    Renderer3D(true),
+-    CurGLCompositor(std::move(compositor))
++GLRenderer::GLRenderer(GLCompositor&& compositor, bool accelerated, int maxPolygons) noexcept :
++    Renderer3D(accelerated),
++    CurGLCompositor(std::move(compositor)),
++    MaxPolygons(maxPolygons),
++    PolygonList(maxPolygons),
++    VertexBuffer((size_t)maxPolygons * 10 * 7),
++    IndexBuffer((size_t)maxPolygons * 50),
++    EdgeIndicesOffset((u32)maxPolygons * 30)
+ {
+     // GLRenderer::New() will be used to actually initialize the renderer;
+     // The various glDelete* functions silently ignore invalid IDs,
+@@ -95,6 +100,16 @@ GLRenderer::GLRenderer(GLCompositor&& compositor) noexcept :
+ }
+ 
+ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
++{
++    return Create(true, 2048);
++}
++
++std::unique_ptr<GLRenderer> GLRenderer::NewReadback(int maxPolygons) noexcept
++{
++    return Create(false, maxPolygons);
++}
++
++std::unique_ptr<GLRenderer> GLRenderer::Create(bool accelerated, int maxPolygons) noexcept
+ {
+     assert(glEnable != nullptr);
+ 
+@@ -104,7 +119,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
+ 
+     // Will be returned if the initialization succeeds,
+     // or cleaned up via RAII if it fails.
+-    std::unique_ptr<GLRenderer> result = std::unique_ptr<GLRenderer>(new GLRenderer(std::move(*compositor)));
++    std::unique_ptr<GLRenderer> result = std::unique_ptr<GLRenderer>(new GLRenderer(std::move(*compositor), accelerated, maxPolygons));
+     compositor = std::nullopt;
+ 
+     glEnable(GL_DEPTH_TEST);
+@@ -215,7 +230,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
+ 
+     glGenBuffers(1, &result->VertexBufferID);
+     glBindBuffer(GL_ARRAY_BUFFER, result->VertexBufferID);
+-    glBufferData(GL_ARRAY_BUFFER, sizeof(VertexBuffer), nullptr, GL_DYNAMIC_DRAW);
++    glBufferData(GL_ARRAY_BUFFER, result->VertexBuffer.size() * 4, nullptr, GL_DYNAMIC_DRAW);
+ 
+     glGenVertexArrays(1, &result->VertexArrayID);
+     glBindVertexArray(result->VertexArrayID);
+@@ -230,7 +245,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
+ 
+     glGenBuffers(1, &result->IndexBufferID);
+     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result->IndexBufferID);
+-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(IndexBuffer), nullptr, GL_DYNAMIC_DRAW);
++    glBufferData(GL_ELEMENT_ARRAY_BUFFER, result->IndexBuffer.size() * 2, nullptr, GL_DYNAMIC_DRAW);
+ 
+     glGenFramebuffers(1, &result->MainFramebuffer);
+     glGenFramebuffers(1, &result->DownscaleFramebuffer);
+@@ -259,6 +274,7 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
+     glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+ 
+     glGenBuffers(1, &result->PixelbufferID);
++    glGenBuffers(1, &result->ReadbackBufferID);
+ 
+     glActiveTexture(GL_TEXTURE0);
+     glGenTextures(1, &result->TexMemID);
+@@ -287,8 +303,13 @@ GLRenderer::~GLRenderer()
+ {
+     assert(glDeleteTextures != nullptr);
+ 
+-    glDeleteTextures(1, &TexMemID);
+-    glDeleteTextures(1, &TexPalMemID);
++    if (OwnsTextures)
++    {
++        glDeleteTextures(1, &TexMemID);
++        glDeleteTextures(1, &TexPalMemID);
++    }
++    glDeleteBuffers(1, &PixelbufferID);
++    glDeleteBuffers(1, &ReadbackBufferID);
+ 
+     glDeleteFramebuffers(1, &MainFramebuffer);
+     glDeleteFramebuffers(1, &DownscaleFramebuffer);
+@@ -339,7 +360,40 @@ void GLRenderer::SetRenderSettings(bool betterpolygons, int scale) noexcept
+ 
+     ScreenW = 256 * scale;
+     ScreenH = 192 * scale;
++    CustomSize = false;
++    AllocateBuffers();
++}
+ 
++void GLRenderer::SetOutputSize(int w, int h) noexcept
++{
++    if (CustomSize && w == ScreenW && h == ScreenH)
++        return;
++    if (!ScaleFactor)
++    {
++        // (the compositor, unused here, still wants a size)
++        CurGLCompositor.SetScaleFactor(1);
++        ScaleFactor = 1;
++    }
++    ScreenW = w;
++    ScreenH = h;
++    CustomSize = true;
++    AllocateBuffers();
++}
++
++void GLRenderer::ShareTexturesWith(const GLRenderer& other) noexcept
++{
++    if (OwnsTextures)
++    {
++        glDeleteTextures(1, &TexMemID);
++        glDeleteTextures(1, &TexPalMemID);
++    }
++    TexMemID = other.TexMemID;
++    TexPalMemID = other.TexPalMemID;
++    OwnsTextures = false;
++}
++
++void GLRenderer::AllocateBuffers() noexcept
++{
+     glBindTexture(GL_TEXTURE_2D, ColorBufferTex);
+     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ScreenW, ScreenH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+ 
+@@ -361,6 +415,9 @@ void GLRenderer::SetRenderSettings(bool betterpolygons, int scale) noexcept
+ 
+     glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
+     glBufferData(GL_PIXEL_PACK_BUFFER, 256*192*4, NULL, GL_DYNAMIC_READ);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadbackBufferID);
++    glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr)ScreenW*ScreenH*4, NULL, GL_DYNAMIC_READ);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+ 
+     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+ 
+@@ -427,7 +484,13 @@ u32* GLRenderer::SetupVertex(const Polygon* poly, int vid, const Vertex* vtx, u3
+     while (z > 0xFFFF) { z >>= 1; zshift++; }
+ 
+     u32 x, y;
+-    if (ScaleFactor > 1)
++    if (CustomSize)
++    {
++        // ssrecomp: HiresPosition is in sixteenths of a DS pixel.
++        x = (u32)(((s64)vtx->HiresPosition[0] * ScreenW) / (256 * 16));
++        y = (u32)(((s64)vtx->HiresPosition[1] * ScreenH) / (192 * 16));
++    }
++    else if (ScaleFactor > 1)
+     {
+         x = (vtx->HiresPosition[0] * ScaleFactor) >> 4;
+         y = (vtx->HiresPosition[1] * ScaleFactor) >> 4;
+@@ -749,14 +812,14 @@ int GLRenderer::RenderPolygonEdgeBatch(int i) const
+     return numpolys;
+ }
+ 
+-void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
++void GLRenderer::RenderSceneChunk(int y, int h)
+ {
+     u32 flags = 0;
+-    if (gpu3d.RenderPolygonRAM[0]->WBuffer) flags |= RenderFlag_WBuffer;
++    if (NumFinalPolys > 0 && PolygonList[0].PolyData->WBuffer) flags |= RenderFlag_WBuffer;
+ 
+     if (h != 192) glScissor(0, y<<ScaleFactor, 256<<ScaleFactor, h<<ScaleFactor);
+ 
+-    GLboolean fogenable = (gpu3d.RenderDispCnt & (1<<7)) ? GL_TRUE : GL_FALSE;
++    GLboolean fogenable = (St.DispCnt & (1<<7)) ? GL_TRUE : GL_FALSE;
+ 
+     // TODO: proper 'equal' depth test!
+     // (has margin of +-0x200 in Z-buffer mode, +-0xFF in W-buffer mode)
+@@ -828,7 +891,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+     glEnable(GL_BLEND);
+     glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+ 
+-    if (gpu3d.RenderDispCnt & (1<<3))
++    if (St.DispCnt & (1<<3))
+         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+     else
+         glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ONE);
+@@ -840,7 +903,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+         // pass 2: if needed, render translucent pixels that are against background pixels
+         // when background alpha is zero, those need to be rendered with blending disabled
+ 
+-        if ((gpu3d.RenderClearAttr1 & 0x001F0000) == 0)
++        if ((St.ClearAttr1 & 0x001F0000) == 0)
+         {
+             glDisable(GL_BLEND);
+ 
+@@ -904,7 +967,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+                     if (rp->PolyData->IsShadow)
+                     {
+                         // shadow against clear-plane will only pass if its polyID matches that of the clear plane
+-                        u32 clrpolyid = (gpu3d.RenderClearAttr1 >> 24) & 0x3F;
++                        u32 clrpolyid = (St.ClearAttr1 >> 24) & 0x3F;
+                         if (polyid != clrpolyid) { i++; continue; }
+ 
+                         glEnable(GL_BLEND);
+@@ -1052,7 +1115,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+         }
+     }
+ 
+-    if (gpu3d.RenderDispCnt & 0x00A0) // fog/edge enabled
++    if (St.DispCnt & 0x00A0) // fog/edge enabled
+     {
+         glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+         glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+@@ -1074,7 +1137,7 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+         glBindBuffer(GL_ARRAY_BUFFER, ClearVertexBufferID);
+         glBindVertexArray(ClearVertexArrayID);
+ 
+-        if (gpu3d.RenderDispCnt & (1<<5))
++        if (St.DispCnt & (1<<5))
+         {
+             // edge marking
+             // TODO: depth/polyid values at screen edges
+@@ -1086,19 +1149,19 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+             glDrawArrays(GL_TRIANGLES, 0, 2*3);
+         }
+ 
+-        if (gpu3d.RenderDispCnt & (1<<7))
++        if (St.DispCnt & (1<<7))
+         {
+             // fog
+ 
+             glUseProgram(FinalPassFogShader);
+ 
+-            if (gpu3d.RenderDispCnt & (1<<6))
++            if (St.DispCnt & (1<<6))
+                 glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+             else
+                 glBlendFuncSeparate(GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA, GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+ 
+             {
+-                u32 c = gpu3d.RenderFogColor;
++                u32 c = St.FogColor;
+                 u32 r = c & 0x1F;
+                 u32 g = (c >> 5) & 0x1F;
+                 u32 b = (c >> 10) & 0x1F;
+@@ -1115,6 +1178,52 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
+ 
+ void GLRenderer::RenderFrame(GPU& gpu)
+ {
++    // ssrecomp: the state is gathered first (GLFrameState), so that it can come from elsewhere.
++    GLFrameState st;
++    st.List = gpu.GPU3D.RenderPolygonRAM.data();
++    st.NumPolygons = gpu.GPU3D.RenderNumPolygons;
++    st.DispCnt = gpu.GPU3D.RenderDispCnt;
++    st.ClearAttr1 = gpu.GPU3D.RenderClearAttr1;
++    st.ClearAttr2 = gpu.GPU3D.RenderClearAttr2;
++    st.FogColor = gpu.GPU3D.RenderFogColor;
++    st.FogOffset = gpu.GPU3D.RenderFogOffset;
++    st.FogShift = gpu.GPU3D.RenderFogShift;
++    memcpy(st.ToonTable, gpu.GPU3D.RenderToonTable, sizeof(st.ToonTable));
++    memcpy(st.EdgeTable, gpu.GPU3D.RenderEdgeTable, sizeof(st.EdgeTable));
++    memcpy(st.FogDensity, gpu.GPU3D.RenderFogDensityTable, sizeof(st.FogDensity));
++    GetTextureMemory(gpu, st.TexVRAM, st.PalVRAM);
++    RenderFrameState(st);
++}
++
++void GLRenderer::GetTextureMemory(const GPU& gpu, const u8* tex[4], const u8* pal[6])
++{
++    for (int i = 0; i < 4; i++)
++    {
++        u32 mask = gpu.VRAMMap_Texture[i];
++        const u8* vram = nullptr;
++        if (!mask) vram = nullptr;
++        else if (mask & (1<<0)) vram = gpu.VRAM_A;
++        else if (mask & (1<<1)) vram = gpu.VRAM_B;
++        else if (mask & (1<<2)) vram = gpu.VRAM_C;
++        else if (mask & (1<<3)) vram = gpu.VRAM_D;
++        tex[i] = vram;
++    }
++    for (int i = 0; i < 6; i++)
++    {
++        // 6 x 16K chunks
++        u32 mask = gpu.VRAMMap_TexPal[i];
++        const u8* vram = nullptr;
++        if (!mask) vram = nullptr;
++        else if (mask & (1<<4)) vram = &gpu.VRAM_E[(i&3)*0x4000];
++        else if (mask & (1<<5)) vram = gpu.VRAM_F;
++        else if (mask & (1<<6)) vram = gpu.VRAM_G;
++        pal[i] = vram;
++    }
++}
++
++void GLRenderer::RenderFrameState(const GLFrameState& state)
++{
++    St = state;
+     CurShaderID = -1;
+ 
+     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+@@ -1122,11 +1231,11 @@ void GLRenderer::RenderFrame(GPU& gpu)
+ 
+     ShaderConfig.uScreenSize[0] = ScreenW;
+     ShaderConfig.uScreenSize[1] = ScreenH;
+-    ShaderConfig.uDispCnt = gpu.GPU3D.RenderDispCnt;
++    ShaderConfig.uDispCnt = St.DispCnt;
+ 
+     for (int i = 0; i < 32; i++)
+     {
+-        u16 c = gpu.GPU3D.RenderToonTable[i];
++        u16 c = St.ToonTable[i];
+         u32 r = c & 0x1F;
+         u32 g = (c >> 5) & 0x1F;
+         u32 b = (c >> 10) & 0x1F;
+@@ -1138,7 +1247,7 @@ void GLRenderer::RenderFrame(GPU& gpu)
+ 
+     for (int i = 0; i < 8; i++)
+     {
+-        u16 c = gpu.GPU3D.RenderEdgeTable[i];
++        u16 c = St.EdgeTable[i];
+         u32 r = c & 0x1F;
+         u32 g = (c >> 5) & 0x1F;
+         u32 b = (c >> 10) & 0x1F;
+@@ -1149,7 +1258,7 @@ void GLRenderer::RenderFrame(GPU& gpu)
+     }
+ 
+     {
+-        u32 c = gpu.GPU3D.RenderFogColor;
++        u32 c = St.FogColor;
+         u32 r = c & 0x1F;
+         u32 g = (c >> 5) & 0x1F;
+         u32 b = (c >> 10) & 0x1F;
+@@ -1163,13 +1272,15 @@ void GLRenderer::RenderFrame(GPU& gpu)
+ 
+     for (int i = 0; i < 34; i++)
+     {
+-        u8 d = gpu.GPU3D.RenderFogDensityTable[i];
++        u8 d = St.FogDensity[i];
+         ShaderConfig.uFogDensity[i][0] = (float)d / 127.0;
+     }
+ 
+-    ShaderConfig.uFogOffset = gpu.GPU3D.RenderFogOffset;
+-    ShaderConfig.uFogShift = gpu.GPU3D.RenderFogShift;
++    ShaderConfig.uFogOffset = St.FogOffset;
++    ShaderConfig.uFogShift = St.FogShift;
+ 
++    // ssrecomp: binding point 0 is shared by every renderer in the context.
++    glBindBufferBase(GL_UNIFORM_BUFFER, 0, ShaderConfigUBO);
+     glBindBuffer(GL_UNIFORM_BUFFER, ShaderConfigUBO);
+     void* unibuf = glMapBuffer(GL_UNIFORM_BUFFER, GL_WRITE_ONLY);
+     if (unibuf) memcpy(unibuf, &ShaderConfig, sizeof(ShaderConfig));
+@@ -1179,32 +1290,24 @@ void GLRenderer::RenderFrame(GPU& gpu)
+     // TODO: detect when VRAM blocks are modified!
+     glActiveTexture(GL_TEXTURE0);
+     glBindTexture(GL_TEXTURE_2D, TexMemID);
+-    for (int i = 0; i < 4; i++)
++    if (St.UploadTextures)
+     {
+-        u32 mask = gpu.VRAMMap_Texture[i];
+-        u8* vram;
+-        if (!mask) continue;
+-        else if (mask & (1<<0)) vram = gpu.VRAM_A;
+-        else if (mask & (1<<1)) vram = gpu.VRAM_B;
+-        else if (mask & (1<<2)) vram = gpu.VRAM_C;
+-        else if (mask & (1<<3)) vram = gpu.VRAM_D;
+-
+-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*128, 1024, 128, GL_RED_INTEGER, GL_UNSIGNED_BYTE, vram);
++        for (int i = 0; i < 4; i++)
++        {
++            if (!St.TexVRAM[i]) continue;
++            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*128, 1024, 128, GL_RED_INTEGER, GL_UNSIGNED_BYTE, St.TexVRAM[i]);
++        }
+     }
+ 
+     glActiveTexture(GL_TEXTURE1);
+     glBindTexture(GL_TEXTURE_2D, TexPalMemID);
+-    for (int i = 0; i < 6; i++)
++    if (St.UploadTextures)
+     {
+-        // 6 x 16K chunks
+-        u32 mask = gpu.VRAMMap_TexPal[i];
+-        u8* vram;
+-        if (!mask) continue;
+-        else if (mask & (1<<4)) vram = &gpu.VRAM_E[(i&3)*0x4000];
+-        else if (mask & (1<<5)) vram = gpu.VRAM_F;
+-        else if (mask & (1<<6)) vram = gpu.VRAM_G;
+-
+-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*8, 1024, 8, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram);
++        for (int i = 0; i < 6; i++)
++        {
++            if (!St.PalVRAM[i]) continue;
++            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*8, 1024, 8, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, St.PalVRAM[i]);
++        }
+     }
+ 
+     glDisable(GL_SCISSOR_TEST);
+@@ -1227,13 +1330,13 @@ void GLRenderer::RenderFrame(GPU& gpu)
+         glUseProgram(ClearShaderPlain);
+         glDepthFunc(GL_ALWAYS);
+ 
+-        u32 r = gpu.GPU3D.RenderClearAttr1 & 0x1F;
+-        u32 g = (gpu.GPU3D.RenderClearAttr1 >> 5) & 0x1F;
+-        u32 b = (gpu.GPU3D.RenderClearAttr1 >> 10) & 0x1F;
+-        u32 fog = (gpu.GPU3D.RenderClearAttr1 >> 15) & 0x1;
+-        u32 a = (gpu.GPU3D.RenderClearAttr1 >> 16) & 0x1F;
+-        u32 polyid = (gpu.GPU3D.RenderClearAttr1 >> 24) & 0x3F;
+-        u32 z = ((gpu.GPU3D.RenderClearAttr2 & 0x7FFF) * 0x200) + 0x1FF;
++        u32 r = St.ClearAttr1 & 0x1F;
++        u32 g = (St.ClearAttr1 >> 5) & 0x1F;
++        u32 b = (St.ClearAttr1 >> 10) & 0x1F;
++        u32 fog = (St.ClearAttr1 >> 15) & 0x1;
++        u32 a = (St.ClearAttr1 >> 16) & 0x1F;
++        u32 polyid = (St.ClearAttr1 >> 24) & 0x3F;
++        u32 z = ((St.ClearAttr2 & 0x7FFF) * 0x200) + 0x1FF;
+ 
+         glStencilFunc(GL_ALWAYS, 0xFF, 0xFF);
+         glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
+@@ -1252,20 +1355,25 @@ void GLRenderer::RenderFrame(GPU& gpu)
+         glDrawArrays(GL_TRIANGLES, 0, 2*3);
+     }
+ 
+-    if (gpu.GPU3D.RenderNumPolygons)
++    // ssrecomp: the texture memory is on units 0 and 1 while drawing (as the upload left it).
++    glActiveTexture(GL_TEXTURE0);
++    glBindTexture(GL_TEXTURE_2D, TexMemID);
++    glActiveTexture(GL_TEXTURE1);
++    glBindTexture(GL_TEXTURE_2D, TexPalMemID);
++
++    NumFinalPolys = 0;
++    if (St.NumPolygons)
+     {
+         // render shit here
+-        u32 flags = 0;
+-        if (gpu.GPU3D.RenderPolygonRAM[0]->WBuffer) flags |= RenderFlag_WBuffer;
+-
+         int npolys = 0;
+         int firsttrans = -1;
+-        for (u32 i = 0; i < gpu.GPU3D.RenderNumPolygons; i++)
++        for (u32 i = 0; i < St.NumPolygons && npolys < MaxPolygons; i++)
+         {
+-            if (gpu.GPU3D.RenderPolygonRAM[i]->Degenerate) continue;
++            Polygon* poly = St.List[i];
++            if (!poly || poly->Degenerate) continue;
+ 
+-            SetupPolygon(&PolygonList[npolys], gpu.GPU3D.RenderPolygonRAM[i]);
+-            if (firsttrans < 0 && gpu.GPU3D.RenderPolygonRAM[i]->Translucent)
++            SetupPolygon(&PolygonList[npolys], poly);
++            if (firsttrans < 0 && poly->Translucent)
+                 firsttrans = npolys;
+ 
+             npolys++;
+@@ -1273,19 +1381,46 @@ void GLRenderer::RenderFrame(GPU& gpu)
+         NumFinalPolys = npolys;
+         NumOpaqueFinalPolys = firsttrans;
+ 
+-        BuildPolygons(&PolygonList[0], npolys);
+-        glBindBuffer(GL_ARRAY_BUFFER, VertexBufferID);
+-        glBufferSubData(GL_ARRAY_BUFFER, 0, NumVertices*7*4, VertexBuffer);
++        if (npolys)
++        {
++            BuildPolygons(&PolygonList[0], npolys);
++            glBindBuffer(GL_ARRAY_BUFFER, VertexBufferID);
++            glBufferSubData(GL_ARRAY_BUFFER, 0, NumVertices*7*4, VertexBuffer.data());
+ 
+-        // bind to access the index buffer
+-        glBindVertexArray(VertexArrayID);
+-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, NumIndices * 2, IndexBuffer);
+-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, EdgeIndicesOffset * 2, NumEdgeIndices * 2, IndexBuffer + EdgeIndicesOffset);
++            // bind to access the index buffer
++            glBindVertexArray(VertexArrayID);
++            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, NumIndices * 2, IndexBuffer.data());
++            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, EdgeIndicesOffset * 2, NumEdgeIndices * 2, IndexBuffer.data() + EdgeIndicesOffset);
+ 
+-        RenderSceneChunk(gpu.GPU3D, 0, 192);
++            RenderSceneChunk(0, 192);
++        }
+     }
+ }
+ 
++void GLRenderer::ReadbackStart()
++{
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, MainFramebuffer);
++    glReadBuffer(GL_COLOR_ATTACHMENT0);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadbackBufferID);
++    glPixelStorei(GL_PACK_ALIGNMENT, 4);
++    glReadPixels(0, 0, ScreenW, ScreenH, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++    // Starts the drawing and the copy now; mapping the buffer later waits for both.
++    glFlush();
++}
++
++const u32* GLRenderer::ReadbackMap()
++{
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, ReadbackBufferID);
++    return (const u32*)glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
++}
++
++void GLRenderer::ReadbackUnmap()
++{
++    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++}
++
+ void GLRenderer::Stop(const GPU& gpu)
+ {
+     CurGLCompositor.Stop(gpu);
+diff --git a/src/GPU3D_OpenGL.h b/src/GPU3D_OpenGL.h
+index b780522..65df344 100644
+--- a/src/GPU3D_OpenGL.h
++++ b/src/GPU3D_OpenGL.h
+@@ -19,6 +19,7 @@
+ #pragma once
+ 
+ #ifdef OGLRENDERER_ENABLED
++#include <vector>
+ #include "GPU3D.h"
+ #include "GPU_OpenGL.h"
+ #include "OpenGLSupport.h"
+@@ -27,6 +28,24 @@ namespace melonDS
+ {
+ class GPU;
+ 
++// ssrecomp: everything a frame is drawn from, so that it can be drawn on another thread
++// after the emulation has moved on (GPU3D_GLThread.cpp), and from a list of polygons other
++// than the console's own (the widescreen view's, GPU3D_Wide.cpp).
++struct GLFrameState
++{
++    Polygon* const* List = nullptr;
++    u32 NumPolygons = 0;
++    u32 DispCnt = 0, ClearAttr1 = 0, ClearAttr2 = 0;
++    u32 FogColor = 0, FogOffset = 0, FogShift = 0;
++    u16 ToonTable[32] {}, EdgeTable[8] {};
++    u8 FogDensity[34] {};
++    // Texture and palette memory as mapped (4 x 128 KB, 6 x 16 KB); nullptr where nothing
++    // is mapped. Not uploaded at all with UploadTextures off (a renderer sharing another's).
++    const u8* TexVRAM[4] {};
++    const u8* PalVRAM[6] {};
++    bool UploadTextures = true;
++};
++
+ class GLRenderer : public Renderer3D
+ {
+ public:
+@@ -51,9 +70,30 @@ public:
+     void BindOutputTexture(int buffer) override;
+ 
+     static std::unique_ptr<GLRenderer> New() noexcept;
++
++    // ssrecomp: a renderer whose picture is read back for melonDS's software 2D renderer
++    // (Accelerated off), for up to maxPolygons polygons a frame (more than the DS's 2048 for
++    // the widescreen view).
++    static std::unique_ptr<GLRenderer> NewReadback(int maxPolygons) noexcept;
++    // Draws at any size: vertices are scaled from the DS's 256x192 to it (the widescreen
++    // view's polygons are squeezed into 256 pixels across).
++    void SetOutputSize(int w, int h) noexcept;
++    // Uses another renderer's texture memory instead of its own (the same GL context).
++    void ShareTexturesWith(const GLRenderer& other) noexcept;
++    void RenderFrameState(const GLFrameState& state);
++    // Reads the picture back as 32-bit BGRA pixels, ScreenW x ScreenH, row 0 at the top:
++    // colour in 6 bits (shifted left by 2), alpha in 5 (shifted left by 3).
++    void ReadbackStart();
++    // The pixels (waiting for the drawing and the copy), valid until ReadbackUnmap; nullptr if
++    // they could not be had (ReadbackUnmap is still called).
++    const u32* ReadbackMap();
++    void ReadbackUnmap();
++    int OutputWidth() const { return ScreenW; }
++    int OutputHeight() const { return ScreenH; }
+ private:
+     // Used by New()
+-    GLRenderer(GLCompositor&& compositor) noexcept;
++    GLRenderer(GLCompositor&& compositor, bool accelerated = true, int maxPolygons = 2048) noexcept;
++    static std::unique_ptr<GLRenderer> Create(bool accelerated, int maxPolygons) noexcept;
+ 
+     // GL version requirements
+     // * texelFetch: 3.0 (GLSL 1.30)     (3.2/1.50 for MS)
+@@ -74,7 +114,9 @@ private:
+     };
+ 
+     GLCompositor CurGLCompositor;
+-    RendererPolygon PolygonList[2048] {};
++    // ssrecomp: sized for MaxPolygons (2048 for the DS's own picture).
++    const int MaxPolygons;
++    std::vector<RendererPolygon> PolygonList;
+ 
+     bool BuildRenderShader(u32 flags, const std::string& vs, const std::string& fs);
+     void UseRenderShader(u32 flags);
+@@ -84,7 +126,12 @@ private:
+     int RenderSinglePolygon(int i) const;
+     int RenderPolygonBatch(int i) const;
+     int RenderPolygonEdgeBatch(int i) const;
+-    void RenderSceneChunk(const GPU3D& gpu3d, int y, int h);
++    void RenderSceneChunk(int y, int h);
++    void AllocateBuffers() noexcept;
++public:
++    // ssrecomp: where texture and palette memory are mapped (nullptr where nothing is).
++    static void GetTextureMemory(const GPU& gpu, const u8* tex[4], const u8* pal[6]);
++private:
+ 
+     enum
+     {
+@@ -137,15 +184,15 @@ private:
+     // * bit9: W-buffering (?)
+ 
+     GLuint VertexBufferID {};
+-    u32 VertexBuffer[10240 * 7] {};
++    std::vector<u32> VertexBuffer; // MaxPolygons * 10 vertices of 7 words
+     u32 NumVertices {};
+ 
+     GLuint VertexArrayID {};
+     GLuint IndexBufferID {};
+-    u16 IndexBuffer[2048 * 40] {};
++    std::vector<u16> IndexBuffer;  // MaxPolygons * 30 for triangles, then * 20 for edges
+     u32 NumIndices {}, NumEdgeIndices {};
+ 
+-    const u32 EdgeIndicesOffset = 2048 * 30;
++    const u32 EdgeIndicesOffset;
+ 
+     GLuint TexMemID {};
+     GLuint TexPalMemID {};
+@@ -160,6 +207,10 @@ private:
+ 
+     GLuint MainFramebuffer {}, DownscaleFramebuffer {};
+     u32 Framebuffer[256*192] {};
++    // ssrecomp: see GLFrameState. St is the frame being drawn.
++    GLFrameState St;
++    bool CustomSize = false, OwnsTextures = true;
++    GLuint ReadbackBufferID {};
+ };
+ }
+ #endif
+\ No newline at end of file
 diff --git a/src/GPU3D_Soft.cpp b/src/GPU3D_Soft.cpp
-index 9f6e2d73..bf6abaf7 100644
+index 9f6e2d7..41e0286 100644
 --- a/src/GPU3D_Soft.cpp
 +++ b/src/GPU3D_Soft.cpp
-@@ -1740,6 +1740,11 @@ void SoftRenderer::VCount144(GPU& gpu)
+@@ -17,6 +17,7 @@
+ */
+ 
+ #include "GPU3D_Soft.h"
++#include "SsrThreads.h"
+ 
+ #include <algorithm>
+ #include <stdio.h>
+@@ -1737,9 +1738,17 @@ void SoftRenderer::RenderPolygons(const GPU& gpu, bool threaded, Polygon** polyg
+ void SoftRenderer::VCount144(GPU& gpu)
+ {
+     if (RenderThreadRunning.load(std::memory_order_relaxed) && !gpu.GPU3D.AbortFrame)
++    {
++        SsrWaitTimer t(SsrStats().Wait3DNs);
          Platform::Semaphore_Wait(Sema_RenderDone);
++    }
  }
  
 +// ssrecomp: the list the render thread draws. It is a copy, because the 60 fps mod swaps
@@ -966,7 +2787,7 @@ index 9f6e2d73..bf6abaf7 100644
  void SoftRenderer::RenderFrame(GPU& gpu)
  {
      auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(gpu.VRAMMap_Texture, gpu);
-@@ -1752,6 +1757,8 @@ void SoftRenderer::RenderFrame(GPU& gpu)
+@@ -1752,6 +1761,8 @@ void SoftRenderer::RenderFrame(GPU& gpu)
  
      if (RenderThreadRunning.load(std::memory_order_relaxed))
      {
@@ -975,7 +2796,15 @@ index 9f6e2d73..bf6abaf7 100644
          // "Render thread, you're up! Get moving."
          Platform::Semaphore_Post(Sema_RenderStart);
      }
-@@ -1790,7 +1797,7 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
+@@ -1783,6 +1794,7 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
+         // the ensuing race conditions may cause a crash
+         // (since some of the GPU state includes pointers).
+         RenderThreadRendering = true;
++        SsrNoteCore(true);
+         if (FrameIdentical)
+         { // If no rendering is needed, just say we're done.
+             Platform::Semaphore_Post(Sema_ScanlineCount, 192);
+@@ -1790,7 +1802,7 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
          else
          {
              ClearBuffers(gpu);
@@ -984,8 +2813,22 @@ index 9f6e2d73..bf6abaf7 100644
          }
  
          // Tell the main thread that we're done rendering
+@@ -1806,10 +1818,13 @@ u32* SoftRenderer::GetLine(int line)
+     if (RenderThreadRunning.load(std::memory_order_relaxed))
+     {
+         if (line < 192)
++        {
+             // We need a scanline, so let's wait for the render thread to finish it.
+             // (both threads process scanlines from top-to-bottom,
+             // so we don't need to wait for a specific row)
++            SsrWaitTimer t(SsrStats().Wait3DNs);
+             Platform::Semaphore_Wait(Sema_ScanlineCount);
++        }
+     }
+ 
+     return &ColorBuffer[(line * ScanlineWidth) + FirstPixelOffset];
 diff --git a/src/GPU3D_Soft.h b/src/GPU3D_Soft.h
-index a201c6a6..0cbc750b 100644
+index a201c6a..0cbc750 100644
 --- a/src/GPU3D_Soft.h
 +++ b/src/GPU3D_Soft.h
 @@ -46,6 +46,7 @@ public:
@@ -997,7 +2840,7 @@ index a201c6a6..0cbc750b 100644
      //
      // This is a theory on how the DS hardware interpolates values. It matches hardware output
 diff --git a/src/NDS.cpp b/src/NDS.cpp
-index f45051e2..01137c53 100644
+index f45051e..282b275 100644
 --- a/src/NDS.cpp
 +++ b/src/NDS.cpp
 @@ -49,7 +49,11 @@ namespace melonDS
@@ -1013,7 +2856,34 @@ index f45051e2..01137c53 100644
  const s32 kIterationCycleMargin = 8;
  
  // timing notes
-@@ -2763,8 +2767,70 @@ bool NDS::ARM7GetMemRegion(u32 addr, bool write, MemRegion* region)
+@@ -452,7 +456,7 @@ void NDS::Reset()
+     else
+     {
+         ARM9ClockShift = 1;
+-        MainRAMMask = 0x3FFFFF;
++        MainRAMMask = LargeMainRAM ? 0x7FFFFF : 0x3FFFFF;
+     }
+     // has to be called before InitTimings
+     // otherwise some PU settings are completely
+@@ -466,6 +470,8 @@ void NDS::Reset()
+     InitTimings();
+ 
+     memset(MainRAM, 0, MainRAMMask + 1);
++    // (Past the 8 MB, where the DS never looks; it goes into save states with the rest.)
++    if (ConsoleType == 0) memcpy(&MainRAM[LargeMainRAMMark], LargeMainRAM ? "SSR8MB\0\0" : "\0\0\0\0\0\0\0\0", 8);
+     memset(SharedWRAM, 0, 0x8000);
+     memset(ARM7WRAM, 0, 0x10000);
+ 
+@@ -755,6 +761,8 @@ bool NDS::DoSavestate(Savestate* file)
+ 
+     if (!file->Saving)
+     {
++        if (ConsoleType == 0)
++            MainRAMMask = memcmp(&MainRAM[LargeMainRAMMark], "SSR8MB", 6) == 0 ? 0x7FFFFF : 0x3FFFFF;
+         GPU.SetPowerCnt(PowerControl9);
+ 
+         SPU.SetPowerCnt(PowerControl7 & 0x0001);
+@@ -2763,8 +2771,70 @@ bool NDS::ARM7GetMemRegion(u32 addr, bool write, MemRegion* region)
      case (addr+2): return ((val) >> 16) & 0xFF; \
      case (addr+3): return (val) >> 24;
  
@@ -1084,7 +2954,7 @@ index f45051e2..01137c53 100644
      switch (addr)
      {
      case 0x04000130: LagFrameFlag = false; return KeyInput & 0xFF;
-@@ -2898,6 +2964,7 @@ u8 NDS::ARM9IORead8(u32 addr)
+@@ -2898,6 +2968,7 @@ u8 NDS::ARM9IORead8(u32 addr)
  
  u16 NDS::ARM9IORead16(u32 addr)
  {
@@ -1092,7 +2962,7 @@ index f45051e2..01137c53 100644
      switch (addr)
      {
      case 0x04000004: return GPU.DispStat[0];
-@@ -3056,6 +3123,7 @@ u16 NDS::ARM9IORead16(u32 addr)
+@@ -3056,6 +3127,7 @@ u16 NDS::ARM9IORead16(u32 addr)
  
  u32 NDS::ARM9IORead32(u32 addr)
  {
@@ -1100,7 +2970,7 @@ index f45051e2..01137c53 100644
      switch (addr)
      {
      case 0x04000004: return GPU.DispStat[0] | (GPU.VCount << 16);
-@@ -3099,7 +3167,11 @@ u32 NDS::ARM9IORead32(u32 addr)
+@@ -3099,7 +3171,11 @@ u32 NDS::ARM9IORead32(u32 addr)
          return 0;
      case 0x040001A4:
          if (!(ExMemCnt[0] & (1<<11)))
@@ -1113,7 +2983,7 @@ index f45051e2..01137c53 100644
          return 0;
  
      case 0x040001A8:
-@@ -3807,6 +3879,52 @@ u8 NDS::ARM7IORead8(u32 addr)
+@@ -3807,6 +3883,52 @@ u8 NDS::ARM7IORead8(u32 addr)
      return 0;
  }
  
@@ -1166,7 +3036,7 @@ index f45051e2..01137c53 100644
  u16 NDS::ARM7IORead16(u32 addr)
  {
      switch (addr)
-@@ -3883,7 +4001,12 @@ u16 NDS::ARM7IORead16(u32 addr)
+@@ -3883,7 +4005,12 @@ u16 NDS::ARM7IORead16(u32 addr)
                    (NDSCartSlot.GetROMCommand(7) << 8);
          return 0;
  
@@ -1180,3 +3050,39 @@ index f45051e2..01137c53 100644
      case 0x040001C2: return SPI.ReadData();
  
      case 0x04000204: return ExMemCnt[1];
+diff --git a/src/NDS.h b/src/NDS.h
+index 17e656e..22df46a 100644
+--- a/src/NDS.h
++++ b/src/NDS.h
+@@ -295,6 +295,11 @@ public: // TODO: Encapsulate the rest of these members
+ 
+     u8* MainRAM;
+     u32 MainRAMMask;
++    // ssrecomp: 8 MB of main RAM in DS mode, as the DS's development units have, set before
++    // Reset (Pokemon Black 2's wider map, frontend/bw2map.h). A save state remembers which it was
++    // made with (LargeMainRAMMark), so states made with 4 MB still load as they were.
++    bool LargeMainRAM = false;
++    static constexpr u32 LargeMainRAMMark = 0xFFFFF0;
+ 
+     const u32 MainRAMMaxSize = 0x1000000;
+ 
+diff --git a/src/SPU.cpp b/src/SPU.cpp
+index 3c4aca7..7106495 100644
+--- a/src/SPU.cpp
++++ b/src/SPU.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "SsrProf.h" // ssrecomp
+ #include <stdio.h>
+ #include <string.h>
+ #include <cmath>
+@@ -852,6 +853,7 @@ void SPUCaptureUnit::Run(u32 cycles, s32 sample)
+ 
+ void SPU::Mix(u32 spucycles)
+ {
++    SsrProf::Scope prof(SsrProf::Sound); // ssrecomp
+     s32 left = 0, right = 0;
+     s32 leftoutput = 0, rightoutput = 0;
+ 

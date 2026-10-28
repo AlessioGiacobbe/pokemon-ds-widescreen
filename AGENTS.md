@@ -98,6 +98,10 @@ You need your own ROM and snapshots; none are in the repository. Running
   battles: e.g. `--state-load <overworld.st> --input <grass walk> --battle-mash --frames 7500`.
 - **Speed:** `--headless --no-save --no-wide --state-load <snap> --frames 6880`,
   with and without `--interp`, compare the times.
+- **Where the emulation's time goes:** `SSR_PERF=1 SSR_EMU_PROF=1` adds geometry, 2D, sound,
+  DMA, the wide and in-between polygon lists and the 3D frame start to the timing lines
+  (`melonDS/src/SsrProf.h`); on the Switch, `arg --env SSR_EMU_PROF=1` in a test run's
+  `test.txt` (the timing lines there also show the clocks and temperatures).
 - **Pictures:** `--headless --compose 1280x720 --shot-dir DIR --shot-at a,b,c`
   (or `--shot-every 1` and ffmpeg for a video) shows the single-screen view.
   Check widescreen and battle changes visually, in motion: transitions, fades
@@ -130,6 +134,13 @@ pipeline (CurInstr/NextInstr) or cycles/timestamp in chunk locals (spills,
 up to 14% slower). The current recompiled code is about 6–9% faster than the
 interpreter; the cost now is mostly melonDS's per-instruction bookkeeping that
 lockstep requires.
+
+Pairing an in-between frame's polygons (`GPU3D_Wide.cpp`, Pair): testing "moved more than an
+eighth of the screen" with a multiplication before dividing, dividing once per candidate, and a
+compact table of polygon kinds: same results, no faster on the Switch (in-between lists 1.59 ms
+a frame before and after). Most of its time is the scene-motion vote's 140,000-odd candidate
+tests a frame, not the divisions. What did help: building the wide lists and the pairs on a
+helper thread (`ListHelper`, `SSR_WIDE_LISTS=0` to compare).
 
 Widescreen 3D (`GPU3D_Wide.cpp`): the pixel loop works on groups of 8 (AVX2)
 or 4 (SSE, NEON) pixels; measure it with `SSR_WIDE_THREADS=1 SSR_WIDE_PROF=1`.

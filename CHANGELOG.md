@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Switch: smoother in towns, 60 FPS where it dropped to the mid-50s** (White 2's Aspertia City,
+  Black 2's Castelia City). Where a game draws its 3D every other frame, each new 3D frame
+  meant building the wide view's polygon lists and the 60 FPS in-between frames, about 8 ms of
+  emulation every second frame. That work now runs on a spare core of the Switch, and the
+  in-between frame's matching of polygons is worked out once instead of twice. Measured from
+  save states: Aspertia from 56 to 60 FPS (frames running late from half to 4%), Castelia
+  walking from 35% to under 2% late. The picture is the same as before.
 - **Switch: fixed a rare freeze a few seconds into a game** (black screen, only holding POWER
   got out of it). The game asked the console for its clock speeds and temperatures for its log,
   and with sys-clk installed that could crash the console's power service. A player's log now
