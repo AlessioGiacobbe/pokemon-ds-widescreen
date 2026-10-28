@@ -1780,6 +1780,11 @@ int main(int argc, char** argv)
         // The controller keeps working while another window has the focus (on Windows SDL
         // otherwise ignores it then, as when the game was started from the setup window).
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+        #ifdef _WIN32
+        // The program's own icon (resource 1, when it was built with one) for its windows.
+        SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
+        SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
+        #endif
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0)
         {
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -3745,7 +3750,8 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
             // (Always full screen on the Switch. CPU BOOST was here: the system kept taking
             // its boost mode away, so the game dropped frames; sys-clk sets the clocks there.)
-            { "FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
+            // (Borderless: a window the size of the screen, so other windows come up at once.)
+            { "BORDERLESS FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
 #endif
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
@@ -3755,10 +3761,20 @@ int main(int argc, char** argv)
                 (cfg.wideMap != bw2map.on ? " (NEXT START)" : "") },
             // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
             { "BATTLE BUTTONS", !funcWatchOn || pt.on ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
+#ifdef __SWITCH__
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
             { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
+#else
+            // (The same setting, named as on a PC's other games: the lines the 3D world is drawn
+            // with, as a screen resolution.)
+            { "3D RESOLUTION", [&] {
+                const int l = detailLines[detailIndex()];
+                return std::to_string(l) + "P" + (l == 192 ? " (DS)" : l == 1440 ? " (2K)" : l == 2160 ? " (4K)" : "");
+            }() },
+            { "LOWER RES WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
+#endif
 #if SSR_WORLD_ON_GPU
             // ON: the widescreen world drawn by the graphics chip (deko3D on the Switch, OpenGL
             // on a PC), not the processor.

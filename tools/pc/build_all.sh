@@ -12,13 +12,14 @@
 # tables come from the decompilations' symbol files: the downloads hold nothing of the games.
 #
 # The results, in build-pc-dist/:
-#   pokemon-ds-wide-pc-windows-x86_64.zip   pokemon-ds-wide.exe, SDL2.dll, data/, roms/
+#   pokemon-ds-wide-pc-windows-x86_64.zip   Pokemon DS Launcher.exe, SDL2.dll, data/, roms/
 #   pokemon-ds-wide-pc-linux-x86_64.tar.gz  pokemon-ds-wide, data/, roms/ (needs SDL2 installed)
 #
 # Needs Linux or WSL2 (Ubuntu 24.04) with git, CMake, Ninja, Python 3 and curl; for Windows also
 # MinGW-w64 (sudo apt install g++-mingw-w64-x86-64-posix), for Linux SDL2's development files
 # (sudo apt install libsdl2-dev). SDL2 for Windows is SDL's own MinGW package, fetched once into
-# build-pc-deps/ and checked against its known checksum.
+# build-pc-deps/ and checked against its known checksum. The Windows program's icon:
+# SSR_PC_ICON=your.ico (optional).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -119,8 +120,8 @@ stage() {
 check_contents() { # list of paths, one per line, relative to the download's top folder
     python3 -c "
 import re, sys
-ok = re.compile(r'^pokemon-ds-wide/(pokemon-ds-wide(\.exe)?|SDL2\.dll|LICENSE\.txt|LICENSE-SDL2\.txt|README\.txt|roms/|data/|data/funcs/|data/funcs/(IREO|IRDO|IRBO|IRAO|CPUE)\.txt)?$')
-bad = [l for l in sys.stdin.read().split() if not ok.match(l)]
+ok = re.compile(r'^pokemon-ds-wide/(pokemon-ds-wide|Pokemon DS Launcher\.exe|SDL2\.dll|LICENSE\.txt|LICENSE-SDL2\.txt|README\.txt|roms/|data/|data/funcs/|data/funcs/(IREO|IRDO|IRBO|IRAO|CPUE)\.txt)?$')
+bad = [l for l in sys.stdin.read().splitlines() if l and not ok.match(l)]
 if bad: sys.exit('unexpected files in the download: %s' % bad)
 "
 }
@@ -137,13 +138,16 @@ if [ "$TARGET" != linux ]; then
         tar -xzf "$DEPS/sdl2.tar.gz" -C "$DEPS"
     fi
     say "Compiling for Windows"
+    # The program's icon: SSR_PC_ICON, an .ico of your own (none comes with the source).
+    ICON="${SSR_PC_ICON:-}"
+    [ -n "$ICON" ] && { [ -f "$ICON" ] || fail "SSR_PC_ICON: no such file: $ICON"; ICON="$(realpath "$ICON")"; say "Icon: $ICON"; }
     cmake -S . -B build-pc-windows "${COMMON[@]}" -DCMAKE_TOOLCHAIN_FILE="$HERE/tools/pc/mingw-w64.cmake" \
-        -DSDL2_DIR="$HERE/tools/pc/sdl2-mingw" -DSSR_SDL2_ROOT="$SDL_ROOT" >/dev/null
+        -DSDL2_DIR="$HERE/tools/pc/sdl2-mingw" -DSSR_SDL2_ROOT="$SDL_ROOT" -DSSR_PC_ICON="$ICON" >/dev/null
     ninja -C build-pc-windows ssrecomp
     OUT=build-pc-dist/windows/pokemon-ds-wide
     stage "$OUT"
-    cp build-pc-windows/ssrecomp.exe "$OUT/pokemon-ds-wide.exe"
-    x86_64-w64-mingw32-strip "$OUT/pokemon-ds-wide.exe"
+    cp build-pc-windows/ssrecomp.exe "$OUT/Pokemon DS Launcher.exe"
+    x86_64-w64-mingw32-strip "$OUT/Pokemon DS Launcher.exe"
     cp "$SDL_ROOT/bin/SDL2.dll" "$OUT/"
     cp "$DEPS/SDL2-$SDL_VERSION/LICENSE.txt" "$OUT/LICENSE-SDL2.txt"
     ZIP=pokemon-ds-wide-pc-windows-x86_64.zip

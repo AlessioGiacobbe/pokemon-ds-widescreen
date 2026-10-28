@@ -184,6 +184,11 @@ void OpenFolder(const std::string& path)
 // ROMs come and go), or -1 when the window is closed.
 int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected, bool& fullscreen, int winW, int winH)
 {
+    #ifdef _WIN32
+    // The program's own icon (resource 1, when it was built with one) for its windows.
+    SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
+    SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
+    #endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
     {
         fprintf(stderr, "[launcher] SDL_Init: %s\n", SDL_GetError());

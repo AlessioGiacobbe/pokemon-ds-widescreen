@@ -285,6 +285,14 @@ else()
         # and thread libraries inside it so that only SDL2.dll goes beside it.
         enable_language(RC)
         target_sources(ssrecomp PRIVATE frontend/windows/ssrecomp.rc)
+        # The program's icon (Explorer, the taskbar and its windows): SSR_PC_ICON, an .ico of the
+        # builder's own (tools/pc/build_all.sh), as resource 1; without one, Windows' plain icon.
+        set(SSR_PC_ICON "" CACHE FILEPATH "an .ico for the PC all-games program")
+        if(SSR_PC_ICON AND EXISTS "${SSR_PC_ICON}")
+            file(TO_CMAKE_PATH "${SSR_PC_ICON}" _ssr_icon)
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icon.rc" "1 ICON \"${_ssr_icon}\"\n")
+            target_sources(ssrecomp PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/icon.rc")
+        endif()
         set_target_properties(ssrecomp PROPERTIES WIN32_EXECUTABLE ON)
         target_link_options(ssrecomp PRIVATE -static)
     endif()

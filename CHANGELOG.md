@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **PC: the Windows program is now `Pokemon DS Launcher.exe`**, with its own icon, and the
+  menu's FULLSCREEN is called BORDERLESS FULLSCREEN (which is what it always was) and WORLD DETAIL
+  is 3D RESOLUTION, shown as 720P, 1080P, 1440P (2K) or 2160P (4K). The game list
+  can show your own pictures of the games: see `icons/` in the PC README.
 - **Fast forward is on the right trigger in every game** (ZR on the Switch, RT on a PC
   controller): hold it for up to 4x speed. It was the left trigger. With STICK TOUCH CURSOR on,
   the left trigger now presses the touch screen instead of the right.
@@ -13,6 +17,12 @@
 - **Switch: fixed a crash when LOWER DETAIL WHEN BUSY brought the world down to 423 lines**
   (in heavy scenes, and nearly always while fast forwarding): at that size the world is now
   drawn the way it is at the other sizes the detail goes through.
+- **Switch: smoother in heavy scenes.** The game now runs one frame ahead of what is on screen
+  and shows each frame at an even time, so a frame that takes a little too long no longer
+  makes its picture late when the frames around it are quick. At a 1581 MHz CPU clock, frames
+  shown unevenly (over 17.5 ms after the last): White 2's Aspertia City from 39% to 17%, a
+  Black 2 battle from 29% to 19%, Platinum's Snowpoint City from 30% to 10%, a HeartGold route from 19% to 2%. The cost is one
+  more frame (17 ms) between pressing a button and seeing it.
 - **Switch: fewer late frames in towns and battles.** Preparing the 3D pictures for the
   graphics chip, sending them and collecting them now happens on the Switch's spare cores
   instead of between the game's own work, about 1 ms less a frame. Measured from save states,

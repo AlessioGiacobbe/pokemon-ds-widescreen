@@ -17,7 +17,7 @@ GETTING STARTED
 
 1. Unpack the download anywhere you like (not inside Program Files).
 2. Put your ROMs in the roms folder. Any file names are fine.
-3. Start pokemon-ds-wide.exe (Windows) or pokemon-ds-wide (Linux).
+3. Start Pokemon DS Launcher.exe (Windows) or pokemon-ds-wide (Linux).
 4. Pick a game from the list: arrow keys or a controller's D-pad, then Enter or A.
    You can also double-click a game. Press O in the list to open the roms folder.
 
@@ -31,16 +31,24 @@ PICTURE SETTINGS (Esc menu)
 
   WORLD ON GPU       ON: the widescreen world is drawn by your graphics card (OpenGL 4.3 or
                      newer). Turn it OFF if the world looks wrong or the game will not start.
-  WORLD DETAIL       how sharp the widescreen world is: up to 2160 lines (4K). With WORLD ON
-                     GPU, 1080 or 1440 suits most PCs; 2160 needs a good graphics card.
-  LOWER DETAIL WHEN BUSY   lowers WORLD DETAIL for a moment when the PC cannot keep up.
-  F11                fullscreen at your screen's resolution.
+  3D RESOLUTION      how sharp the widescreen 3D world is: 720P, 1080P, 1440P (2K) or
+                     2160P (4K), lower for slow PCs. The 2D sprites and text stay the DS's
+                     own pixels. With WORLD ON GPU, 1080P or 1440P suits most PCs; 2160P needs
+                     a good graphics card.
+  LOWER RES WHEN BUSY      lowers the 3D RESOLUTION for a moment when the PC cannot keep up.
+  BORDERLESS FULLSCREEN    fills your screen at its own resolution, as a borderless window,
+                     so switching to other windows is instant. F11 does the same.
 
 
 WHERE THINGS ARE KEPT
 ---------------------
 
   roms/           your ROMs
+  icons/          pictures for the game list, if you want them: a JPEG or PNG named by the
+                  game's code (IREO.jpg Black 2, IRDO White 2, IRBO Black, IRAO White,
+                  IPKE HeartGold, IPGE SoulSilver, CPUE Platinum). Without one, the list shows
+                  the game's own small DS icon. A picture named like the ROM (Black 2.jpg beside
+                  Black 2.nds) works too.
   saves/          your saved games, one per game (black2.sav, soulsilver.sav, ...)
   settings.cfg    your settings
   game.log        what happened in the last session (send it with a bug report)
@@ -53,7 +61,7 @@ CONTROLS
 --------
 
 Controller (Xbox, PlayStation, Switch Pro and others): plays as a DS, with the touch screen's
-buttons shown in the view. Hold the right trigger to fast forward (4x).
+buttons shown in the view. Hold the right trigger to fast forward (up to 4x).
 
 Keyboard:
   Arrow keys       D-pad

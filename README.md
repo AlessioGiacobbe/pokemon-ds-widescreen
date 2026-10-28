@@ -197,7 +197,7 @@ starts, widescreen up to 4K (2160 lines), 60 fps and controller support.
 - **Download:** [`pokemon-ds-wide-pc-windows-x86_64.zip`](../../releases/tag/pc-v1)
   (Windows) or [`pokemon-ds-wide-pc-linux-x86_64.tar.gz`](../../releases/tag/pc-v1) (Linux).
 - **Install:** unpack it anywhere (not inside Program Files), put your ROMs in its
-  `roms` folder (any names) and start `pokemon-ds-wide.exe` (Linux: `pokemon-ds-wide`).
+  `roms` folder (any names) and start `Pokemon DS Launcher.exe` (Linux: `pokemon-ds-wide`).
   The `README.txt` inside has the keyboard controls.
 - **Needs:** Windows 10 or 11 (64-bit), or 64-bit Linux from late 2023 on (Ubuntu
   24.04, Fedora 39, SteamOS 3.5 or newer) with SDL2 installed. For WORLD ON GPU, a
@@ -207,12 +207,12 @@ starts, widescreen up to 4K (2160 lines), 60 fps and controller support.
 - **How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
   The Switch runs all seven games at 60 fps, and one core of any PC from the last
   eight years or so is several times as fast as one of the Switch's. What grows
-  with your screen is WORLD DETAIL, drawn by the graphics card:
+  with your screen is 3D RESOLUTION, drawn by the graphics card:
   - *Minimum:* a 4-core processor (Intel Core i5 6th generation or Ryzen 1000 on),
     graphics built into the processor (Intel HD 520 or Radeon Vega 8 class) at
-    WORLD DETAIL 720 to 1080, 4 GB of memory.
+    3D RESOLUTION 720P to 1080P, 4 GB of memory.
   - *Recommended:* a recent 6-core processor and a graphics card such as a GTX
-    1060 or RX 580 for 1440; 2160 (4K) wants an RTX 2070 or better.
+    1060 or RX 580 for 1440P; 2160P (4K) wants an RTX 2070 or better.
 
   If yours struggles, LOWER DETAIL WHEN BUSY (on by default) lowers the detail for
   a moment instead of slowing the game down. Tell us how yours runs, with its
