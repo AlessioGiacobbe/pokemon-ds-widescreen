@@ -79,6 +79,7 @@
 #include "GPU3D_Wide.h"
 #include "GPU3D_WideGpu.h"
 #include "SsrThreads.h"
+#include "SsrProf.h"
 #include "switch_platform.h"
 #include "funcwatch.h"
 #include "bw1.h" // Pokemon Black and White's own layouts
@@ -1734,6 +1735,9 @@ int main(int argc, char** argv)
 
     // SSR_PERF=1 prints where the time of a frame goes, averaged over 300 frames.
     const bool perfOn = getenv("SSR_PERF") != nullptr;
+    // SSR_EMU_PROF=1 (--env SSR_EMU_PROF=1 in a test run) adds where the emulation's time went
+    // (melonDS/src/SsrProf.h).
+    SsrProf::On = perfOn && getenv("SSR_EMU_PROF") != nullptr;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* tex[2] = { nullptr, nullptr };
@@ -4109,6 +4113,18 @@ int main(int argc, char** argv)
                     tail += extra;
                     gpuCompose->WideUploadMs = 0;
                     gpuCompose->WideUploads = 0;
+                }
+                if (SsrProf::On)
+                {
+                    static const char* const names[SsrProf::Count] = { "geometry", "2D", "sound", "DMA", "wide lists",
+                        "in-between lists", "3D start" };
+                    tail += "; of emulate:";
+                    for (int i = 0; i < SsrProf::Count; i++)
+                    {
+                        snprintf(extra, sizeof(extra), " %s %.2f", names[i], SsrProf::Ns[i] / 1e6 / perfN);
+                        tail += extra;
+                        SsrProf::Ns[i] = 0;
+                    }
                 }
 #ifdef __SWITCH__
                 // (wide: on cores 0/1/2; core 0 only with wide_core0, see melonDS/src/SsrThreads.h)

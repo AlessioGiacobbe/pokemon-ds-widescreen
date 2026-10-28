@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "SsrProf.h" // ssrecomp
 #include <stdio.h>
 #include "NDS.h"
 #include "DSi.h"
@@ -696,6 +697,7 @@ void DMA::Run7()
 void DMA::Run()
 {
     if (!Running) return;
+    SsrProf::Scope prof(SsrProf::DMA); // ssrecomp
     if (CPU == 0) return Run9();
     else          return Run7();
 }

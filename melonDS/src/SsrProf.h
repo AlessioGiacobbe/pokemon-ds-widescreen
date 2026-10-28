@@ -1,0 +1,40 @@
+// ssrecomp: where the emulation's time goes, for development (--emu-prof): the time spent in
+// a few parts of the DS's hardware, each counted without the parts it calls (a DMA that feeds
+// the geometry engine counts the geometry as geometry), the rest being the two processors (the
+// JIT or the interpreter) and the scheduler. Off, a part costs one test of a flag.
+// Only the emulation thread is timed (every part below runs there).
+#pragma once
+#include <chrono>
+#include <cstdint>
+
+namespace SsrProf
+{
+enum Part { Geometry, Draw2D, Sound, DMA, WideFlush, Interp, Render3D, Count };
+inline bool On = false;
+inline uint64_t Ns[Count] = {};
+inline int Stack[16];
+inline int Depth = 0;
+inline std::chrono::steady_clock::time_point Mark;
+
+inline void Enter(Part p)
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (Depth > 0) Ns[Stack[Depth - 1]] += (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(now - Mark).count();
+    if (Depth < 16) Stack[Depth] = p;
+    Depth++;
+    Mark = now;
+}
+inline void Leave()
+{
+    const auto now = std::chrono::steady_clock::now();
+    Depth--;
+    if (Depth < 16) Ns[Stack[Depth]] += (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(now - Mark).count();
+    Mark = now;
+}
+struct Scope
+{
+    bool Active;
+    explicit Scope(Part p) : Active(On) { if (Active) Enter(p); }
+    ~Scope() { if (Active) Leave(); }
+};
+}

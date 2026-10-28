@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "SsrProf.h" // ssrecomp
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
@@ -2437,6 +2438,7 @@ void GPU3D::FinishWork(s32 cycles) noexcept
 
 void GPU3D::Run() noexcept
 {
+    SsrProf::Scope prof(SsrProf::Geometry); // ssrecomp
     if (!GeometryEnabled || FlushRequest ||
         (CmdPIPE.IsEmpty() && !(GXStat & (1<<27))))
     {
@@ -2577,8 +2579,16 @@ void GPU3D::VBlank() noexcept
                 if (InterpolationEnabled || Wide.Owner == this)
                 {
                     const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;
-                    if (InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing) BuildInterpolatedFrame();
-                    if (Wide.Owner == this) WideOnFlush(*this);
+                    if (InterpolationEnabled && VBlankCount - LastFlushVBlank == 2 && !capturing)
+                    {
+                        SsrProf::Scope prof(SsrProf::Interp);
+                        BuildInterpolatedFrame();
+                    }
+                    if (Wide.Owner == this)
+                    {
+                        SsrProf::Scope prof(SsrProf::WideFlush);
+                        WideOnFlush(*this);
+                    }
                     RawPrevious.swap(RawCurrent);
                     RawCurrent.clear();
                 }
@@ -2638,6 +2648,7 @@ void GPU3D::VBlank() noexcept
 
 void GPU3D::VCount215(GPU& gpu) noexcept
 {
+    SsrProf::Scope prof(SsrProf::Render3D); // ssrecomp
     // ssrecomp: the widescreen picture drawn in the background reads texture memory, which
     // rendering a frame is about to bring up to date. (Not one drawn by the graphics chip
     // through GPU3D_WideGpu.h: its data was copied when it was sent.)

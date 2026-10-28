@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "SsrProf.h" // ssrecomp
 #include <stdio.h>
 #include <string.h>
 #include <cmath>
@@ -852,6 +853,7 @@ void SPUCaptureUnit::Run(u32 cycles, s32 sample)
 
 void SPU::Mix(u32 spucycles)
 {
+    SsrProf::Scope prof(SsrProf::Sound); // ssrecomp
     s32 left = 0, right = 0;
     s32 leftoutput = 0, rightoutput = 0;
 

@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "SsrProf.h" // ssrecomp
 #include <string.h>
 #include "NDS.h"
 #include "GPU.h"
@@ -884,6 +885,7 @@ void GPU::StartHBlank(u32 line) noexcept
     {
         // draw
         // note: this should start 48 cycles after the scanline start
+        SsrProf::Scope prof(SsrProf::Draw2D); // ssrecomp
         if (line < 192)
         {
             GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
