@@ -12,6 +12,7 @@
 | **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
 | **Pokémon Platinum** | ✅ out now | [pokemon-platinum-wide-switch.zip](../../releases/tag/platinum-v1) |
 | **All seven games in one** (one program, choose the game when it starts) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
+| **On a PC: all seven games** (Windows and Linux) | ✅ out now | [Windows and Linux downloads](../../releases/tag/pc-v1), see [On a PC](#on-a-pc-windows-and-linux) |
 | **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
 
 **Which one?** The **all seven games** download is one program: start it and
@@ -187,7 +188,38 @@ separate programs keep their own).
 
 ---
 
+## On a PC (Windows and Linux)
+
+The same program for a PC: all seven games in one, with the game list when it
+starts, widescreen up to 4K (2160 lines), 60 fps and controller support.
+
+- **Download:** [`pokemon-ds-wide-pc-windows-x86_64.zip`](../../releases/tag/pc-v1)
+  (Windows) or [`pokemon-ds-wide-pc-linux-x86_64.tar.gz`](../../releases/tag/pc-v1) (Linux).
+- **Install:** unpack it anywhere (not inside Program Files), put your ROMs in its
+  `roms` folder (any names) and start `pokemon-ds-wide.exe` (Linux: `pokemon-ds-wide`).
+  The `README.txt` inside has the keyboard controls.
+- **Needs:** Windows 10 or 11 (64-bit), or 64-bit Linux from late 2023 on (Ubuntu
+  24.04, Fedora 39, SteamOS 3.5 or newer) with SDL2 installed. For WORLD ON GPU, a
+  graphics card with OpenGL 4.3, which nearly any from 2012 on has with up-to-date
+  drivers; without it, turn WORLD ON GPU off in the Esc menu and the processor draws
+  the world (that wants a much faster processor).
+- **How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
+  The Switch runs all seven games at 60 fps, and one core of any PC from the last
+  eight years or so is several times as fast as one of the Switch's. What grows
+  with your screen is WORLD DETAIL, drawn by the graphics card:
+  - *Minimum:* a 4-core processor (Intel Core i5 6th generation or Ryzen 1000 on),
+    graphics built into the processor (Intel HD 520 or Radeon Vega 8 class) at
+    WORLD DETAIL 720 to 1080, 4 GB of memory.
+  - *Recommended:* a recent 6-core processor and a graphics card such as a GTX
+    1060 or RX 580 for 1440; 2160 (4K) wants an RTX 2070 or better.
+
+  If yours struggles, LOWER DETAIL WHEN BUSY (on by default) lowers the detail for
+  a moment instead of slowing the game down. Tell us how yours runs, with its
+  `game.log`.
+
 ## Recommended settings
+
+On the Switch.
 
 **sys-clk** (recommended for full speed), handheld. With a forwarder (above),
 start the game, open sys-clk's overlay and set these for that game's own
@@ -234,7 +266,7 @@ a Switch OLED in handheld mode. The full list of changes is in
   City and Route 16), parts of the neighbouring map pop in and out at the sides
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
-- Switch only for now. Found a bug? See [Reporting a bug](#reporting-a-bug).
+- Found a bug? See [Reporting a bug](#reporting-a-bug).
 
 ## What's next
 
@@ -250,8 +282,9 @@ version and the **`game.log`** file, which says what the program did:
 
 1. **Find it:** `game.log` is in the game's folder on the SD card:
    `/switch/pokemon-ds-wide/` for the all-games download, otherwise the game's
-   own folder (e.g. `/switch/pokemon-black2-wide/`). It is written again each
-   time the game starts, so copy it straight after the problem.
+   own folder (e.g. `/switch/pokemon-black2-wide/`); on a PC, in the folder you
+   unpacked the download to. It is written again each time the game starts, so
+   copy it straight after the problem.
 2. **Get it onto a computer:** put the SD card in a card reader; or, leaving
    it in the Switch, use Hekate's **Tools > USB Tools > SD Card** (or DBI's MTP
    mode) to see the card on the computer over USB; or an FTP app such as ftpd
