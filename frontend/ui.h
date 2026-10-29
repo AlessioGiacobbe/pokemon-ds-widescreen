@@ -102,11 +102,17 @@ struct Canvas
             { 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04 }, // !
             { 0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02 }, // (
             { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 }, // )
+            // PlayStation's button symbols (controls.h, PS_*): cross, circle, square, triangle. Smaller
+            // than the letters, so the cross and the circle are not taken for an X and an O.
+            { 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x00 },
+            { 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E, 0x00 },
+            { 0x00, 0x1F, 0x11, 0x11, 0x11, 0x1F, 0x00 },
+            { 0x00, 0x04, 0x0A, 0x0A, 0x11, 0x1F, 0x00 },
         };
         if (c >= 'a' && c <= 'z') c -= 32;
         if (c >= 'A' && c <= 'Z') return font[c - 'A'];
         if (c >= '0' && c <= '9') return font[26 + c - '0'];
-        static const char punct[] = ":-+./<>!()";
+        static const char punct[] = ":-+./<>!()\x01\x02\x03\x04";
         const char* p = c ? strchr(punct, c) : nullptr;
         return p ? font[36 + (p - punct)] : nullptr;
     }

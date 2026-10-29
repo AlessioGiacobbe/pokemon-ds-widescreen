@@ -68,6 +68,12 @@ inline int InputFromKey(const std::string& s)
     return -1;
 }
 
+// PlayStation's button symbols, as characters of the menus' font (ui.h, Glyph).
+#define PS_CROSS "\x01"
+#define PS_CIRCLE "\x02"
+#define PS_SQUARE "\x03"
+#define PS_TRIANGLE "\x04"
+
 // Which names a controller's buttons have (StyleOf): Xbox's (and most others'), PlayStation's or
 // Nintendo's.
 enum Style { XBOX, PLAYSTATION, NINTENDO };
@@ -102,7 +108,8 @@ inline const char* InputName(int i, int style = XBOX)
 #endif
     static const char* xbox[IN_COUNT] = { "A", "B", "X", "Y", "BACK", "GUIDE", "START", "LEFT STICK", "RIGHT STICK", "LB", "RB",
                                           "UP", "DOWN", "LEFT", "RIGHT", "LT", "RT" };
-    static const char* ps[IN_COUNT] = { "CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "SHARE", "PS", "OPTIONS", "L3", "R3", "L1", "R1",
+    // (The four symbols are characters of the menus' font, ui.h's Glyph.)
+    static const char* ps[IN_COUNT] = { PS_CROSS, PS_CIRCLE, PS_SQUARE, PS_TRIANGLE, "SHARE", "PS", "OPTIONS", "L3", "R3", "L1", "R1",
                                         "UP", "DOWN", "LEFT", "RIGHT", "L2", "R2" };
     static const char* nin[IN_COUNT] = { "A", "B", "X", "Y", "-", "HOME", "+", "LEFT STICK", "RIGHT STICK", "L", "R",
                                          "UP", "DOWN", "LEFT", "RIGHT", "ZL", "ZR" };
@@ -194,7 +201,7 @@ inline std::string KeyName(int sc)
     {
         char c = *p;
         if (c >= 'a' && c <= 'z') c = (char)(c - 32);
-        const bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || strchr(":-+./<>!()", c);
+        const bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || (c && strchr(":-+./<>!()", c));
         s += ok ? c : ' ';
     }
     return s.empty() ? "KEY " + std::to_string(sc) : s;
