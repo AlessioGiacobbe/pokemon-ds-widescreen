@@ -1,6 +1,6 @@
 # Pokémon DS Widescreen
 
-**Your favourite DS Pokémon games on a PC (Windows and Linux), a Mac, a Steam
+**Your favourite DS Pokémon games on a PC (Windows and Linux), a Steam
 Deck or other handheld PC, an Android phone or a modded Nintendo Switch: one screen,
 widescreen, 60 fps, up to 4K on a PC and 720p on the Switch.** No more squinting at two tiny stacked DS screens.
 
@@ -8,9 +8,9 @@ widescreen, 60 fps, up to 4K on a PC and 720p on the Switch.** No more squinting
 
 ## Downloads
 
-| | PC, Mac, Steam Deck and handhelds (Windows, macOS and Linux) | Android | Nintendo Switch |
+| | PC, Steam Deck and handhelds (Windows and Linux) | Android | Nintendo Switch |
 |---|---|---|---|
-| **Download: all seven games in one program** | [Windows, Mac and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-android.apk](../../releases/tag/android-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
+| **Download: all seven games in one program** | [Windows and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-android.apk](../../releases/tag/android-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
 | Pokémon Black 2 and White 2 | ✅ | ✅ | ✅ |
 | Pokémon Black and White | ✅ | ✅ | ✅ |
 | Pokémon SoulSilver and HeartGold | ✅ | ✅ | ✅ |
@@ -30,7 +30,6 @@ cartridge. Copy it in under the game's name, in this folder:
 |---|---|
 | PC (Windows, Linux, Steam Deck) | the `saves` folder beside the program |
 | Linux AppImage | `~/.local/share/pokemon-ds-wide/saves` |
-| Mac | `~/Library/Application Support/Pokemon DS Widescreen/saves` |
 | Android | the `saves` folder inside the folder you chose for your ROMs |
 | Nintendo Switch | `/switch/pokemon-ds-wide/` on the SD card |
 
@@ -68,7 +67,7 @@ DS game, presented the way it should look on a modern screen.
 
 ---
 
-## On a PC, Mac, Steam Deck or handheld (Windows, macOS and Linux)
+## On a PC, Steam Deck or handheld (Windows and Linux)
 
 ![The PC game list: Black, White, Black 2, White 2, HeartGold, SoulSilver and Platinum in a grid on black, White 2 chosen in red with its save found](docs/screenshots/pc-game-list.png)
 
@@ -131,17 +130,6 @@ its `roms` folder; in Steam, **Games > Add a Non-Steam Game to My Library**,
 browse to `pokemon-ds-wide` (file type: All Files); then start it from your
 library in Gaming Mode with a gamepad controller layout. Set 3D RESOLUTION to
 720P for the Deck's 1280x800 screen.
-
-**Mac:** download `pokemon-ds-wide-pc-macos-arm64.zip` (Apple silicon: M1 and newer) or
-`pokemon-ds-wide-pc-macos-x86_64.zip` (Intel), unzip it and move **Pokemon DS Widescreen** to
-Applications. It isn't notarised by Apple, so macOS blocks it the first time: open it once,
-then go to **System Settings > Privacy & Security** and click **Open Anyway** (on macOS 14 and
-older, **right click it > Open** also works). If macOS still refuses, run
-`xattr -dr com.apple.quarantine "/Applications/Pokemon DS Widescreen.app"` in Terminal once. Its ROMs, saves and settings go in
-`~/Library/Application Support/Pokemon DS Widescreen`: press **O** in the game list to open its
-`roms` folder in the Finder. A Mac's OpenGL stops short of what WORLD ON GPU needs, so the
-widescreen world is drawn by the processor, at 720P to start; macOS 11 or newer. Built on
-GitHub's Macs and not yet tried on a real one: tell us how it runs.
 
 **How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
 The Switch runs all seven games at 60 fps, and one core of any PC from the last
@@ -350,7 +338,6 @@ OLED in handheld mode; a PC has room to spare, and draws the same picture up to
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
 - PC: speeds on a range of PCs are estimates so far (see above).
-- Mac: new, and not yet tried on a real Mac.
 - Android: tested on one phone so far (a Pixel 9 Pro XL).
 - Found a bug? See [Reporting a bug](#reporting-a-bug).
 
