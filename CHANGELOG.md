@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **README: a trailer at the top**, every game on every platform.
 - **The pause menu and the settings page in groups:** the pause menu is RESUME, SAVE STATE, LOAD
   STATE, FAST FORWARD, then DISPLAY, GRAPHICS and CONTROLS (each a page of its own), RESET GAME and
   QUIT; the game list's settings page opens on DISPLAY, GRAPHICS, CONTROLS, SHORTCUTS and HELP.
