@@ -85,7 +85,7 @@ SOURCE AND LICENCE
 
 This program is free software under the GNU General Public License version 3 (LICENSE.txt),
 built on melonDS. Its source code:
-  https://github.com/mamesj/pokemon-ds-widescreen-switch
+  https://github.com/mamesj/pokemon-ds-widescreen
 SDL2 (SDL2.dll on Windows) is under the zlib licence (LICENSE-SDL2.txt).
 Pokemon is a trademark of Nintendo, Creatures and GAME FREAK. This project is not affiliated
 with or endorsed by them.

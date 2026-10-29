@@ -1,244 +1,173 @@
-# Pokémon DS games on the Nintendo Switch and PC
+# Pokémon DS Widescreen
 
-**Your favourite DS Pokémon games on a modded Switch or a PC (Windows and
-Linux): one screen, widescreen, 60 fps, at 720p on the Switch and up to 4K on a
-PC.** No more squinting at two tiny stacked DS screens.
+**Your favourite DS Pokémon games on a PC (Windows and Linux) or a modded
+Nintendo Switch: one screen, widescreen, 60 fps, up to 4K on a PC and 720p on
+the Switch.** No more squinting at two tiny stacked DS screens.
 
 ![Black 2: cycling along Castelia City's waterfront in widescreen, with the in-between frames on](docs/screenshots/black2-castelia-bike-60fps.gif)
 
-| Game | Status | Download |
-|---|---|---|
-| **Pokémon Black 2 and White 2** | ✅ out now | [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
-| **Pokémon SoulSilver and HeartGold** | ✅ out now | [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
-| **Pokémon Black and White** | ✅ out now | [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
-| **Pokémon Platinum** | ✅ out now | [pokemon-platinum-wide-switch.zip](../../releases/tag/platinum-v1) |
-| **All seven games in one** (one program, choose the game when it starts) | ✅ out now | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
-| **On a PC: all seven games** (Windows and Linux) | ✅ out now | [Windows and Linux downloads](../../releases/tag/pc-v1), see [On a PC](#on-a-pc-windows-and-linux) |
-| **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | |
+## Downloads
 
-**Which one?** The **all seven games** download is one program: start it and
-pick the game from a list. The other downloads are one program per game, if
-you only want one or two. Every download is free of the games themselves: you
-bring your own ROMs, and the program reads what it needs from them when the
-game starts.
+| | PC (Windows and Linux) | Nintendo Switch |
+|---|---|---|
+| **All seven games in one program** (pick the game when it starts) | ✅ [Windows and Linux](../../releases/tag/pc-v1) | ✅ [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
+| **Pokémon Black 2 and White 2** | ✅ in the PC download | ✅ [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
+| **Pokémon Black and White** | ✅ in the PC download | ✅ [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
+| **Pokémon SoulSilver and HeartGold** | ✅ in the PC download | ✅ [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
+| **Pokémon Platinum** | ✅ in the PC download | ✅ [pokemon-platinum-wide-switch.zip](../../releases/tag/platinum-v1) |
+| **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | 🛠️ in the works |
+
+On a PC there is one download with all seven games. On the Switch there is the
+same all-in-one program, or one program per pair of games if you only want one
+or two. Every download is free of the games themselves: you bring your own
+ROMs, and the program reads what it needs from them when the game starts.
 
 ## What is it?
 
-A Switch homebrew app that runs the game on the melonDS emulator core (built
-in: there is no need to install melonDS or anything else), plus a layer that
-knows what the game is doing (which screen, which menu, which
+A program for your PC or your Switch (as homebrew) that runs the game on the
+melonDS emulator core (built in: there is nothing else to install), plus a
+layer that knows what the game is doing (which screen, which menu, which
 battle) and rearranges it into one proper widescreen picture. It is **not a
 native port** (those are the dream, see [What's next](#whats-next)); it's the
-DS game, presented the way it should look on a Switch.
+DS game, presented the way it should look on a modern screen.
 
 ## Why not just play it in melonDS?
 
 | | melonDS | this |
 |---|---|---|
 | Screens | two 256×192 DS screens, stacked or side by side | one 16:9 picture, the touch screen's buttons tucked beside the action |
-| 3D world | 4:3 at DS resolution | 16:9 at 720p, drawn by the Switch's graphics chip, skies and scenery carried to the edges |
+| 3D world | 4:3 at DS resolution | 16:9, skies and scenery carried to the edges: up to 4K on a PC (your graphics card), 720p on the Switch (its graphics chip) |
 | Frame rate | the game's own 30 fps 3D | 60 fps, with in-between frames |
 
-## Installing a separate download
+---
 
-(For the all seven games download, see
-[All seven games in one program](#all-seven-games-in-one-program) instead.)
+## On a PC (Windows and Linux)
 
-1. Download the game's zip (table above) and unzip it to the root of the SD
-   card. It makes a folder for each game in `/switch/`; a game whose ROM you
-   don't put in its folder just isn't used.
-2. Copy your own ROM into the game's folder, as the only `.nds` file there.
-3. **Hold R while starting any game** to open the Homebrew Menu, then pick the
-   game (started from the album there is not enough memory). **QUIT** in the
-   pause menu (+ and − together) saves and goes back to the Homebrew Menu.
+![The PC game list: Black, White, Black 2, White 2, HeartGold, SoulSilver and Platinum in a grid on black, White 2 chosen in red with its save found](docs/screenshots/pc-game-list.png)
 
-Each game keeps its save in its own folder (named below). To carry on from an
-emulator or a flash cart, copy your save in under that name.
+1. **Download** [`pokemon-ds-wide-pc-windows-x86_64.zip`](../../releases/tag/pc-v1)
+   (Windows) or [`pokemon-ds-wide-pc-linux-x86_64.tar.gz`](../../releases/tag/pc-v1) (Linux).
+2. **Unpack it** anywhere (not inside Program Files) and put your ROMs in its
+   `roms` folder (any names).
+3. **Start** `Pokemon DS Launcher.exe` (Linux: `pokemon-ds-wide`) and pick a game.
+   Windows may warn about an unknown publisher the first time: choose
+   "More info", then "Run anyway".
+
+It starts in borderless fullscreen at 1080p with 60 fps; **F11** switches to a
+window. In the game list, arrow keys or a controller choose, **Enter** or **A**
+plays, **H** (or a controller's **Y**) opens the settings and **O** opens the
+`roms` folder. While playing, **Esc** (or a controller's Guide button, or Start
+and Select together) opens the pause menu; **QUIT** there goes back to the list.
+
+**Controls:** any controller (Xbox, PlayStation, Switch Pro and others) plays
+as a DS; hold its right trigger to fast forward. On the keyboard: arrow keys,
+X/Z for A/B, S/A for X/Y, Q/W for L/R, Enter for START, Backspace for SELECT,
+the mouse for the touch screen and Left Shift to fast forward. The `README.txt`
+inside has the full list.
+
+**Saves** go in the `saves` folder, one per game (`black2.sav`, `soulsilver.sav`,
+`platinum.sav`, ...). To carry on from another emulator, put its `.sav` there
+under that name. **Pictures** for the list: a JPEG or PNG in an `icons` folder
+beside the program, named after the game's code (`IREO.jpg` for Black 2, see
+the `README.txt`); without one, the list shows the game's own DS icon.
+
+![The settings page: each option with its value and what it does, 3D RESOLUTION chosen at 1080P](docs/screenshots/pc-settings-page.png)
+
+**Settings:** the settings page in the game list sets everything in the pause
+menu before you play, each option explained. The ones that matter most on a PC:
+
+| Setting | Starts at | What it does |
+|---|---|---|
+| 3D RESOLUTION | 1080P | how sharp the 3D world is: 720P, 1080P, 1440P (2K) or 2160P (4K) |
+| LOWER RES WHEN BUSY | ON | a lower resolution for a moment instead of slowing down |
+| WORLD ON GPU | ON | the world drawn by your graphics card; turn it off if it looks wrong |
+| BORDERLESS FULLSCREEN | ON | fills your screen; F11 does the same |
+| SCREEN LAYOUT | MERGED | the one widescreen picture, or the two DS screens laid out as on other emulators |
+
+**What it needs:** Windows 10 or 11 (64-bit), or 64-bit Linux from late 2023 on
+(Ubuntu 24.04, Fedora 39, SteamOS 3.5 or newer) with SDL2 installed. For WORLD
+ON GPU, a graphics card with OpenGL 4.3, which nearly any from 2012 on has with
+up-to-date drivers; without it, the processor draws the world (that wants a
+much faster processor).
+
+**How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
+The Switch runs all seven games at 60 fps, and one core of any PC from the last
+eight years or so is several times as fast as one of the Switch's. What grows
+with your screen is the 3D resolution, drawn by the graphics card:
+
+- *Minimum:* a 4-core processor (Intel Core i5 6th generation or Ryzen 1000 on),
+  graphics built into the processor (Intel HD 520 or Radeon Vega 8 class) at
+  720p to 1080p, 4 GB of memory.
+- *Recommended:* a recent 6-core processor and a graphics card such as a GTX
+  1060 or RX 580 for 1440p; 4K wants an RTX 2070 or better.
+
+Tell us how yours runs, with its `game.log`.
+
+---
+
+## On the Nintendo Switch
+
+![The Switch game list: Black, White, Black 2, White 2, HeartGold, SoulSilver and Platinum in a grid on black, Black 2 chosen in red with its save found](docs/screenshots/all-games-launcher.png)
+
+**All seven games in one program** (`pokemon-ds-wide-all-switch.zip`):
+
+1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`
+   with an empty `roms` folder inside.
+2. Copy your ROMs into `/switch/pokemon-ds-wide/roms/` (any names).
+3. Hold R while starting any game, pick **Pokemon DS Widescreen**, then the
+   game (started from the album there is not enough memory).
+
+In the list the D-pad or a stick moves between games, **A** plays, **Y** opens
+the settings (the pause menu's options, each explained) and **+** goes back to
+the Homebrew Menu. It opens on the game you played last. While playing, **+
+and − together** open the pause menu; **QUIT** there saves and comes back to
+the list (started from a forwarder it closes instead). With only one game found
+there is no list: it starts straight away.
+
+**One program per pair of games** (the other Switch downloads): unzip to the
+root of the SD card (a folder for each game in `/switch/`), copy your ROM into
+the game's folder as the only `.nds` file there, then hold R while starting any
+game and pick the game in the Homebrew Menu.
+
+**Saves:** each game keeps its save under its own name (`black2.sav`,
+`white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`, `heartgold.sav`,
+`platinum.sav`): in `/switch/pokemon-ds-wide/` for a ROM in its `roms` folder,
+or in a separate download's folder for a ROM there. To carry on from an
+emulator or a flash cart, copy your save in under that name. The all-in-one
+list also shows the games in the separate downloads' folders and plays each
+with the save already there, so you don't need to move anything.
+
+**Pictures:** each game shows the icon from its ROM, or the HOME Menu icon of
+its separate program when that is installed. For your own, put a square JPEG
+or PNG in `/switch/pokemon-ds-wide/icons/` named after the game's code: `IRBO`
+Black, `IRAO` White, `IREO` Black 2, `IRDO` White 2, `IPKE` HeartGold, `IPGE`
+SoulSilver, `CPUE` Platinum (e.g. `icons/IREO.jpg`).
 
 **Recommended: start each game from the HOME Menu.** With
 [sphaira](https://github.com/ITotalJustice/sphaira) (a Homebrew Menu you can
 use instead of the usual one) you can install a forwarder for each game: an
 icon on the Switch's HOME Menu that starts it directly, with no holding R. In
 sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`, or
-**Pokemon DS Widescreen** for the all seven games download) and choose to install
-a forwarder. Do it once per game; keep the game's folder
-where it is, as the forwarder starts the `.nro` in it. Each game then has its
-own entry, so sys-clk (below) can have its own settings for it.
+**Pokemon DS Widescreen** for the all-in-one) and choose to install a
+forwarder. Keep the game's folder where it is, as the forwarder starts the
+`.nro` in it. Each game then has its own entry, so sys-clk (below) can have its
+own settings for it.
 
----
-
-## All seven games in one program
-
-![The game list: Black, White, Black 2, White 2, HeartGold, SoulSilver and Platinum in a grid on black, Black 2 chosen in red with its save found](docs/screenshots/all-games-launcher.png)
-
-`pokemon-ds-wide-all-switch.zip` is one program for all seven games: Black,
-White, Black 2, White 2, HeartGold, SoulSilver and Platinum. It opens on a grid
-of your games, each showing whether it has a save yet; pick one and it starts.
-The separate downloads above are still there if you only want one or two.
-
-**Installing**
-
-1. Unzip it to the root of the SD card. It makes `/switch/pokemon-ds-wide/`
-   with an empty `roms` folder inside.
-2. Copy your ROMs into `/switch/pokemon-ds-wide/roms/` (any names).
-3. Hold R while starting any game, pick **Pokemon DS Widescreen**, then the
-   game.
-
-**Using the list:** the D-pad or a stick moves between games, **A** plays,
-**Y** opens the settings (the pause menu's options, each explained), **+** goes back to the Homebrew Menu.
-It opens on the game you played last.
-**QUIT** in the pause menu (+ and − together) saves and comes back to the list
-(started from a forwarder it closes instead; start it again to pick another).
-With only one game found there is no list: it starts straight away.
-
-**Saves:** each game keeps its save under its own name (`black2.sav`,
-`white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`, `heartgold.sav`,
-`platinum.sav`):
-in `/switch/pokemon-ds-wide/` for a ROM in `roms/`, or in a separate
-download's folder for a ROM there.
-
-**Already using the separate downloads?** Leave them as they are: the list
-also shows the games in their folders and plays each with the save already
-there, so you don't need to move anything. If the same game is in both places
-it is listed twice, each copy with its own save, and the label under it says
-which folder it is in.
-
-**The pictures:** each game shows the icon from its ROM, or the HOME Menu icon
-of its separate program when that is installed. For your own, put a square
-JPEG or PNG in `/switch/pokemon-ds-wide/icons/` named after the game's code:
-`IRBO` Black, `IRAO` White, `IREO` Black 2, `IRDO` White 2, `IPKE` HeartGold,
-`IPGE` SoulSilver, `CPUE` Platinum (e.g. `icons/IREO.jpg`).
-
-The pause-menu settings are shared by all the games in this program (the
-separate programs keep their own).
-
----
-
-## Pokémon Black 2 and White 2
+**sys-clk** (recommended for full speed), handheld. With a forwarder, start the
+game, open sys-clk's overlay and set these for that game's own profile: they
+then apply whenever you play it, and only then. Without one, set them for the
+game you start the Homebrew Menu from, or as the global profile.
 
 | | |
 |---|---|
-| ![Black 2: Black Kyurem against a wild Crustle, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black2-black-kyurem-battle.jpg) | ![White 2: White Kyurem against a wild Tropius, with the FIGHT panel beside the battle](docs/screenshots/white2-white-kyurem-battle.jpg) |
-| ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
-
-- **Download:** [`pokemon-black2-white2-wide-switch.zip`](../../releases/tag/bw2-switch-v1),
-  folders `/switch/pokemon-black2-wide/` and `/switch/pokemon-white2-wide/`.
-- **ROMs:** any English copy (US or Europe), trimmed or not, including the
-  "NDSi Enhanced" one. Other languages put the game's code elsewhere: the
-  program says so instead of starting.
-- **Saves:** `black2.sav` and `white2.sav` (`tools/bw2/convert_save.py` turns
-  `.dsv` and Action Replay saves into the raw 512 KB save).
-- **What you get:** battles (single, double, triple, rotation) with the HP boxes
-  at the edges of the wide view and the battle buttons beside them; menus, the
-  bag and the save screen laid out for one screen; and more of the map loaded
-  around you, so the wide view never runs out of land.
-
-## Pokémon SoulSilver and HeartGold
-
-![SoulSilver: a wild Meowth appears and Lugia is sent out, in widescreen](docs/screenshots/soulsilver-lugia-battle.gif)
-
-| | |
-|---|---|
-| ![HeartGold: Totodile against a wild Pidgey on Route 29, with FIGHT, BAG, RUN, POKÉMON and the party beside the battle](docs/screenshots/heartgold-totodile-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
-
-- **Download:** [`pokemon-soulsilver-heartgold-wide-switch.zip`](../../releases/tag/soulsilver-heartgold-v1),
-  folders `/switch/pokemon-soulsilver-wide/` and `/switch/pokemon-heartgold-wide/`.
-- **ROMs:** the English US versions. Other versions start, but without the
-  one-screen layouts.
-- **Saves:** `soulsilver.sav` and `heartgold.sav` (the same format, so either
-  game reads the other's).
-- **What you get:** Johto and Kanto in widescreen, with your partner Pokémon
-  walking behind you; battles with their buttons beside the action; menus laid
-  out for one screen. Where this project started: the
-  original ssrecomp was SoulSilver on the PC.
-
-## Pokémon Black and White
-
-| | |
-|---|---|
-| ![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg) | ![White: Zekrom in battle, with the FIGHT panel beside it](docs/screenshots/white-zekrom-battle.jpg) |
-| ![Black: a double battle, Reshiram and Excadrill against a wild Pelipper and Mantyke, the HP boxes down the edges](docs/screenshots/black-reshiram-double.jpg) | ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) |
-
-- **Download:** [`pokemon-black-white-wide-switch.zip`](../../releases/tag/black-white-switch-v1),
-  folders `/switch/pokemon-black-wide/` and `/switch/pokemon-white-wide/`.
-- **ROMs:** any English copy (US or Europe), trimmed or not.
-- **Saves:** `black.sav` and `white.sav` (the same format, so either game reads
-  the other's; `tools/bw2/convert_save.py` turns `.dsv` and Action Replay saves
-  into the raw 512 KB save).
-- **What you get:** Unova's first adventure with the same treatment as Black 2:
-  battles (single, double, triple, rotation) with the HP boxes at the edges of
-  the wide view and the battle buttons beside them; its own layouts for the
-  start menu, the X menu, the save screen, the Badge Case and the Pokédex; and
-  the C-Gear's question at the start answered for you.
-
----
-
-## Pokémon Platinum
-
-| | |
-|---|---|
-| ![Platinum: Infernape against a wild Machoke, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/platinum-infernape-battle.jpg) | ![Platinum: Snowpoint City in the snow, in widescreen](docs/screenshots/platinum-snowpoint.jpg) |
-
-- **Download:** [`pokemon-platinum-wide-switch.zip`](../../releases/tag/platinum-v1),
-  folder `/switch/pokemon-platinum-wide/`.
-- **ROM:** the English US version (game code `CPUE`), trimmed or not.
-- **Save:** `platinum.sav`.
-- **What you get:** Sinnoh in widescreen, the snow and rain reaching the edges
-  of the view; battles with their buttons and moves beside the action; the X
-  menu at the right edge of the view, and the Bag, party, Pokédex, map and
-  other menus laid out for one screen.
-
----
-
-## On a PC (Windows and Linux)
-
-The same program for a PC: all seven games in one, with the game list when it
-starts, widescreen up to 4K (2160 lines), 60 fps and controller support.
-
-- **Download:** [`pokemon-ds-wide-pc-windows-x86_64.zip`](../../releases/tag/pc-v1)
-  (Windows) or [`pokemon-ds-wide-pc-linux-x86_64.tar.gz`](../../releases/tag/pc-v1) (Linux).
-- **Install:** unpack it anywhere (not inside Program Files), put your ROMs in its
-  `roms` folder (any names) and start `Pokemon DS Launcher.exe` (Linux: `pokemon-ds-wide`).
-  The `README.txt` inside has the keyboard controls.
-- **Needs:** Windows 10 or 11 (64-bit), or 64-bit Linux from late 2023 on (Ubuntu
-  24.04, Fedora 39, SteamOS 3.5 or newer) with SDL2 installed. For WORLD ON GPU, a
-  graphics card with OpenGL 4.3, which nearly any from 2012 on has with up-to-date
-  drivers; without it, turn WORLD ON GPU off in the Esc menu and the processor draws
-  the world (that wants a much faster processor).
-- **How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
-  The Switch runs all seven games at 60 fps, and one core of any PC from the last
-  eight years or so is several times as fast as one of the Switch's. What grows
-  with your screen is 3D RESOLUTION, drawn by the graphics card:
-  - *Minimum:* a 4-core processor (Intel Core i5 6th generation or Ryzen 1000 on),
-    graphics built into the processor (Intel HD 520 or Radeon Vega 8 class) at
-    3D RESOLUTION 720P to 1080P, 4 GB of memory.
-  - *Recommended:* a recent 6-core processor and a graphics card such as a GTX
-    1060 or RX 580 for 1440P; 2160P (4K) wants an RTX 2070 or better.
-
-  If yours struggles, LOWER DETAIL WHEN BUSY (on by default) lowers the detail for
-  a moment instead of slowing the game down. Tell us how yours runs, with its
-  `game.log`.
-
-## Recommended settings
-
-On the Switch.
-
-**sys-clk** (recommended for full speed), handheld. With a forwarder (above),
-start the game, open sys-clk's overlay and set these for that game's own
-profile: they then apply whenever you play it, and only then. Without one, set
-them for the game you start the Homebrew Menu from, or as the global profile.
-
-| | |
-|---|---|
-| CPU | 1785 MHz |
+| CPU | 1785 MHz (1581 is enough for most places) |
 | GPU | 460 MHz (the highest of the console's own handheld speeds; no need to go higher) |
 | Memory | 1600 MHz |
 
 Without sys-clk the games run at the console's normal speeds and drop frames
 in busy places.
 
-**Pause menu** (+ and − together). Black 2 and White 2 already start with
-what is recommended, and every game always uses the one wide screen:
+**Settings** (the settings page in the game list, or the pause menu):
 
 | Setting | Recommended | What it does |
 |---|---|---|
@@ -247,18 +176,96 @@ what is recommended, and every game always uses the one wide screen:
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
 | LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
 
-The world is always drawn by the Switch's graphics chip, and each frame is shown at an
-even time, a frame after it is made (smoother in busy towns and battles).
+The world is always drawn by the Switch's graphics chip, and each frame is
+shown at an even time, a frame after it is made (smoother in busy towns and
+battles). The games run on melonDS's FAST JIT. If a start ever fails with it,
+the next one falls back by itself (hold L while starting for the interpreter).
 
-The games run on melonDS's FAST JIT. If a start ever fails with it, the next
-one falls back by itself (hold L while starting for the interpreter).
+---
+
+## The games
+
+### Pokémon Black 2 and White 2
+
+| | |
+|---|---|
+| ![Black 2: Black Kyurem against a wild Crustle, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black2-black-kyurem-battle.jpg) | ![White 2: White Kyurem against a wild Tropius, with the FIGHT panel beside the battle](docs/screenshots/white2-white-kyurem-battle.jpg) |
+| ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
+
+- **ROMs:** any English copy (US or Europe), trimmed or not, including the
+  "NDSi Enhanced" one. Other languages put the game's code elsewhere: the
+  program says so instead of starting.
+- **Saves:** `black2.sav` and `white2.sav` (`tools/bw2/convert_save.py` turns
+  `.dsv` and Action Replay saves into the raw 512 KB save).
+- **Switch:** the all-in-one, or `pokemon-black2-white2-wide-switch.zip`
+  (folders `/switch/pokemon-black2-wide/` and `/switch/pokemon-white2-wide/`).
+- **What you get:** battles (single, double, triple, rotation) with the HP boxes
+  at the edges of the wide view and the battle buttons beside them; menus, the
+  bag and the save screen laid out for one screen; and more of the map loaded
+  around you, so the wide view never runs out of land.
+
+### Pokémon SoulSilver and HeartGold
+
+![SoulSilver: a wild Meowth appears and Lugia is sent out, in widescreen](docs/screenshots/soulsilver-lugia-battle.gif)
+
+| | |
+|---|---|
+| ![HeartGold: Totodile against a wild Pidgey on Route 29, with FIGHT, BAG, RUN, POKÉMON and the party beside the battle](docs/screenshots/heartgold-totodile-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
+
+- **ROMs:** the English US versions. Other versions start, but without the
+  one-screen layouts.
+- **Saves:** `soulsilver.sav` and `heartgold.sav` (the same format, so either
+  game reads the other's).
+- **Switch:** the all-in-one, or `pokemon-soulsilver-heartgold-wide-switch.zip`
+  (folders `/switch/pokemon-soulsilver-wide/` and `/switch/pokemon-heartgold-wide/`).
+- **What you get:** Johto and Kanto in widescreen, with your partner Pokémon
+  walking behind you; battles with their buttons beside the action; menus laid
+  out for one screen. Where this project started: the original ssrecomp was
+  SoulSilver on the PC.
+
+### Pokémon Black and White
+
+| | |
+|---|---|
+| ![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg) | ![White: Zekrom in battle, with the FIGHT panel beside it](docs/screenshots/white-zekrom-battle.jpg) |
+| ![Black: a double battle, Reshiram and Excadrill against a wild Pelipper and Mantyke, the HP boxes down the edges](docs/screenshots/black-reshiram-double.jpg) | ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) |
+
+- **ROMs:** any English copy (US or Europe), trimmed or not.
+- **Saves:** `black.sav` and `white.sav` (the same format, so either game reads
+  the other's; `tools/bw2/convert_save.py` turns `.dsv` and Action Replay saves
+  into the raw 512 KB save).
+- **Switch:** the all-in-one, or `pokemon-black-white-wide-switch.zip`
+  (folders `/switch/pokemon-black-wide/` and `/switch/pokemon-white-wide/`).
+- **What you get:** Unova's first adventure with the same treatment as Black 2:
+  battles (single, double, triple, rotation) with the HP boxes at the edges of
+  the wide view and the battle buttons beside them; its own layouts for the
+  start menu, the X menu, the save screen, the Badge Case and the Pokédex; and
+  the C-Gear's question at the start answered for you.
+
+### Pokémon Platinum
+
+| | |
+|---|---|
+| ![Platinum: Infernape against a wild Machoke, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/platinum-infernape-battle.jpg) | ![Platinum: Snowpoint City in the snow, in widescreen](docs/screenshots/platinum-snowpoint.jpg) |
+
+- **ROM:** the English US version (game code `CPUE`), trimmed or not.
+- **Save:** `platinum.sav`.
+- **Switch:** the all-in-one, or `pokemon-platinum-wide-switch.zip` (folder
+  `/switch/pokemon-platinum-wide/`).
+- **What you get:** Sinnoh in widescreen, the snow and rain reaching the edges
+  of the view; battles with their buttons and moves beside the action; the X
+  menu at the right edge of the view, and the Bag, party, Pokédex, map and
+  other menus laid out for one screen.
+
+---
 
 ## Under the hood
 
-The widescreen world is drawn by the Switch's graphics chip (deko3D), so Black
-2 runs at (or a whisker under) 60 fps at 720p in towns and battles, measured on
-a Switch OLED in handheld mode. The full list of changes is in
-[CHANGELOG.md](CHANGELOG.md).
+The widescreen world is drawn by a graphics chip: your graphics card with
+OpenGL on a PC, the Switch's own with deko3D. On the Switch, Black 2 runs at
+(or a whisker under) 60 fps at 720p in towns and battles, measured on a Switch
+OLED in handheld mode; a PC has room to spare, and draws the same picture up to
+4K. The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Known limits
 
@@ -270,35 +277,36 @@ a Switch OLED in handheld mode. The full list of changes is in
   City and Route 16), parts of the neighbouring map pop in and out at the sides
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
+- PC: speeds on a range of PCs are estimates so far (see above).
 - Found a bug? See [Reporting a bug](#reporting-a-bug).
 
 ## What's next
 
 - **Pokémon Omega Ruby**: in the works, as its own project.
-- **Native Switch ports**: the dream, hopefully for all of them. Optimistic,
-  but we're aiming for it.
+- **Native ports**: the dream, hopefully for all of them. Optimistic, but we're
+  aiming for it.
 
 ## Reporting a bug
 
-Open a **[bug report](https://github.com/mamesj/pokemon-ds-widescreen-switch/issues/new?template=bug_report.yml)**
+Open a **[bug report](https://github.com/mamesj/pokemon-ds-widescreen/issues/new?template=bug_report.yml)**
 (you need to be signed in to GitHub). The form asks for the game, your ROM's
 version and the **`game.log`** file, which says what the program did:
 
-1. **Find it:** `game.log` is in the game's folder on the SD card:
-   `/switch/pokemon-ds-wide/` for the all-games download, otherwise the game's
-   own folder (e.g. `/switch/pokemon-black2-wide/`); on a PC, in the folder you
-   unpacked the download to. It is written again each time the game starts, so
-   copy it straight after the problem.
-2. **Get it onto a computer:** put the SD card in a card reader; or, leaving
-   it in the Switch, use Hekate's **Tools > USB Tools > SD Card** (or DBI's MTP
-   mode) to see the card on the computer over USB; or an FTP app such as ftpd
-   over Wi-Fi.
+1. **Find it:** on a PC, `game.log` is in the folder you unpacked the download
+   to. On the Switch it is in the game's folder on the SD card:
+   `/switch/pokemon-ds-wide/` for the all-in-one, otherwise the game's own
+   folder (e.g. `/switch/pokemon-black2-wide/`). It is written again each time
+   the game starts, so copy it straight after the problem.
+2. **Switch: get it onto a computer.** Put the SD card in a card reader; or,
+   leaving it in the Switch, use Hekate's **Tools > USB Tools > SD Card** (or
+   DBI's MTP mode) to see the card on the computer over USB; or an FTP app such
+   as ftpd over Wi-Fi.
 3. **Add it to the form:** drag the file into the `game.log` box.
 
-A photo or short video of the screen helps too. Please never attach your ROM.
-A white or black screen when a game starts usually means the ROM isn't one the
-program plays: an English copy of Black, White, Black 2 or White 2 (US or
-Europe), or the English US copy of SoulSilver or HeartGold, unchanged (no
+A screenshot or short video helps too. Please never attach your ROM. A white or
+black screen when a game starts usually means the ROM isn't one the program
+plays: an English copy of Black, White, Black 2 or White 2 (US or Europe), or
+the English US copy of SoulSilver, HeartGold or Platinum, unchanged (no
 patches, translations, randomizers or trimming).
 
 ## Support
