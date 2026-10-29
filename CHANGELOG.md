@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **SoulSilver and HeartGold: the Running Shoes button beside the X menu.** The game greys it out
+  while its menu is open, and the single-screen view only shows the touch screen then; now the
+  button stands next to the menu, ON or OFF, and Y (or a touch on it) turns running on or off.
+- **SoulSilver and HeartGold: the title screen on both screens**, the logo beside the legendary
+  bird, as the other games show theirs; the opening movie shows its two screens one above the
+  other (the moon and the sea were on the hidden one).
 - **README: a trailer at the top**, every game on every platform.
 - **The pause menu and the settings page in groups:** the pause menu is RESUME, SAVE STATE, LOAD
   STATE, FAST FORWARD, then DISPLAY, GRAPHICS and CONTROLS (each a page of its own), RESET GAME and

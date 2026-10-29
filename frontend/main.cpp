@@ -3125,6 +3125,17 @@ int main(int argc, char** argv)
             sc.bgX = 2;
             sc.bgY = 96;
         }
+        else if (appActive("TitleScreen") && !AutoFocus::Blank(screens[0].pixels) && !AutoFocus::Blank(screens[1].pixels))
+            // The title screen (the logo above, Ho-Oh or Lugia flying below): the two side by
+            // side, as the other games show theirs, instead of the logo alone. (Not the opening
+            // movie: its two screens are one tall picture, the sky above the sea.)
+            sc = Stack("title", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, true, viewWidth);
+        else if (appActive("IntroMovie") && !AutoFocus::Blank(screens[1].pixels))
+            // The opening movie: its two screens are one tall picture (the night sky above, the
+            // sea with the moon and the legendary bird below, where most of it happens), shown
+            // as on a DS, one above the other; the bottom one alone while the top is one colour.
+            sc = AutoFocus::Blank(screens[0].pixels) ? Stack("movie", { Crop(1, 0, 0, 256, 192) }, false, viewWidth)
+                                                      : Stack("movie", { Crop(0, 0, 0, 256, 192), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
         else if (appActive("PokemonSummary") && AutoFocus::Blank(screens[0].pixels))
             // Fading in or out: black, not the card's empty frames on black.
             only("summary", 0);
