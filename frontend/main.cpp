@@ -3867,6 +3867,17 @@ int main(int argc, char** argv)
     int perfN = 0;
     auto perfNow = []() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
     double perfT = perfNow(), perfFrameStart = perfT;
+    // Of "scene" in the timing lines (SSR_EMU_PROF): the screens' sections and focus, choosing
+    // the layout, its edges and extra rows (the Black games), sound and the overlay, the world's
+    // picture taken for the view.
+    double sceneProf[5] = {};
+    double sceneProfT = 0;
+    auto sceneMark = [&](int part) {
+        if (!SsrProf::On) return;
+        const double t = perfNow();
+        if (part >= 0) sceneProf[part] += t - sceneProfT;
+        sceneProfT = t;
+    };
     // --timing: the same, a line per frame.
     double perfFrame[6] = {};
     FILE* timingFile = nullptr;
@@ -4284,6 +4295,13 @@ int main(int argc, char** argv)
                     tail += extra;
                     gpuCompose->SignatureMs = gpuCompose->UnderWorldMs = gpuCompose->UploadMs = 0;
                     gpuCompose->Uploads = 0;
+                }
+                if (SsrProf::On)
+                {
+                    snprintf(extra, sizeof(extra), "; of scene: screens and focus %.2f, layout %.2f, edges %.2f, sound and overlay %.2f, world picture %.2f ms",
+                        sceneProf[0] / perfN, sceneProf[1] / perfN, sceneProf[2] / perfN, sceneProf[3] / perfN, sceneProf[4] / perfN);
+                    tail += extra;
+                    for (double& a : sceneProf) a = 0;
                 }
                 if (SsrProf::On)
                 {
@@ -5406,6 +5424,7 @@ int main(int argc, char** argv)
                 if (!presentDue(false)) std::this_thread::sleep_for(std::chrono::duration<double>(std::max(0.0002, secondsToTick())));
         }
         perfMark(1);
+        sceneMark(-1);
         frame++;
 #ifdef __SWITCH__
         if (frame == 300) SwitchPlatform::JitStarted();
@@ -5529,6 +5548,7 @@ int main(int argc, char** argv)
             if (appActive(app->name)) appBottom = true;
         appBottomNow = appBottom;
         if (top && bot && !paused) focus.Update(top, bot, fieldNow, appBottom);
+        sceneMark(0);
         layout.swapped = focus.Swapped();
         // While the touch cursor is in use the bottom screen has to be big enough to aim at.
         if (!merged && focus.mode == 0 && frame < cursorShownUntil) layout.swapped = true;
@@ -5668,6 +5688,7 @@ int main(int argc, char** argv)
                 }
             }
         }
+        sceneMark(1);
         // Black 2: a picture in 2D covering the world (the Surf and Fly cut-ins) is shown at 4:3:
         // continuing it beside the screen would only make streaks.
         // (Back to wide only after 10 frames without one: the cut-in's flashes come in between.)
@@ -5832,6 +5853,7 @@ int main(int argc, char** argv)
                 (unsigned long long)fb, (unsigned long long)ram, nds->ARM9.R[15], nds->ARM7.R[15]);
         }
 
+        sceneMark(2);
         // Overlay: touch cursor, status message, pause menu.
         bool overlayUsed = false;
         canvas.Resize(outW, outH);
@@ -5983,7 +6005,9 @@ int main(int argc, char** argv)
         {
             // What the picture needs; drawn now, or with the pipeline while the next frame is
             // emulated (from copies of what that emulation overwrites).
+            sceneMark(3);
             if (merged) takeWideImage();
+            sceneMark(4);
             DrawJob& job = ahead ? aheadJobs[(aheadHead + aheadCount) % 3] : pipelined ? pendingJob : nowJob;
             job.merged = merged;
             job.overlayUsed = overlayUsed;
