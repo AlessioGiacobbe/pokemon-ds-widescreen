@@ -19,7 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          # (Apple silicon. macos-15's queue twice left this job without a Mac for 15 minutes.)
+          - os: macos-14
             arch: arm64
           - os: macos-15-intel
             arch: x86_64
