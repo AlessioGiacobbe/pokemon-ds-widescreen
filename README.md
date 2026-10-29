@@ -8,14 +8,18 @@ widescreen, 60 fps, up to 4K on a PC and 720p on the Switch.** No more squinting
 
 ## Downloads
 
-| | PC, Mac, Steam Deck and handhelds (Windows, macOS and Linux) | Android | Nintendo Switch |
-|---|---|---|---|
-| **Download: all seven games in one program** | [Windows, Mac and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-android.apk](../../releases/tag/android-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
-| Pokémon Black 2 and White 2 | ✅ | ✅ | ✅ |
-| Pokémon Black and White | ✅ | ✅ | ✅ |
-| Pokémon SoulSilver and HeartGold | ✅ | ✅ | ✅ |
-| Pokémon Platinum | ✅ | ✅ | ✅ |
-| Pokémon Omega Ruby | 🛠️ in the works (its own project) | | 🛠️ in the works |
+| Where you play | Download | Install |
+|---|---|---|
+| **Windows** PC, and Windows handhelds (ROG Ally, Legion Go, MSI Claw) | [pokemon-ds-wide-pc-windows-x86_64.zip](../../releases/download/pc-v1/pokemon-ds-wide-pc-windows-x86_64.zip) | [PC](#on-a-pc-mac-steam-deck-or-handheld-windows-macos-and-linux) |
+| **Mac** with Apple silicon (M1 and newer) | [pokemon-ds-wide-pc-macos-arm64.zip](../../releases/download/pc-v1/pokemon-ds-wide-pc-macos-arm64.zip) | [Mac](#on-a-pc-mac-steam-deck-or-handheld-windows-macos-and-linux) |
+| **Mac** with an Intel processor | [pokemon-ds-wide-pc-macos-x86_64.zip](../../releases/download/pc-v1/pokemon-ds-wide-pc-macos-x86_64.zip) | [Mac](#on-a-pc-mac-steam-deck-or-handheld-windows-macos-and-linux) |
+| **Linux** and the **Steam Deck** | [pokemon-ds-wide-pc-linux-x86_64.tar.gz](../../releases/download/pc-v1/pokemon-ds-wide-pc-linux-x86_64.tar.gz), or as an [AppImage](../../releases/download/pc-v1/pokemon-ds-wide-pc-linux-x86_64.AppImage) (Gear Lever) | [PC](#on-a-pc-mac-steam-deck-or-handheld-windows-macos-and-linux) |
+| **Android** phone (64-bit, Android 7 or newer) | [pokemon-ds-wide-android.apk](../../releases/download/android-v1/pokemon-ds-wide-android.apk) | [Android](#on-android) |
+| **Nintendo Switch** (homebrew) | [pokemon-ds-wide-all-switch.zip](../../releases/download/all-games-v2/pokemon-ds-wide-all-switch.zip) | [Switch](#on-the-nintendo-switch) |
+
+**All seven games in every download:** Pokémon Black 2, White 2, Black, White, SoulSilver,
+HeartGold and Platinum. Pokémon Omega Ruby is in the works, as its own project. What's new
+in each: [Releases](../../releases).
 
 One program per platform: start it and pick the game from the list. The
 downloads are free of the games themselves: you bring your own ROMs, and the
@@ -48,6 +52,23 @@ cartridge. Copy it in under the game's name, in this folder:
   [`tools/bw2/convert_save.py`](tools/bw2/convert_save.py).
 - **Check it worked:** the game list shows SAVE FOUND under the game (NEW GAME: not found).
 - **Back up first:** a save copied in replaces the one there under that name.
+
+## Settings
+
+The same on every platform: on the game list's settings page (**H**, or **Y** / **△** on a
+controller, or SETTINGS at the top), or in the pause menu while you play (**Esc**, or
+**START** / **Options** / **+**). Each option is explained on the settings page.
+
+| Group | Settings |
+|---|---|
+| DISPLAY | SCREEN LAYOUT (MERGED: the one widescreen picture), LARGE SCREEN, BORDERLESS FULLSCREEN, SMOOTH SCALING, BATTLE BUTTONS, FPS COUNTER |
+| GRAPHICS | 60 FPS, WIDESCREEN WORLD, WIDE MAP LOADING, 3D RESOLUTION (WORLD DETAIL on the Switch), LOWER RES WHEN BUSY, WORLD ON GPU, FAST FORWARD LOW RES |
+| CONTROLS | **KEYS AND BUTTONS** (give any DS button, the pause menu, fast forward or swapping the screens another key or controller button), START BUTTON, BUTTONS, STICK TOUCH CURSOR |
+| SHORTCUTS | DESKTOP SHORTCUTS (PC), HOME MENU ICONS (Switch): a shortcut for each game |
+
+The pause menu also has RESUME, SAVE STATE, LOAD STATE, FAST FORWARD, CHEATS
+([below](#cheats)), RESET GAME and QUIT (back to the game list). Not every platform has
+every setting: a phone and the Switch are always full screen, for one.
 
 ## Cheats
 
@@ -136,8 +157,7 @@ code (`IREO.jpg` for Black 2, see the `README.txt`).
 
 ![The settings page: each option with its value and what it does, 3D RESOLUTION chosen at 1080P](docs/screenshots/pc-settings-page.png)
 
-**Settings:** the settings page in the game list sets everything in the pause
-menu before you play, each option explained. The ones that matter most on a PC:
+**Settings** (all of them: [Settings](#settings)). The ones that matter most on a PC:
 
 | Setting | Starts at | What it does |
 |---|---|---|
@@ -261,7 +281,7 @@ game you start the Homebrew Menu from, or as the global profile.
 Without sys-clk the games run at the console's normal speeds and drop frames
 in busy places.
 
-**Settings** (the settings page in the game list, or the pause menu):
+**Settings** (all of them: [Settings](#settings)). Recommended on the Switch:
 
 | Setting | Recommended | What it does |
 |---|---|---|
