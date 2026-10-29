@@ -1909,7 +1909,15 @@ int main(int argc, char** argv)
 #elif !defined(_WIN32)
         if (!getenv("SDL_RENDER_DRIVER")) SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
 #endif
-        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        Uint32 rendererFlags = SDL_RENDERER_ACCELERATED;
+#if defined(__APPLE__)
+        // A Mac: its pictures handed over in step with the screen (Metal's display sync), so no
+        // tearing in fullscreen, where macOS can send them to the screen without its compositor.
+        // The frames keep their own pace (nextTick, 59.8 a second): one a little under the
+        // screen's 60 never waits for it, with Metal's three pictures in flight.
+        rendererFlags |= SDL_RENDERER_PRESENTVSYNC;
+#endif
+        renderer = SDL_CreateRenderer(window, -1, rendererFlags);
 #ifdef SSR_GPU3D
         // (Its OpenGL context, which the 3D on the graphics chip hands back after each turn.)
         if (renderer) SsrSetSdlContext(window, SDL_GL_GetCurrentContext());

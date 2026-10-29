@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Mac: no more tearing**: the picture is handed to the screen in step with it (vsync).
 - **The pause menu and the settings page in groups:** the pause menu is RESUME, SAVE STATE, LOAD
   STATE, FAST FORWARD, then DISPLAY, GRAPHICS and CONTROLS (each a page of its own), RESET GAME and
   QUIT; the game list's settings page opens on DISPLAY, GRAPHICS, CONTROLS, SHORTCUTS and HELP.
