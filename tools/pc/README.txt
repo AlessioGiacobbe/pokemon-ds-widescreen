@@ -49,6 +49,8 @@ PICTURE SETTINGS (Esc menu)
                      text stay the DS's own pixels. With WORLD ON GPU, 1080P or 1440P
                      suits most PCs; 2160P needs a good graphics card.
   LOWER RES WHEN BUSY      lowers the 3D RESOLUTION for a moment when the PC cannot keep up.
+  FAST FORWARD LOW RES     off to start. ON: the 3D world drops to 360P while you fast forward,
+                     for more FPS (a faster fast forward if your PC cannot keep up).
   BORDERLESS FULLSCREEN    on to start: fills your screen at its own resolution as a
                      borderless window, so switching to other windows is instant. F11
                      switches between it and a window.

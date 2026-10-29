@@ -1272,6 +1272,10 @@ struct Settings
     // the bottom screen up.
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
+    // While fast forwarding, the widescreen world at no more than 360 lines (more frames a
+    // second, so a faster fast forward where drawing it is the limit). Off on a PC (the PC
+    // defaults below), where it is a setting: FAST FORWARD LOW RES.
+    bool ffLowRes = true;
     bool cpuBoost = true; // Switch only: the processor's boost mode (see SwitchPlatform)
     bool jit = true;      // Switch, games that are not recompiled: melonDS's JIT (read at start-up)
     bool fastMem = true;  // ... and its fast memory (also read at start-up)
@@ -1332,6 +1336,7 @@ struct Settings
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
+            else if (k == "ff_low_res") ffLowRes = v == "1";
             else if (k == "cpu_boost") cpuBoost = v == "1";
             else if (k == "jit") jit = v == "1";
             else if (k == "fastmem") fastMem = v == "1";
@@ -1372,6 +1377,7 @@ struct Settings
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
+        f << "ff_low_res=" << (ffLowRes ? 1 : 0) << "\n";
         f << "battle_buttons=" << (battleButtons == 0 ? "corner" : battleButtons == 2 ? "panel" : "strip") << "\n";
 #ifdef SSR_PC_LAUNCHER
         if (windowW > 0 && windowH > 0) f << "window=" << windowW << "x" << windowH << "\n";
@@ -1669,6 +1675,7 @@ int main(int argc, char** argv)
     cfg.fullscreen = true;
     cfg.wideLines = 1080;
     cfg.fps60 = true;
+    cfg.ffLowRes = false; // (FAST FORWARD LOW RES: the resolution stays unless it is turned on)
 #ifdef __ANDROID__
     // (The Android app draws the world with the processor: 720 lines, a phone's screen
     // height or near it.)
@@ -3763,7 +3770,11 @@ int main(int argc, char** argv)
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
-        M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_FAST,
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
+        M_FFLOWRES,
+#endif
+        M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
     double ffFrameMs = 0; // emulation time of one frame while fast forwarding (see speed)
@@ -3843,6 +3854,10 @@ int main(int argc, char** argv)
                 + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : "") },
 #endif
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
+            // ON: 360 lines while fast forwarding, for more frames a second (the menu's hint says so).
+            { "FAST FORWARD LOW RES", cfg.ffLowRes ? "ON" : "OFF" },
+#endif
             { "SAVE STATE", "" },
             { "LOAD STATE", "" },
             { "RESET GAME", "" },
@@ -4862,6 +4877,11 @@ int main(int argc, char** argv)
             case M_FAST:
                 fastLock = !fastLock;
                 break;
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
+            case M_FFLOWRES:
+                cfg.ffLowRes = !cfg.ffLowRes;
+                break;
+#endif
             case M_SAVESTATE:
                 say(WriteSnapshot(*nds, quickState, frame) ? "STATE SAVED" : "SAVE STATE FAILED");
                 menu.open = false;
@@ -5046,9 +5066,10 @@ int main(int argc, char** argv)
                 }
             }
             WideLinesNow = std::min(adaptLines, cfg.wideLines);
-            // While fast forwarding, at most 360 lines (not in the tests without a window): it
-            // shows one frame in several, and the detail comes straight back when it stops.
-            if (speed > 1 && !opt.headless) WideLinesNow = std::min(WideLinesNow, 360);
+            // While fast forwarding, at most 360 lines (not in the tests without a window) with
+            // FAST FORWARD LOW RES on: it shows one frame in several, and the detail comes
+            // straight back when it stops.
+            if (speed > 1 && !opt.headless && cfg.ffLowRes) WideLinesNow = std::min(WideLinesNow, 360);
             if (wh > WideLinesNow)
             {
                 ww = ww * WideLinesNow / wh;
@@ -5959,8 +5980,13 @@ int main(int argc, char** argv)
         }
         if (menu.open)
         {
-            menu.Draw(canvas, "", touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
-                                 : cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
+            std::string hint = touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
+                               : cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK";
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
+            // (What FAST FORWARD LOW RES is for, while it is the one chosen.)
+            if (menu.selected == M_FFLOWRES) hint = "ON: MORE FPS IN FAST FORWARD";
+#endif
+            menu.Draw(canvas, "", hint);
             overlayUsed = true;
         }
 

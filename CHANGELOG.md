@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **PC: FAST FORWARD LOW RES**, a new setting, off to start: your 3D resolution now stays while
+  you fast forward; turn it on for more FPS in fast forward (the world at 360P while it is held).
 - **PC: box art in the game list**, built into the program, as on the Switch (your own pictures in
   `icons/` still take its place).
 - **Android (test build, not released yet): one app for all seven games** with the game list,

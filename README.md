@@ -80,6 +80,7 @@ menu before you play, each option explained. The ones that matter most on a PC:
 |---|---|---|
 | 3D RESOLUTION | 1080P | how sharp the 3D world is: 720P, 1080P, 1440P (2K) or 2160P (4K) |
 | LOWER RES WHEN BUSY | ON | a lower resolution for a moment instead of slowing down |
+| FAST FORWARD LOW RES | OFF | ON: 360P while fast forwarding, for more FPS on a slower PC |
 | WORLD ON GPU | ON | the world drawn by your graphics card; turn it off if it looks wrong |
 | BORDERLESS FULLSCREEN | ON | fills your screen; F11 does the same |
 | SCREEN LAYOUT | MERGED | the one widescreen picture, or the two DS screens laid out as on other emulators |
