@@ -19,8 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # (Apple silicon. macos-15's queue twice left this job without a Mac for 15 minutes.)
-          - os: macos-14
+          # (Apple silicon, built on an Intel Mac: GitHub's Apple silicon queue three times left this
+          # job without a Mac for 15 minutes.)
+          - os: macos-15-intel
             arch: arm64
           - os: macos-15-intel
             arch: x86_64
@@ -40,6 +41,8 @@ jobs:
           tar -xzf inputs/mac-inputs.tar.gz -C inputs
           ls inputs
       - run: tools/mac/build_all.sh inputs/build-gen-tables inputs/box-art inputs/icon.jpg
+        env:
+          SSR_MAC_ARCH: ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
           name: mac-${{ matrix.arch }}

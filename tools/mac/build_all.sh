@@ -22,7 +22,9 @@ cd "$HERE"
 TABLES="$(cd "${1:?which tables folder? tools/mac/build_all.sh TABLES [ART] [ICON]}" && pwd)"
 ART="${2:-}"; [ -n "$ART" ] && ART="$(cd "$ART" && pwd)"
 ICON="${3:-}"
-ARCH="$(uname -m)"
+# The processor to build for: this Mac's own, or SSR_MAC_ARCH (arm64 or x86_64; an Intel Mac
+# builds for Apple silicon too, which the workflow uses when GitHub has no Apple silicon Mac free).
+ARCH="${SSR_MAC_ARCH:-$(uname -m)}"
 BW2_DECOMP=https://github.com/fuddlesworth/pokebw2.git
 BW2_COMMIT=753b3fd97683fc619bb98b52e7276afac3d5e32f
 W2_COMMIT=be2c125a700c23702ba1c5a4ef63e0e970bcc87a
@@ -62,9 +64,10 @@ python3 tools/bw1/funcmap.py build-decomp-aletheia/layout/function_addrs.tsv - "
 cp tools/platinum/CPUE.txt "$DATA/funcs/CPUE.txt"
 
 say "Compiling for the Mac ($ARCH)"
+# (SSR_PORTABLE_X86: no AVX2 for an Intel Mac without it, and no x86 test when building for
+# Apple silicon on an Intel Mac. melonDS takes its JIT, ARM64 or x86-64, from the compiler's target.)
 OPTS=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DSSR_JIT=ON -DSSR_PC_ALL_GAMES=ON -DSSR_PNG=OFF -DSSR_GPU3D=OFF
-      -DSSR_GENERATED_DIR="$TABLES" -DCMAKE_OSX_ARCHITECTURES="$ARCH")
-[ "$ARCH" = x86_64 ] && OPTS+=(-DSSR_PORTABLE_X86=ON)
+      -DSSR_GENERATED_DIR="$TABLES" -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DSSR_PORTABLE_X86=ON)
 [ -n "$ART" ] && OPTS+=(-DSSR_PC_ART="$ART")
 cmake -S . -B build-mac "${OPTS[@]}" >/dev/null
 ninja -C build-mac ssrecomp
@@ -111,12 +114,14 @@ $ICONKEY
 <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
 </dict></plist>
 PLIST
+lipo -archs "$APP/Contents/MacOS/pokemon-ds-wide" | grep -qx "$ARCH" || fail "the program is not built for $ARCH"
 python3 tools/macos/check_binary.py "$APP/Contents/MacOS/pokemon-ds-wide" --max-macos 11.0 --system-libraries-only
 # Signed for this Mac only ("ad hoc"): Apple silicon starts nothing unsigned. Not notarised.
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 
-# Started once without a window to check that it runs and finds its folders.
+# Started once without a window to check that it runs and finds its folders (on a Mac of its kind).
+if [ "$ARCH" = "$(uname -m)" ]; then
 say "A first start (no window)"
 SUPPORT="$HOME/Library/Application Support/Pokemon DS Widescreen"
 rm -f "$SUPPORT/game.log"
@@ -124,6 +129,9 @@ rm -f "$SUPPORT/game.log"
 [ -f "$SUPPORT/game.log" ] && head -5 "$SUPPORT/game.log"
 grep -q "\[launcher\] folder $SUPPORT" "$SUPPORT/game.log" || fail "the app did not start as it should (see above)"
 [ -d "$SUPPORT/roms" ] || fail "the app made no roms folder"
+else
+    say "(Built for $ARCH on a $(uname -m) Mac: not started here)"
+fi
 
 ZIP="$DIST/pokemon-ds-wide-pc-macos-$ARCH.zip"
 (cd "$DIST" && ditto -c -k --sequesterRsrc --keepParent "Pokemon DS Widescreen.app" "$ZIP")
