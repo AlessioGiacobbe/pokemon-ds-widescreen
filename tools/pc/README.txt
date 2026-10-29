@@ -32,13 +32,14 @@ PICTURE SETTINGS (Esc menu)
 
   WORLD ON GPU       ON: the widescreen world is drawn by your graphics card (OpenGL 4.3 or
                      newer). Turn it OFF if the world looks wrong or the game will not start.
-  3D RESOLUTION      how sharp the widescreen 3D world is: 720P, 1080P, 1440P (2K) or
-                     2160P (4K), lower for slow PCs. The 2D sprites and text stay the DS's
-                     own pixels. With WORLD ON GPU, 1080P or 1440P suits most PCs; 2160P needs
-                     a good graphics card.
+  3D RESOLUTION      how sharp the widescreen 3D world is: 1080P to start, or 720P,
+                     1440P (2K), 2160P (4K) and lower for slow PCs. The 2D sprites and
+                     text stay the DS's own pixels. With WORLD ON GPU, 1080P or 1440P
+                     suits most PCs; 2160P needs a good graphics card.
   LOWER RES WHEN BUSY      lowers the 3D RESOLUTION for a moment when the PC cannot keep up.
-  BORDERLESS FULLSCREEN    fills your screen at its own resolution, as a borderless window,
-                     so switching to other windows is instant. F11 does the same.
+  BORDERLESS FULLSCREEN    on to start: fills your screen at its own resolution as a
+                     borderless window, so switching to other windows is instant. F11
+                     switches between it and a window.
 
 
 WHERE THINGS ARE KEPT

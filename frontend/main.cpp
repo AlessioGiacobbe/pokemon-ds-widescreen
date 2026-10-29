@@ -1658,6 +1658,14 @@ int main(int argc, char** argv)
     }
 #endif
 #endif
+#ifdef SSR_PC_LAUNCHER
+    // The PC download's first start: borderless fullscreen, the world at 1080 lines (with WORLD
+    // ON GPU; LOWER RES WHEN BUSY brings it down on a PC that cannot keep up) and 60 FPS.
+    // (Its game list's settings page shows the same defaults: launcher.h, SettingsList.)
+    cfg.fullscreen = true;
+    cfg.wideLines = 1080;
+    cfg.fps60 = true;
+#endif
     if (!opt.headless) cfg.Load(opt.config);
 #ifdef __SWITCH__
     // Not in the Switch's pause menu any more, so what an older version saved is not kept: the

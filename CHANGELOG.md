@@ -7,6 +7,8 @@
 - **Switch: a shorter pause menu.** WORLD ON GPU and STICK TOUCH CURSOR are gone from it: the
   world is always drawn by the graphics chip (if it ever fails to keep going, the processor
   draws it for that start only), and the Switch has its touch screen.
+- **PC: a first start in borderless fullscreen at 1080P with 60 FPS on** (F11 or the settings
+  for a window; LOWER RES WHEN BUSY brings the 3D resolution down on a PC that cannot keep up).
 - **PC: the Windows program is now `Pokemon DS Launcher.exe`**, with its own icon, and the
   menu's FULLSCREEN is called BORDERLESS FULLSCREEN (which is what it always was) and WORLD DETAIL
   is 3D RESOLUTION, shown as 720P, 1080P, 1440P (2K) or 2160P (4K). The game list

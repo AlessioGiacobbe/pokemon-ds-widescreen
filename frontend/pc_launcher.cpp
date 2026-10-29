@@ -76,7 +76,7 @@ std::string ProgramDir()
 // The settings file's fullscreen and window lines, so that the list opens as the game last was.
 bool ConfigFullscreen(const std::string& cfg, int& w, int& h)
 {
-    bool on = false;
+    bool on = true; // (borderless fullscreen unless the settings say otherwise, as the game)
     if (FILE* f = fopen(cfg.c_str(), "r"))
     {
         char line[256];
