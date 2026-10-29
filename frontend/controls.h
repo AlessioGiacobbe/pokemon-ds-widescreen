@@ -113,6 +113,10 @@ inline const char* InputName(int i, int style = XBOX)
                                         "UP", "DOWN", "LEFT", "RIGHT", "L2", "R2" };
     static const char* nin[IN_COUNT] = { "A", "B", "X", "Y", "-", "HOME", "+", "LEFT STICK", "RIGHT STICK", "L", "R",
                                          "UP", "DOWN", "LEFT", "RIGHT", "ZL", "ZR" };
+#ifdef __SWITCH__
+    // (The Switch keeps its HOME button to itself: no game ever sees it pressed.)
+    if (i == IN_GUIDE) return "NOT SET";
+#endif
     if (i < 0 || i >= IN_COUNT) return "-";
     return style == PLAYSTATION ? ps[i] : style == NINTENDO ? nin[i] : xbox[i];
 }

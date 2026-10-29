@@ -551,9 +551,9 @@ inline std::vector<Setting> SettingsList()
     l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD THE RIGHT TRIGGER OR LEFT SHIFT (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
 #endif
 #ifdef __SWITCH__
-    l.push_back({ nullptr, "CONTROLS", {}, "", "IN THE PAUSE MENU: KEYS AND BUTTONS GIVES ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER BUTTON. GIVING ONE A BUTTON ANOTHER ONE HAD SWAPS THE TWO." });
+    l.push_back({ nullptr, "KEYS AND BUTTONS", {}, "", "IN THE PAUSE MENU (CONTROLS): GIVE ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER BUTTON. GIVING ONE A BUTTON ANOTHER ONE HAD SWAPS THE TWO." });
 #else
-    l.push_back({ nullptr, "CONTROLS", {}, "", "IN THE PAUSE MENU: KEYS AND BUTTONS GIVES ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER KEY OR CONTROLLER BUTTON. GIVING ONE A KEY OR BUTTON ANOTHER ONE HAD SWAPS THE TWO. THIS LIST FOLLOWS THE ONES YOU CHANGE (A PLAYS / B GOES BACK / Y OPENS THESE SETTINGS)." });
+    l.push_back({ nullptr, "KEYS AND BUTTONS", {}, "", "IN THE PAUSE MENU (CONTROLS): GIVE ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER KEY OR CONTROLLER BUTTON. GIVING ONE A KEY OR BUTTON ANOTHER ONE HAD SWAPS THE TWO. THIS LIST FOLLOWS THE ONES YOU CHANGE (A PLAYS / B GOES BACK / Y OPENS THESE SETTINGS)." });
 #endif
     l.push_back({ nullptr, "SAVE STATE / LOAD STATE", {}, "", "IN THE PAUSE MENU: ONE QUICK SLOT PER GAME. YOUR SAVE IN THE GAME IS SEPARATE AND STILL WORKS AS NORMAL." });
     l.push_back({ nullptr, "RESET GAME / QUIT", {}, "", "IN THE PAUSE MENU: START THE GAME AGAIN FROM ITS TITLE SCREEN / BACK TO THIS GAME LIST." });
@@ -593,18 +593,19 @@ struct SettingsGroup
 inline const std::vector<SettingsGroup>& SettingsGroups()
 {
     static const std::vector<SettingsGroup> g = {
-        { "!group0", "DISPLAY", "SCREEN LAYOUT / FULLSCREEN / SMOOTH SCALING / BATTLE BUTTONS / FPS COUNTER." },
-        { "!group1", "GRAPHICS", "60 FPS / THE WIDESCREEN WORLD / HOW SHARP IT IS DRAWN / WHAT DRAWS IT." },
-        { "!group2", "CONTROLS", "THE START BUTTON / WHICH BUTTON IS A / THE STICK TOUCH CURSOR / CHANGING THE KEYS AND BUTTONS." },
-        { "!group3", "SHORTCUTS", "A SHORTCUT FOR EACH GAME THAT STARTS IT STRAIGHT AWAY." },
-        { "!group4", "HELP", "THE PAUSE MENU / FAST FORWARD / SAVE STATES / QUITTING." },
+        // (What each holds is listed under it: its options' names, ShowGroups.)
+        { "!group0", "DISPLAY", "" },
+        { "!group1", "GRAPHICS", "" },
+        { "!group2", "CONTROLS", "" },
+        { "!group3", "SHORTCUTS", "" },
+        { "!group4", "HELP", "" },
     };
     return g;
 }
 // Which group an option is in (SettingsGroups).
 inline int GroupOf(const Setting& s)
 {
-    if (!s.key) return !strcmp(s.name, "CONTROLS") ? 2 : 4;
+    if (!s.key) return !strcmp(s.name, "KEYS AND BUTTONS") ? 2 : 4;
     static const char* display[] = { "view", "large_screen", "fullscreen", "smooth", "battle_buttons", "show_fps" };
     static const char* controls[] = { "start_button", "buttons", "pad_touch" };
     for (const char* k : display)
@@ -621,6 +622,7 @@ struct SettingsPage
     std::vector<Setting> all = SettingsList();
     std::vector<Setting> items; // what is shown: the groups, or one group's options
     int group = -1;             // the group shown, -1: the list of groups
+    std::string groupText[8];   // (the groups' lines: their options' names)
     std::vector<std::string> lines; // the file, as it is
     int selected = 0, scroll = 0;
     // Draw keeps the chosen option in view while follow is set (the keys and the D-pad); a
@@ -671,7 +673,11 @@ struct SettingsPage
             if (!any) continue; // (a platform without any of it: no SHORTCUTS on a Mac)
             if (g == sel) row = (int)items.size();
             const SettingsGroup& sg = SettingsGroups()[g];
-            items.push_back({ sg.key, sg.name, { { "", ">" } }, "", sg.text });
+            std::string names;
+            for (const Setting& s : all)
+                if (GroupOf(s) == g) names += (names.empty() ? "" : " / ") + std::string(s.name);
+            groupText[g] = names + ".";
+            items.push_back({ sg.key, sg.name, { { "", ">" } }, "", groupText[g].c_str() });
         }
         selected = row;
         scroll = 0;

@@ -6336,6 +6336,10 @@ int main(int argc, char** argv)
                 if (capturing >= 0) hint = ctlKeyboard ? "ESC: LEAVE IT AS IT WAS" : "OR WAIT 5 SECONDS: AS IT WAS";
                 else if (menu.selected == 0 && ctlHasKeyboard) hint = "CHANGE: KEYBOARD OR CONTROLLER";
                 else if (menu.selected == ctlRow0 + Controls::SWAP) hint = "SWAPS WHICH SCREEN IS LARGE";
+#ifdef __SWITCH__
+                else if (menu.selected == ctlRow0 + Controls::MENU && cfg.controls.pad[Controls::MENU] < 0)
+                    hint = cfg.startMenu ? "+ OPENS IT (START BUTTON)" : "+ AND - OPEN IT";
+#endif
                 menu.Draw(canvas, pageTitle[PAGE_KEYS], hint);
             }
             else

@@ -279,7 +279,8 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, const std::
             }
             if (down & (HidNpadButton_Plus | HidNpadButton_B)) break;
         }
-        if (guide) page.Draw(canvas, "UP / DOWN: CHOOSE    LEFT / RIGHT / A: CHANGE    B: BACK");
+        if (guide) page.Draw(canvas, page.group < 0 ? "UP / DOWN: CHOOSE    A: OPEN    B: BACK"
+                                                    : "UP / DOWN: CHOOSE    LEFT / RIGHT / A: CHANGE    B: BACK");
         else cols = Launcher::Draw(canvas, games, selected, first, note);
         u32 stride;
         u32* out = (u32*)framebufferBegin(&fb, &stride);
