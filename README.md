@@ -1,14 +1,14 @@
 # Pokémon DS Widescreen
 
-**Your favourite DS Pokémon games on a PC (Windows and Linux), an Android phone
-or a modded Nintendo Switch: one screen, widescreen, 60 fps, up to 4K on a PC
-and 720p on the Switch.** No more squinting at two tiny stacked DS screens.
+**Your favourite DS Pokémon games on a PC (Windows and Linux), a Steam Deck or
+other handheld PC, an Android phone or a modded Nintendo Switch: one screen,
+widescreen, 60 fps, up to 4K on a PC and 720p on the Switch.** No more squinting at two tiny stacked DS screens.
 
 ![Black 2: cycling along Castelia City's waterfront in widescreen, with the in-between frames on](docs/screenshots/black2-castelia-bike-60fps.gif)
 
 ## Downloads
 
-| | PC (Windows and Linux) | Android | Nintendo Switch |
+| | PC, Steam Deck and handhelds (Windows and Linux) | Android | Nintendo Switch |
 |---|---|---|---|
 | **Download: all seven games in one program** | [Windows and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-android.apk](../../releases/tag/android-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
 | Pokémon Black 2 and White 2 | ✅ | ✅ | ✅ |
@@ -66,7 +66,7 @@ DS game, presented the way it should look on a modern screen.
 
 ---
 
-## On a PC (Windows and Linux)
+## On a PC, Steam Deck or handheld (Windows and Linux)
 
 ![The PC game list: Black, White, Black 2, White 2, HeartGold, SoulSilver and Platinum in a grid on black, White 2 chosen in red with its save found](docs/screenshots/pc-game-list.png)
 
