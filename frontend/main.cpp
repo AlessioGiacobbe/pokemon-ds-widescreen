@@ -2045,6 +2045,18 @@ int main(int argc, char** argv)
     // puts along the bottom of the top screen gives that away; while this counts down, the
     // menu layout is used although the task's probe is still silent.
     int menuReturn = 0;
+    // SoulSilver and HeartGold: the Running Shoes button. The game has it on the touch screen
+    // beside its menu (x 182-255, y 89-130), but greys it out while the X menu is open, and the
+    // single-screen view shows the touch screen only then. So its picture is kept from the last
+    // frame it was seen (shoesPix, shoesOn: running on) and drawn next to the X menu, where Y or
+    // a touch on it toggles it: the menu is closed (B), the button touched, and the menu opened
+    // again (X), one step after another (shoesStep, from shoesStepAt).
+    static const int SHOES_X = 182, SHOES_Y = 89, SHOES_W = 74, SHOES_H = 42;
+    std::vector<uint32_t> shoesPix(SHOES_W * SHOES_H);
+    bool shoesSeen = false, shoesOn = false;
+    int shoesStep = 0;
+    uint32_t shoesStepAt = 0;
+    float shoesRect[4] = {}; // where it was last drawn, in the view's units (x, y, w, h); w 0: not shown
     // Frames in a row in which the battle's touch screen showed something that is neither
     // of the menus with a layout of their own nor the idle backdrop.
     int battleUnknown = 0;
@@ -5489,7 +5501,13 @@ int main(int argc, char** argv)
                 if (merged)
                 {
                     float bx = (mouseX - view.originX) / view.unit, by = (mouseY - view.originY) / view.unit;
-                    if (touchAt(bx, by, touchX, touchY)) touching = true;
+                    // (The Running Shoes button drawn beside SoulSilver's X menu: see shoesStep.)
+                    if (shoesRect[2] > 0 && bx >= shoesRect[0] && bx < shoesRect[0] + shoesRect[2] && by >= shoesRect[1] &&
+                        by < shoesRect[1] + shoesRect[3])
+                    {
+                        if (!wasMouseDown && shoesStep == 0) { shoesStep = 1; shoesStepAt = frame; }
+                    }
+                    else if (touchAt(bx, by, touchX, touchY)) touching = true;
                     // (Each press in game.log: where it was and what it touched, for reports of
                     // touches that did nothing.)
                     if (!wasMouseDown)
@@ -5615,6 +5633,72 @@ int main(int argc, char** argv)
                 touchX = stripTouchX;
                 touchY = stripTouchY;
                 stripTouch--;
+            }
+        }
+
+        // SoulSilver and HeartGold's Running Shoes button (see shoesPix): its picture kept while the
+        // game shows it, Y beside the X menu toggling it, and the steps that do it.
+        if (probeStartMenu >= 0 && !paused)
+        {
+            const u32* tb = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
+            auto nearC = [&](int x, int y, uint32_t c) {
+                const u32 p = tb[y * 256 + x];
+                return std::abs((int)((p >> 16) & 255) - (int)(c >> 16)) < 14 && std::abs((int)((p >> 8) & 255) - (int)((c >> 8) & 255)) < 14 &&
+                    std::abs((int)(p & 255) - (int)(c & 255)) < 14;
+            };
+            const bool menuOpenNow = probeActive(probeStartMenu);
+            if (getenv("SSR_SHOES_DEBUG") && frame % 50 == 0)
+                fprintf(stderr, "[shoes] frame %u: field %d menu %d px %06x %06x %06x scene %s\n", frame, fieldActive(), menuOpenNow,
+                    tb ? tb[100 * 256 + 183] & 0xFFFFFF : 0, tb ? tb[100 * 256 + 186] & 0xFFFFFF : 0, tb ? tb[93 * 256 + 230] & 0xFFFFFF : 0, scene.name);
+            // (Its dark outline, its orange rim and the orange top of its face: on or off.)
+            if (tb && fieldActive() && !menuOpenNow && nearC(186, 100, 0xBA6910) && nearC(186, 120, 0xBA6910) && nearC(230, 93, 0xEBAA59))
+            {
+                for (int y = 0; y < SHOES_H; y++)
+                    for (int x = 0; x < SHOES_W; x++) shoesPix[y * SHOES_W + x] = tb[(SHOES_Y + y) * 256 + SHOES_X + x] | 0xFF000000u;
+                if (!shoesSeen) fprintf(stderr, "[shoes] frame %u: the Running Shoes button seen\n", frame);
+                shoesSeen = true;
+                shoesOn = nearC(200, 120, 0xBA6910); // (off: the shoes grey on the orange)
+            }
+            static uint32_t prevShoesKeys = 0;
+            const uint32_t edge = keys & ~prevShoesKeys;
+            prevShoesKeys = keys;
+            if (shoesRect[2] > 0 && !strcmp(scene.name, "start-menu"))
+            {
+                if ((edge & (1u << KEY_Y)) && shoesStep == 0)
+                {
+                    shoesStep = 1;
+                    shoesStepAt = frame;
+                }
+                keys &= ~(1u << KEY_Y); // (the game's own Y, the registered item, does nothing in the menu)
+            }
+            // 1: B closes the menu; 2: once the overworld is back without it, wait a moment;
+            // 3: the button touched; 4: X opens the menu again. (Given up after 2 seconds.)
+            const uint32_t since = frame - shoesStepAt;
+            if (shoesStep == 1)
+            {
+                keys |= 1u << KEY_B;
+                if (since >= 3) { shoesStep = 2; shoesStepAt = frame; }
+            }
+            else if (shoesStep == 2)
+            {
+                if (!menuOpenNow && fieldActive() && since >= 8) { shoesStep = 3; shoesStepAt = frame; }
+                else if (since > 120) shoesStep = 0;
+            }
+            else if (shoesStep == 3)
+            {
+                touching = true;
+                touchX = SHOES_X + SHOES_W / 2;
+                touchY = SHOES_Y + SHOES_H / 2;
+                if (since >= 4) { shoesStep = 4; shoesStepAt = frame; }
+            }
+            else if (shoesStep == 4)
+            {
+                if (since >= 10) keys |= 1u << KEY_X;
+                if (since >= 13)
+                {
+                    shoesStep = 0;
+                    fprintf(stderr, "[shoes] frame %u: running shoes %s\n", frame, shoesOn ? "on" : "off");
+                }
             }
         }
 
@@ -6304,6 +6388,36 @@ int main(int argc, char** argv)
             }
         }
 #endif
+        // SoulSilver and HeartGold: the Running Shoes button beside the X menu (see shoesPix),
+        // left of the menu's panel at its foot, its button named under it.
+        shoesRect[2] = 0;
+        if (merged && shoesSeen && !paused && !strcmp(scene.name, "start-menu") && scene.items.size() >= 2)
+        {
+            const Element& panel = scene.items.back();
+            const float sc = panel.scale;
+            const float w = SHOES_W * sc, h = SHOES_H * sc;
+            const float x = panel.dx - w - 6, y = panel.dy + 192 * sc - h - 14;
+            shoesRect[0] = x; shoesRect[1] = y; shoesRect[2] = w; shoesRect[3] = h;
+            const int ox = (int)(view.originX + x * view.unit), oy = (int)(view.originY + y * view.unit);
+            const int ow = (int)(w * view.unit), oh = (int)(h * view.unit);
+            for (int py = 0; py < oh; py++)
+            {
+                const int sy = std::min(SHOES_H - 1, py * SHOES_H / std::max(1, oh));
+                for (int px = 0; px < ow; px++)
+                {
+                    const int sx = std::min(SHOES_W - 1, px * SHOES_W / std::max(1, ow));
+                    canvas.Fill(ox + px, oy + py, 1, 1, shoesPix[sy * SHOES_W + sx]);
+                }
+            }
+            const int tsc = std::max(1, outH / 360);
+            const std::string label = std::string(pads.Empty() ? Controls::KeyName(cfg.controls.Key(Controls::Y))
+                : Controls::InputName(cfg.controls.Pad(Controls::Y, cfg.byLabel), Controls::StyleOf(pads.controllers.empty() ? nullptr : pads.controllers[0])))
+                + ": RUN " + (shoesOn ? "ON" : "OFF");
+            const int tw = Canvas::TextWidth(label, tsc);
+            canvas.Fill(ox + (ow - tw) / 2 - 3 * tsc, oy + oh + 2 * tsc, tw + 6 * tsc, 11 * tsc, 0xC0000000);
+            canvas.Text(ox + (ow - tw) / 2, oy + oh + 4 * tsc, label, tsc, 0xFFFFFFFF);
+            overlayUsed = true;
+        }
         if (frame < toastUntil)
         {
             int sc = outH / 240 < 1 ? 1 : outH / 240;
