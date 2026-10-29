@@ -132,16 +132,25 @@ browse to `pokemon-ds-wide` (file type: All Files); then start it from your
 library in Gaming Mode with a gamepad controller layout. Set 3D RESOLUTION to
 720P for the Deck's 1280x800 screen.
 
-**Mac:** download `pokemon-ds-wide-pc-macos-arm64.zip` (Apple silicon: M1 and newer) or
-`pokemon-ds-wide-pc-macos-x86_64.zip` (Intel), unzip it and move **Pokemon DS Widescreen** to
-Applications. It isn't notarised by Apple, so macOS blocks it the first time: open it once,
-then go to **System Settings > Privacy & Security** and click **Open Anyway** (on macOS 14 and
-older, **right click it > Open** also works). If macOS still refuses, run
-`xattr -dr com.apple.quarantine "/Applications/Pokemon DS Widescreen.app"` in Terminal once. Its ROMs, saves and settings go in
-`~/Library/Application Support/Pokemon DS Widescreen`: press **O** in the game list to open its
-`roms` folder in the Finder. A Mac's OpenGL stops short of what WORLD ON GPU needs, so the
-widescreen world is drawn by the processor, at 720P to start; macOS 11 or newer. A MacBook
-Air M1 holds 60 FPS at 1080P.
+**Mac** (macOS 11 or newer):
+
+1. **Download the one for your Mac.** Apple menu > About This Mac: if it says **Chip: Apple M1**
+   (or M2, M3, M4, ...), take `pokemon-ds-wide-pc-macos-arm64.zip`; if it says **Processor:
+   Intel**, take `pokemon-ds-wide-pc-macos-x86_64.zip`.
+2. **Unzip it** (double-click it in Downloads; Safari may have done it already) and **drag
+   Pokemon DS Widescreen into Applications**.
+3. **Open it once.** macOS says it can't check the app (it isn't notarised by Apple): click
+   **Done**. Then go to **System Settings > Privacy & Security**, scroll down to the line about
+   Pokemon DS Widescreen and click **Open Anyway**, then **Open**. You only do this once.
+   *Or*, in Terminal: `xattr -dr com.apple.quarantine "/Applications/Pokemon DS Widescreen.app"`,
+   then open it as any app.
+4. **Add your ROMs:** press **O** in the game list. The Finder opens its `roms` folder
+   (`~/Library/Application Support/Pokemon DS Widescreen/roms`): put your ROMs in it and they
+   appear in the list. Your own saves go in the `saves` folder next to it.
+
+The keys and a controller work as on a PC; **Ctrl+Cmd+F** (or F11) switches between fullscreen
+and a window. A Mac's OpenGL stops short of what WORLD ON GPU needs, so the processor draws the
+widescreen world, at 720P to start: a MacBook Air M1 holds 60 FPS at 1080P.
 
 **How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
 The Switch runs all seven games at 60 fps, and one core of any PC from the last
