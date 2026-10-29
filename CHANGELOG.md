@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **One download per platform:** the all-in-one for the Switch and the PC download, each with all
+  seven games. The one-game Switch downloads are no longer published; their folders keep working
+  from the all-in-one's list.
 - **Switch: the touch screen works** in handheld mode. Taps did not reach the game, so
   questions answered only by touch (Platinum's first YES / NO with Professor Rowan) could not be
   answered. Docked (or handheld), the right stick moves a cursor and ZL touches; pressing the

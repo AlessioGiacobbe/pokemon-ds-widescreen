@@ -10,17 +10,16 @@ the Switch.** No more squinting at two tiny stacked DS screens.
 
 | | PC (Windows and Linux) | Nintendo Switch |
 |---|---|---|
-| **All seven games in one program** (pick the game when it starts) | ✅ [Windows and Linux](../../releases/tag/pc-v1) | ✅ [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
-| **Pokémon Black 2 and White 2** | ✅ in the PC download | ✅ [pokemon-black2-white2-wide-switch.zip](../../releases/tag/bw2-switch-v1) |
-| **Pokémon Black and White** | ✅ in the PC download | ✅ [pokemon-black-white-wide-switch.zip](../../releases/tag/black-white-switch-v1) |
-| **Pokémon SoulSilver and HeartGold** | ✅ in the PC download | ✅ [pokemon-soulsilver-heartgold-wide-switch.zip](../../releases/tag/soulsilver-heartgold-v1) |
-| **Pokémon Platinum** | ✅ in the PC download | ✅ [pokemon-platinum-wide-switch.zip](../../releases/tag/platinum-v1) |
-| **Pokémon Omega Ruby** | 🛠️ in the works (its own project) | 🛠️ in the works |
+| **Download: all seven games in one program** | [Windows and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
+| Pokémon Black 2 and White 2 | ✅ | ✅ |
+| Pokémon Black and White | ✅ | ✅ |
+| Pokémon SoulSilver and HeartGold | ✅ | ✅ |
+| Pokémon Platinum | ✅ | ✅ |
+| Pokémon Omega Ruby | 🛠️ in the works (its own project) | 🛠️ in the works |
 
-On a PC there is one download with all seven games. On the Switch there is the
-same all-in-one program, or one program per pair of games if you only want one
-or two. Every download is free of the games themselves: you bring your own
-ROMs, and the program reads what it needs from them when the game starts.
+One program per platform: start it and pick the game from the list. The
+downloads are free of the games themselves: you bring your own ROMs, and the
+program reads what it needs from them when the game starts.
 
 ## What is it?
 
@@ -137,18 +136,16 @@ there is no list: it starts straight away. **Touch screen:** tap it in handheld
 mode; docked, the right stick moves a cursor and **ZL** touches. Pressing the
 right stick in shows the other screen.
 
-**One program per pair of games** (the other Switch downloads): unzip to the
-root of the SD card (a folder for each game in `/switch/`), copy your ROM into
-the game's folder as the only `.nds` file there, then hold R while starting any
-game and pick the game in the Homebrew Menu.
+**Coming from the older one-game downloads?** Their folders keep working: the
+list also shows the games in them (`/switch/pokemon-black2-wide/` and so on) and
+plays each with the save already there. Those downloads are no longer updated,
+so the all-in-one is the one to use.
 
 **Saves:** each game keeps its save under its own name (`black2.sav`,
 `white2.sav`, `black.sav`, `white.sav`, `soulsilver.sav`, `heartgold.sav`,
 `platinum.sav`): in `/switch/pokemon-ds-wide/` for a ROM in its `roms` folder,
-or in a separate download's folder for a ROM there. To carry on from an
-emulator or a flash cart, copy your save in under that name. The all-in-one
-list also shows the games in the separate downloads' folders and plays each
-with the save already there, so you don't need to move anything.
+or in an older one-game download's folder for a ROM there. To carry on from an
+emulator or a flash cart, copy your save in under that name.
 
 **Pictures:** each game shows its box art. For your own, put a square JPEG
 or PNG in `/switch/pokemon-ds-wide/icons/` named after the game's code: `IRBO`
@@ -163,9 +160,7 @@ file). Like any forwarder, the icons need sigpatches to start. Keep
 `/switch/pokemon-ds-wide/` where it is, as the icons start the program in it;
 choose HOME MENU ICONS again after adding games. Each game then has its own
 entry, so sys-clk (below) can have its own settings for it. To remove one:
-Options on its icon, Data Management, Delete Software. (For a separate
-download, [sphaira](https://github.com/ITotalJustice/sphaira) can install a
-forwarder for its `.nro`.)
+Options on its icon, Data Management, Delete Software.
 
 **sys-clk** (recommended for full speed), handheld. With a forwarder, start the
 game, open sys-clk's overlay and set these for that game's own profile: they
@@ -211,8 +206,6 @@ the next one falls back by itself (hold L while starting for the interpreter).
   program says so instead of starting.
 - **Saves:** `black2.sav` and `white2.sav` (`tools/bw2/convert_save.py` turns
   `.dsv` and Action Replay saves into the raw 512 KB save).
-- **Switch:** the all-in-one, or `pokemon-black2-white2-wide-switch.zip`
-  (folders `/switch/pokemon-black2-wide/` and `/switch/pokemon-white2-wide/`).
 - **What you get:** battles (single, double, triple, rotation) with the HP boxes
   at the edges of the wide view and the battle buttons beside them; menus, the
   bag and the save screen laid out for one screen; and more of the map loaded
@@ -230,8 +223,6 @@ the next one falls back by itself (hold L while starting for the interpreter).
   one-screen layouts.
 - **Saves:** `soulsilver.sav` and `heartgold.sav` (the same format, so either
   game reads the other's).
-- **Switch:** the all-in-one, or `pokemon-soulsilver-heartgold-wide-switch.zip`
-  (folders `/switch/pokemon-soulsilver-wide/` and `/switch/pokemon-heartgold-wide/`).
 - **What you get:** Johto and Kanto in widescreen, with your partner Pokémon
   walking behind you; battles with their buttons beside the action; menus laid
   out for one screen. Where this project started: the original ssrecomp was
@@ -248,8 +239,6 @@ the next one falls back by itself (hold L while starting for the interpreter).
 - **Saves:** `black.sav` and `white.sav` (the same format, so either game reads
   the other's; `tools/bw2/convert_save.py` turns `.dsv` and Action Replay saves
   into the raw 512 KB save).
-- **Switch:** the all-in-one, or `pokemon-black-white-wide-switch.zip`
-  (folders `/switch/pokemon-black-wide/` and `/switch/pokemon-white-wide/`).
 - **What you get:** Unova's first adventure with the same treatment as Black 2:
   battles (single, double, triple, rotation) with the HP boxes at the edges of
   the wide view and the battle buttons beside them; its own layouts for the
@@ -264,8 +253,6 @@ the next one falls back by itself (hold L while starting for the interpreter).
 
 - **ROM:** the English US version (game code `CPUE`), trimmed or not.
 - **Save:** `platinum.sav`.
-- **Switch:** the all-in-one, or `pokemon-platinum-wide-switch.zip` (folder
-  `/switch/pokemon-platinum-wide/`).
 - **What you get:** Sinnoh in widescreen, the snow and rain reaching the edges
   of the view; battles with their buttons and moves beside the action; the X
   menu at the right edge of the view, and the Bag, party, Pokédex, map and
