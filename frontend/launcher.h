@@ -551,9 +551,9 @@ inline std::vector<Setting> SettingsList()
     l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD THE RIGHT TRIGGER OR LEFT SHIFT (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
 #endif
 #ifdef __SWITCH__
-    l.push_back({ nullptr, "CONTROLS", {}, "", "IN THE PAUSE MENU: GIVE ANY DS BUTTON, THE PAUSE MENU, FAST FORWARD OR SWAP SCREENS ANOTHER BUTTON. GIVING ONE A BUTTON ANOTHER ONE HAD SWAPS THE TWO." });
+    l.push_back({ nullptr, "CONTROLS", {}, "", "IN THE PAUSE MENU: KEYS AND BUTTONS GIVES ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER BUTTON. GIVING ONE A BUTTON ANOTHER ONE HAD SWAPS THE TWO." });
 #else
-    l.push_back({ nullptr, "CONTROLS", {}, "", "IN THE PAUSE MENU: GIVE ANY DS BUTTON, THE PAUSE MENU, FAST FORWARD OR SWAP SCREENS ANOTHER KEY OR CONTROLLER BUTTON. GIVING ONE A KEY OR BUTTON ANOTHER ONE HAD SWAPS THE TWO. THIS LIST FOLLOWS THE ONES YOU CHANGE: A PLAYS, B GOES BACK, Y OPENS THESE SETTINGS." });
+    l.push_back({ nullptr, "CONTROLS", {}, "", "IN THE PAUSE MENU: KEYS AND BUTTONS GIVES ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER KEY OR CONTROLLER BUTTON. GIVING ONE A KEY OR BUTTON ANOTHER ONE HAD SWAPS THE TWO. THIS LIST FOLLOWS THE ONES YOU CHANGE (A PLAYS / B GOES BACK / Y OPENS THESE SETTINGS)." });
 #endif
     l.push_back({ nullptr, "SAVE STATE / LOAD STATE", {}, "", "IN THE PAUSE MENU: ONE QUICK SLOT PER GAME. YOUR SAVE IN THE GAME IS SEPARATE AND STILL WORKS AS NORMAL." });
     l.push_back({ nullptr, "RESET GAME / QUIT", {}, "", "IN THE PAUSE MENU: START THE GAME AGAIN FROM ITS TITLE SCREEN / BACK TO THIS GAME LIST." });
@@ -583,10 +583,44 @@ inline std::vector<std::string> Wrap(const std::string& text, int chars)
     return lines;
 }
 
+// The settings page's groups: first the list of them, then one group's options (Enter, Back).
+struct SettingsGroup
+{
+    const char* key;  // its row in the list of groups (a "!" key: chosen, not stored)
+    const char* name;
+    const char* text;
+};
+inline const std::vector<SettingsGroup>& SettingsGroups()
+{
+    static const std::vector<SettingsGroup> g = {
+        { "!group0", "DISPLAY", "SCREEN LAYOUT / FULLSCREEN / SMOOTH SCALING / BATTLE BUTTONS / FPS COUNTER." },
+        { "!group1", "GRAPHICS", "60 FPS / THE WIDESCREEN WORLD / HOW SHARP IT IS DRAWN / WHAT DRAWS IT." },
+        { "!group2", "CONTROLS", "THE START BUTTON / WHICH BUTTON IS A / THE STICK TOUCH CURSOR / CHANGING THE KEYS AND BUTTONS." },
+        { "!group3", "SHORTCUTS", "A SHORTCUT FOR EACH GAME THAT STARTS IT STRAIGHT AWAY." },
+        { "!group4", "HELP", "THE PAUSE MENU / FAST FORWARD / SAVE STATES / QUITTING." },
+    };
+    return g;
+}
+// Which group an option is in (SettingsGroups).
+inline int GroupOf(const Setting& s)
+{
+    if (!s.key) return !strcmp(s.name, "CONTROLS") ? 2 : 4;
+    static const char* display[] = { "view", "large_screen", "fullscreen", "smooth", "battle_buttons", "show_fps" };
+    static const char* controls[] = { "start_button", "buttons", "pad_touch" };
+    for (const char* k : display)
+        if (!strcmp(s.key, k)) return 0;
+    for (const char* k : controls)
+        if (!strcmp(s.key, k)) return 2;
+    if (s.key[0] == '!') return 3; // (DESKTOP SHORTCUTS, HOME MENU ICONS)
+    return 1;
+}
+
 struct SettingsPage
 {
     std::string path;
-    std::vector<Setting> items = SettingsList();
+    std::vector<Setting> all = SettingsList();
+    std::vector<Setting> items; // what is shown: the groups, or one group's options
+    int group = -1;             // the group shown, -1: the list of groups
     std::vector<std::string> lines; // the file, as it is
     int selected = 0, scroll = 0;
     // Draw keeps the chosen option in view while follow is set (the keys and the D-pad); a
@@ -622,9 +656,44 @@ struct SettingsPage
             fclose(f);
         }
         if (keepChoice) return;
+        ShowGroups(0);
+    }
+    // The list of groups, with group `sel` chosen.
+    void ShowGroups(int sel)
+    {
+        group = -1;
+        items.clear();
+        int row = 0;
+        for (int g = 0; g < (int)SettingsGroups().size(); g++)
+        {
+            bool any = false;
+            for (const Setting& s : all) any |= GroupOf(s) == g;
+            if (!any) continue; // (a platform without any of it: no SHORTCUTS on a Mac)
+            if (g == sel) row = (int)items.size();
+            const SettingsGroup& sg = SettingsGroups()[g];
+            items.push_back({ sg.key, sg.name, { { "", ">" } }, "", sg.text });
+        }
+        selected = row;
+        scroll = 0;
+        follow = true;
+    }
+    // Group g's options.
+    void Enter(int g)
+    {
+        group = g;
+        items.clear();
+        for (const Setting& s : all)
+            if (GroupOf(s) == g) items.push_back(s);
         selected = 0;
         scroll = 0;
-        while (selected < (int)items.size() && !items[selected].key) selected++;
+        follow = true;
+    }
+    // B: from a group back to the list of groups; false when already there (the page closes).
+    bool Back()
+    {
+        if (group < 0) return false;
+        ShowGroups(group);
+        return true;
     }
     std::string Stored(const std::string& key) const
     {
@@ -662,12 +731,7 @@ struct SettingsPage
     void Move(int d)
     {
         follow = true;
-        for (int i = selected + d; i >= 0 && i < (int)items.size(); i += d)
-            if (items[i].key)
-            {
-                selected = i;
-                return;
-            }
+        if (selected + d >= 0 && selected + d < (int)items.size()) selected += d;
     }
     // The chosen option's next (d 1) or previous (d -1) value, written to the file. Returns its
     // key, or nullptr.
@@ -675,6 +739,11 @@ struct SettingsPage
     {
         if (selected < 0 || selected >= (int)items.size() || !items[selected].key) return nullptr;
         const Setting& s = items[selected];
+        if (!strncmp(s.key, "!group", 6))
+        {
+            if (d > 0) Enter(atoi(s.key + 6));
+            return nullptr;
+        }
         if (s.key[0] == '!') return s.key; // (done by the caller)
         const int n = (int)s.values.size();
         const int i = ValueIndex(s);
@@ -705,7 +774,7 @@ struct SettingsPage
         c.Fill(0, 0, c.w, c.h, th.bg);
         c.Fill(0, 0, c.w, 22 * s, th.band);
         c.Fill(0, 22 * s, c.w, th.bandLineH * s, th.bandLine);
-        const std::string title = "SETTINGS";
+        const std::string title = group < 0 ? "SETTINGS" : std::string("SETTINGS: ") + SettingsGroups()[group].name;
         c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, th.title);
         const int width = std::min(c.w - 24 * s, 100 * 6 * ts);
         const int x = (c.w - width) / 2;
@@ -742,7 +811,7 @@ struct SettingsPage
         {
             const Line& l = out[i];
             if (l.name) rows.push_back({ l.item, y });
-            const bool sel = l.item == selected && l.item >= 0 && items[l.item].key;
+            const bool sel = l.item == selected && l.item >= 0;
             if (l.name)
             {
                 if (sel) c.Fill(x - 4 * ts, y - 2 * ts, width + 8 * ts, lineH, th.tile);
@@ -750,7 +819,8 @@ struct SettingsPage
                 c.Text(x, y, l.text, ts, info ? th.hint : sel ? th.nameSel : th.subSel);
                 if (!l.value.empty())
                 {
-                    const std::string v = sel ? "< " + l.value + " >" : l.value;
+                    const bool group = !strncmp(items[l.item].key, "!group", 6);
+                const std::string v = sel && !group ? "< " + l.value + " >" : l.value;
                     c.Text(x + width - Canvas::TextWidth(v, ts), y, v, ts, sel ? th.nameSel : th.name);
                 }
             }

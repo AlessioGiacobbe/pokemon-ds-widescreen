@@ -393,7 +393,9 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     auto choose = [&]() {
         if (guide && onBack)
         {
-            toggleGuide();
+            // (BACK: from a group to the groups, from the groups to the list.)
+            if (page.Back()) onBack = false;
+            else toggleGuide();
             return;
         }
         if (guide)
@@ -521,7 +523,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 if (act >= 0)
                 {
                     if (act == Controls::A || act == Controls::START) { if (!e.key.repeat) choose(); }
-                    else if (act == Controls::B || act == Controls::MENU) { if (guide) guide = false; else quit = true; }
+                    else if (act == Controls::B || act == Controls::MENU) { if (guide) { if (!page.Back()) guide = false; } else quit = true; }
                     else if (act == Controls::Y) toggleGuide();
                     else if (act >= Controls::UP && act <= Controls::RIGHT)
                         move(act == Controls::LEFT ? 1 : act == Controls::RIGHT ? 2 : act == Controls::UP ? 3 : 4);
@@ -534,7 +536,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 case SDLK_UP: case SDLK_w: move(3); break;
                 case SDLK_DOWN: case SDLK_s: move(4); break;
                 case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: if (!e.key.repeat) choose(); break;
-                case SDLK_ESCAPE: case SDLK_AC_BACK: if (guide) guide = false; else quit = true; break;
+                case SDLK_ESCAPE: case SDLK_AC_BACK: if (guide) { if (!page.Back()) guide = false; } else quit = true; break;
                 case SDLK_h: case SDLK_F1: toggleGuide(); break;
                 case SDLK_o: OpenFolder(fo.roms); break;
                 case SDLK_F11:
@@ -579,7 +581,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                               : in == Controls::IN_B || in == Controls::IN_BACK ? Controls::B
                               : in == Controls::IN_Y ? Controls::Y : -1;
                 if (act == Controls::A || act == Controls::START) choose();
-                else if (act == Controls::B || act == Controls::SELECT) { if (guide) guide = false; else quit = true; }
+                else if (act == Controls::B || act == Controls::SELECT) { if (guide) { if (!page.Back()) guide = false; } else quit = true; }
                 else if (act == Controls::Y) toggleGuide();
                 break;
             }
@@ -597,7 +599,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 // settings BACK at the left; on Android FOLDER at the left of the list.
                 if (e.type == SDL_MOUSEBUTTONUP && my < 22 * s && !dragging)
                 {
-                    if (guide && mx < canvas.w / 4) guide = false;
+                    if (guide && mx < canvas.w / 4) { if (!page.Back()) guide = false; }
                     else if (!guide && mx > canvas.w * 3 / 4) toggleGuide();
 #ifdef __ANDROID__
                     else if (!guide && mx < canvas.w / 4) JavaVoid("chooseFolder");
@@ -771,7 +773,9 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
         const std::string hint = games.empty() ? std::string("O: OPEN THE ROMS FOLDER    H: SETTINGS    ESC: QUIT")
                                : padIn ? btn(Controls::A) + ": PLAY    " + btn(Controls::Y) + ": SETTINGS    " + btn(Controls::B) + ": QUIT"
                                        : std::string("ENTER: PLAY    H: SETTINGS    O: ROMS FOLDER    ESC: QUIT");
-        const std::string pageHint = padIn ? "UP / DOWN: CHOOSE    LEFT / RIGHT / " + btn(Controls::A) + ": CHANGE    " + btn(Controls::B) + ": BACK"
+        const std::string pageHint = page.group < 0 ? (padIn ? "UP / DOWN: CHOOSE    " + btn(Controls::A) + ": OPEN    " + btn(Controls::B) + ": BACK"
+                                                             : std::string("UP / DOWN: CHOOSE    ENTER: OPEN    ESC: BACK"))
+                                   : padIn ? "UP / DOWN: CHOOSE    LEFT / RIGHT / " + btn(Controls::A) + ": CHANGE    " + btn(Controls::B) + ": BACK"
                                            : std::string("UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC: BACK");
 #endif
         static const Launcher::Theme theme;

@@ -244,7 +244,9 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, const std::
             if (step && (up || dn)) page.Move(up ? -1 : 1);
             if (step && (lf || rt)) change(lf ? -1 : 1);
             if (down & HidNpadButton_A) change(1);
-            if (down & (HidNpadButton_B | HidNpadButton_Y)) guide = false;
+            // (B: from a group back to the groups first; Y closes the page.)
+            if ((down & HidNpadButton_B) && !page.Back()) guide = false;
+            if (down & HidNpadButton_Y) guide = false;
             if (down & HidNpadButton_Plus) break;
         }
         else if (down & HidNpadButton_Y)

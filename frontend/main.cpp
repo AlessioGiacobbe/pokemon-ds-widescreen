@@ -3811,43 +3811,18 @@ int main(int argc, char** argv)
 
     Canvas canvas;
     Menu menu;
+    // The pause menu's items (menuIds: the item in each row) and its pages (menuPage): the menu
+    // itself, then DISPLAY, GRAPHICS and CONTROLS, and in CONTROLS the keys and buttons
+    // (PAGE_KEYS, controls.h). Items a platform does not have are left out of its pages.
     enum
     {
-        M_RESUME,
-#ifndef __SWITCH__
-        M_LAYOUT, M_LARGE,
-#endif
-        M_FPS60,
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
-        M_FULLSCREEN,
-#endif
-        M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
-#if SSR_WORLD_ON_GPU && !defined(__SWITCH__)
-        // (On the Switch always on: its fallback after a start that did not keep going is for
-        // that start only, see StartWideGpu's marker.)
-        M_WIDEGPU,
-#endif
-#if SSR_MENU_GPU3D
-        M_GPU3D,
-#endif
-        M_SHOWFPS,
-#ifndef __SWITCH__
-        M_BUTTONS,
-#endif
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
-        M_PADTOUCH, // (the Switch and phones have their touch screens)
-#endif
-#if SSR_MENU_EMULATION
-        M_EMULATION,
-#endif
-        M_CONTROLS,
-        M_STARTBTN,
-        M_FAST,
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
-        M_FFLOWRES,
-#endif
-        M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS,
+        M_WIDELINES, M_AUTODETAIL, M_WIDEGPU, M_GPU3D, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_EMULATION,
+        M_CONTROLS, M_STARTBTN, M_FAST, M_FFLOWRES, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT,
+        M_DISPLAY, M_GRAPHICS, M_CONTROLMENU, M_BACK
     };
+    enum { PAGE_MAIN, PAGE_KEYS, PAGE_DISPLAY, PAGE_GRAPHICS, PAGE_CONTROLS };
+    std::vector<int> menuIds;
     bool fastLock = false;
     double ffFrameMs = 0; // emulation time of one frame while fast forwarding (see speed)
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
@@ -3862,7 +3837,7 @@ int main(int argc, char** argv)
     // one waits for the key or button to give it (capturing, until captureUntil; a controller's
     // buttons must all be let go first, captureReleased); ESC, or 5 seconds, leaves it as it was.
     // CHANGING says which is shown and changed, the keyboard's keys or a controller's buttons.
-    int menuPage = 0; // 0 the pause menu, 1 CONTROLS
+    int menuPage = 0; // PAGE_*
 #ifdef __SWITCH__
     const bool ctlHasKeyboard = false; // (the Switch: a controller only)
 #else
@@ -3877,8 +3852,9 @@ int main(int argc, char** argv)
     const int ctlRow0 = ctlHasKeyboard ? 1 : 0; // the first action's row
     const int ctlRowReset = ctlRow0 + Controls::COUNT, ctlRowBack = ctlRowReset + 1;
     auto buildMenu = [&]() {
-        if (menuPage == 1)
+        if (menuPage == PAGE_KEYS)
         {
+            menuIds.clear();
             // (The names on the first controller connected: Xbox's, PlayStation's or Nintendo's.)
             const int padStyle = Controls::StyleOf(pads.controllers.empty() ? nullptr : pads.controllers[0]);
             menu.items.clear();
@@ -3897,81 +3873,111 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
         static const char* large[] = { "AUTO", "TOP", "BOTTOM" };
 #endif
-        menu.items = {
-            { "RESUME", "" },
+        menu.items.clear();
+        menuIds.clear();
+        auto add = [&](int id, const char* label, const std::string& value) {
+            menu.items.push_back({ label, value });
+            menuIds.push_back(id);
+        };
+        auto onOff = [](bool on) { return std::string(on ? "ON" : "OFF"); };
+        if (menuPage == PAGE_MAIN)
+        {
+            add(M_RESUME, "RESUME", "");
+            add(M_SAVESTATE, "SAVE STATE", "");
+            add(M_LOADSTATE, "LOAD STATE", "");
+            add(M_FAST, "FAST FORWARD", onOff(fastLock));
+            add(M_DISPLAY, "DISPLAY", "");
+            add(M_GRAPHICS, "GRAPHICS", "");
+            add(M_CONTROLMENU, "CONTROLS", "");
+            add(M_RESET, "RESET GAME", "");
+            add(M_QUIT, "QUIT", "");
+        }
+        else if (menuPage == PAGE_DISPLAY)
+        {
 #ifndef __SWITCH__
             // (The Switch always shows the one wide screen these layouts are built around.)
-            { "SCREEN LAYOUT", LayoutName(layout.mode) },
-            { "LARGE SCREEN", large[focus.mode] },
-#endif
-            { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
-#ifndef __SWITCH__
-            // (Always full screen on the Switch. CPU BOOST was here: the system kept taking
-            // its boost mode away, so the game dropped frames; sys-clk sets the clocks there.)
-#ifndef __ANDROID__
-            // (Borderless: a window the size of the screen, so other windows come up at once.)
-            { "BORDERLESS FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
+            add(M_LAYOUT, "SCREEN LAYOUT", LayoutName(layout.mode));
+            add(M_LARGE, "LARGE SCREEN", large[focus.mode]);
+#if !defined(__ANDROID__)
+            // (Always full screen on the Switch and phones. Borderless: a window the size of the
+            // screen, so other windows come up at once.)
+            add(M_FULLSCREEN, "BORDERLESS FULLSCREEN", onOff(cfg.fullscreen));
 #endif
 #endif
-            { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
-            { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
+            add(M_SMOOTH, "SMOOTH SCALING", onOff(cfg.smooth));
+            // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
+            add(M_BATTLEBUTTONS, "BATTLE BUTTONS",
+                !funcWatchOn || pt.on ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP");
+            add(M_SHOWFPS, "FPS COUNTER", onOff(cfg.showFps));
+            add(M_BACK, "BACK", "");
+        }
+        else if (menuPage == PAGE_GRAPHICS)
+        {
+            add(M_FPS60, "60 FPS", onOff(cfg.fps60));
+            add(M_WIDE, "WIDESCREEN WORLD", onOff(cfg.wide));
             // (Black, White, Black 2 and White 2. The game sets its memory up for it as it
             // starts, so a change waits for the next start.)
-            { "WIDE MAP LOADING", !bw2map.Supported() ? "-" : std::string(cfg.wideMap ? "ON" : "OFF") +
-                (cfg.wideMap != bw2map.on ? " (NEXT START)" : "") },
-            // (Black and Black 2; SoulSilver has a layout of its own. Black 2 has no STRIP.)
-            { "BATTLE BUTTONS", !funcWatchOn || pt.on ? "-" : cfg.battleButtons == 2 ? "PANEL" : cfg.battleButtons == 0 || !bw1.on ? "CORNER" : "STRIP" },
+            add(M_WIDEMAP, "WIDE MAP LOADING", !bw2map.Supported() ? "-" : onOff(cfg.wideMap) + (cfg.wideMap != bw2map.on ? " (NEXT START)" : ""));
 #ifdef __SWITCH__
-            { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
+            add(M_WIDELINES, "WORLD DETAIL", std::to_string(detailLines[detailIndex()]));
             // ON: fewer lines than WORLD DETAIL for a moment where drawing them cannot keep up
             // (a move's animation full of effects), so that the game does not slow down.
-            { "LOWER DETAIL WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
+            add(M_AUTODETAIL, "LOWER DETAIL WHEN BUSY", onOff(cfg.autoDetail));
 #else
             // (The same setting, named as on a PC's other games: the lines the 3D world is drawn
             // with, as a screen resolution.)
-            { "3D RESOLUTION", [&] {
+            {
                 const int l = detailLines[detailIndex()];
-                return std::to_string(l) + "P" + (l == 192 ? " (DS)" : l == 1440 ? " (2K)" : l == 2160 ? " (4K)" : "");
-            }() },
-            { "LOWER RES WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
+                add(M_WIDELINES, "3D RESOLUTION", std::to_string(l) + "P" + (l == 192 ? " (DS)" : l == 1440 ? " (2K)" : l == 2160 ? " (4K)" : ""));
+            }
+            add(M_AUTODETAIL, "LOWER RES WHEN BUSY", onOff(cfg.autoDetail));
 #endif
 #if SSR_WORLD_ON_GPU && !defined(__SWITCH__)
             // ON: the widescreen world drawn by the graphics card (OpenGL), not the processor.
-            { "WORLD ON GPU", melonDS::WideGpuCurrent ? "ON" : cfg.wideGpu ? "ON (NOT AVAILABLE)" : "OFF" },
+            // (On the Switch always on: its fallback after a start that did not keep going is
+            // for that start only, see StartWideGpu's marker.)
+            add(M_WIDEGPU, "WORLD ON GPU", melonDS::WideGpuCurrent ? "ON" : cfg.wideGpu ? "ON (NOT AVAILABLE)" : "OFF");
 #endif
 #if SSR_MENU_GPU3D
             // ON: the 3D scene drawn by the graphics chip instead of the processor. (Not on the
             // Switch: its OpenGL driver hung the console from a second thread and, from the main
             // thread, cost 10-12 ms a frame for the DS's picture and up to 22 ms to read a 720-line
             // widescreen picture back, far more than drawing it in software.)
-            { "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF" },
-#endif
-            { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
-#ifndef __SWITCH__
-            // (Nothing to choose on the Switch: its labels are the DS's positions.)
-            { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
+            add(M_GPU3D, "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF");
 #endif
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
-            { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
+            // ON: 360 lines while fast forwarding, for more frames a second (the menu's hint says so).
+            add(M_FFLOWRES, "FAST FORWARD LOW RES", onOff(cfg.ffLowRes));
 #endif
 #if SSR_MENU_EMULATION
             // Read when the game starts (SwitchPlatform::Start); a change waits for the next start.
             // FAST JIT: the JIT with fast memory.
-            { "EMULATION", std::string(!cfg.jit ? "INTERPRETER" : cfg.fastMem ? "FAST JIT" : "JIT")
-                + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : "") },
+            add(M_EMULATION, "EMULATION", std::string(!cfg.jit ? "INTERPRETER" : cfg.fastMem ? "FAST JIT" : "JIT")
+                + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : ""));
 #endif
-            { "CONTROLS", "" },
-            { "START BUTTON", cfg.startMenu ? "PAUSE MENU" : "DS START" },
-            { "FAST FORWARD", fastLock ? "ON" : "OFF" },
+            add(M_BACK, "BACK", "");
+        }
+        else if (menuPage == PAGE_CONTROLS)
+        {
+            add(M_CONTROLS, "KEYS AND BUTTONS", "");
+            add(M_STARTBTN, "START BUTTON", cfg.startMenu ? "PAUSE MENU" : "DS START");
+#ifndef __SWITCH__
+            // (Nothing to choose on the Switch: its labels are the DS's positions.)
+            add(M_BUTTONS, "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION");
+#endif
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
-            // ON: 360 lines while fast forwarding, for more frames a second (the menu's hint says so).
-            { "FAST FORWARD LOW RES", cfg.ffLowRes ? "ON" : "OFF" },
+            add(M_PADTOUCH, "STICK TOUCH CURSOR", onOff(cfg.padTouch)); // (the Switch and phones have touch screens)
 #endif
-            { "SAVE STATE", "" },
-            { "LOAD STATE", "" },
-            { "RESET GAME", "" },
-            { "QUIT", "" },
-        };
+            add(M_BACK, "BACK", "");
+        }
+    };
+    // To another page of the pause menu, on the row of item `select` (its first row: -1).
+    auto goPage = [&](int page, int select) {
+        menuPage = page;
+        buildMenu();
+        menu.selected = 0;
+        for (size_t i = 0; i < menuIds.size(); i++)
+            if (menuIds[i] == select) menu.selected = (int)i;
     };
     buildMenu();
 
@@ -4987,9 +4993,9 @@ int main(int argc, char** argv)
             }
             else swallowMenuButtons = true;
         }
-        else if (menu.open && menuPage == 1)
+        else if (menu.open && menuPage == PAGE_KEYS)
         {
-            // CONTROLS: B goes back to the pause menu.
+            // KEYS AND BUTTONS: B goes back to CONTROLS.
             int dir = 0;
             const int hit = nav.back ? ctlRowBack : menu.Update(nav, dir);
             if (hit == 0 && ctlHasKeyboard) ctlKeyboard = !ctlKeyboard;
@@ -5006,25 +5012,46 @@ int main(int argc, char** argv)
                 cfg.Save(opt.config);
                 say("CONTROLS RESET");
             }
-            else if (hit == ctlRowBack)
-            {
-                menuPage = 0;
-                buildMenu();
-                menu.selected = M_CONTROLS;
-            }
-            if (hit >= 0 && menuPage == 1) buildMenu();
+            else if (hit == ctlRowBack) goPage(PAGE_CONTROLS, M_CONTROLS);
+            if (hit >= 0 && menuPage == PAGE_KEYS) buildMenu();
         }
         else if (menu.open)
         {
-            if (nav.back)
+            // B: from a page back to the menu (on the page's own item), from the menu back to the game.
+            int backTo = -1;
+            if (nav.back && menuPage != PAGE_MAIN)
+            {
+                backTo = menuPage == PAGE_DISPLAY ? M_DISPLAY : menuPage == PAGE_GRAPHICS ? M_GRAPHICS : M_CONTROLMENU;
+                nav = MenuInput();
+            }
+            else if (nav.back)
             {
                 menu.open = false;
                 swallowMenuButtons = true;
             }
             int dir = 0;
             int hit = menu.Update(nav, dir);
-            switch (hit)
+            const int id = backTo >= 0 ? M_BACK : hit >= 0 && hit < (int)menuIds.size() ? menuIds[hit] : -1;
+            if (backTo >= 0) hit = 0;
+            switch (id)
             {
+            case M_DISPLAY:
+                goPage(PAGE_DISPLAY, -1);
+                hit = -1;
+                break;
+            case M_GRAPHICS:
+                goPage(PAGE_GRAPHICS, -1);
+                hit = -1;
+                break;
+            case M_CONTROLMENU:
+                goPage(PAGE_CONTROLS, -1);
+                hit = -1;
+                break;
+            case M_BACK:
+                if (backTo < 0) backTo = menuPage == PAGE_DISPLAY ? M_DISPLAY : menuPage == PAGE_GRAPHICS ? M_GRAPHICS : M_CONTROLMENU;
+                goPage(PAGE_MAIN, backTo);
+                hit = -1;
+                break;
             case M_RESUME:
                 menu.open = false;
                 swallowMenuButtons = true;
@@ -5125,11 +5152,10 @@ int main(int argc, char** argv)
                 break;
 #endif
             case M_CONTROLS:
-                menuPage = 1;
                 capturing = -1;
                 // (The keyboard's keys shown first when no controller is connected.)
                 ctlKeyboard = ctlHasKeyboard && pads.Empty() && !touchPadUsed;
-                buildMenu();
+                goPage(PAGE_KEYS, -1);
                 menu.selected = ctlRow0;
                 hit = -1; // (the page is built: not again below)
                 break;
@@ -6294,24 +6320,26 @@ int main(int argc, char** argv)
             };
             std::string hint = touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
                                : btn(Controls::A) + ": SELECT   " + btn(Controls::B) + ": BACK";
-            if (menuPage == 1)
+            const int selId = menu.selected >= 0 && menu.selected < (int)menuIds.size() ? menuIds[menu.selected] : -1;
+            static const char* pageTitle[] = { "", "KEYS AND BUTTONS", "DISPLAY", "GRAPHICS", "CONTROLS" };
+            if (menuPage == PAGE_KEYS)
             {
                 if (!(touchPadUsed && touchPad.visible)) hint = btn(Controls::A) + ": CHANGE   " + btn(Controls::B) + ": BACK";
                 if (capturing >= 0) hint = ctlKeyboard ? "ESC: LEAVE IT AS IT WAS" : "OR WAIT 5 SECONDS: AS IT WAS";
                 else if (menu.selected == 0 && ctlHasKeyboard) hint = "CHANGE: KEYBOARD OR CONTROLLER";
                 else if (menu.selected == ctlRow0 + Controls::SWAP) hint = "SWAPS WHICH SCREEN IS LARGE";
-                menu.Draw(canvas, "CONTROLS", hint);
+                menu.Draw(canvas, pageTitle[PAGE_KEYS], hint);
             }
             else
             {
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
             // (What FAST FORWARD LOW RES is for, while it is the one chosen.)
-            if (menu.selected == M_FFLOWRES) hint = "ON: MORE FPS IN FAST FORWARD";
+            if (selId == M_FFLOWRES) hint = "ON: MORE FPS IN FAST FORWARD";
 #endif
             // (What START BUTTON does, while it is the one chosen.)
-            if (menu.selected == M_STARTBTN) hint = cfg.startMenu ? "START OPENS THIS MENU" : "START IS THE DS START";
-            if (menu.selected == M_CONTROLS) hint = "CHANGE THE KEYS AND BUTTONS";
-            menu.Draw(canvas, "", hint);
+            if (selId == M_STARTBTN) hint = cfg.startMenu ? "START OPENS THIS MENU" : "START IS THE DS START";
+            if (selId == M_CONTROLS) hint = "GIVE ANY BUTTON ANOTHER KEY OR BUTTON";
+            menu.Draw(canvas, pageTitle[menuPage], hint);
             }
             overlayUsed = true;
         }

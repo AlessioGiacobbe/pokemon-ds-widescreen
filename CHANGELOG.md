@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-- **Remappable controls: CONTROLS in the pause menu.** Every DS button, the pause menu, fast
+- **The pause menu and the settings page in groups:** the pause menu is RESUME, SAVE STATE, LOAD
+  STATE, FAST FORWARD, then DISPLAY, GRAPHICS and CONTROLS (each a page of its own), RESET GAME and
+  QUIT; the game list's settings page opens on DISPLAY, GRAPHICS, CONTROLS, SHORTCUTS and HELP.
+- **Game list: SETTINGS can be chosen with the D-pad** (up from the top row, then A), as well as
+  with its button; on the settings page, up from the top reaches BACK.
+- **Button prompts name your controller's buttons**: PlayStation's symbols (cross, circle, square,
+  triangle), Nintendo's and Xbox's, and the buttons you gave in KEYS AND BUTTONS.
+- **Remappable controls: CONTROLS > KEYS AND BUTTONS in the pause menu.** Every DS button, the pause menu, fast
   forward and swapping the screens can be given another key on the keyboard and another button
   on a controller (triggers too). Choose one and press the key or button for it; giving it one
   that something else had swaps the two, and RESET ALL puts everything back. On the PC, Mac and

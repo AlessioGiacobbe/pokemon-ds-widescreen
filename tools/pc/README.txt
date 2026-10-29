@@ -101,7 +101,7 @@ Keyboard:
   F1               show the other DS screen
   Left Shift       fast forward while held
 
-Changing them: CONTROLS in the menu (Esc) lists the DS's buttons, the menu, fast forward and
+Changing them: CONTROLS > KEYS AND BUTTONS in the menu (Esc) lists the DS's buttons, the menu, fast forward and
 swapping the screens, with the key or button each has. Choose one and press the key or button
 to give it (Esc, or waiting 5 seconds, leaves it as it was); CHANGING at the top switches
 between the keyboard and a controller. Giving one a key or button another one had swaps the
