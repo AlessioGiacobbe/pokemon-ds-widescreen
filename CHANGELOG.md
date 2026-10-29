@@ -3,7 +3,8 @@
 ## Unreleased
 
 - **KEYS AND BUTTONS in the game list too:** its settings page (CONTROLS) changes the keys and
-  buttons before you play, as the pause menu does.
+  buttons before you play, as the pause menu does; on the Switch as well (any controller it
+  takes, sys-con and MissionControl ones included), and its list follows the buttons changed.
 - **Cheats: CHEATS in the pause menu.** Action Replay codes, run by melonDS's own engine, from a
   `cheats` folder: the R4 / DeSmuME database (`usrcheat.dat`), a text file of your own codes named
   after the game's code (`IPKE.txt` for HeartGold, ...) or a melonDS `.mch` file. Each turns on and
