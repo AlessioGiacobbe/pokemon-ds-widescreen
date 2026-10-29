@@ -6284,11 +6284,19 @@ int main(int argc, char** argv)
         }
         if (menu.open)
         {
+            // The buttons named as the controller in use has them (PlayStation's CROSS and CIRCLE,
+            // ...), and as CONTROLS has them; with no controller, the keyboard's keys.
+            const bool kbOnly = pads.Empty() && !(touchPadUsed && touchPad.visible);
+            auto btn = [&](int a) {
+                return kbOnly ? std::string(a == Controls::A ? "ENTER" : "ESC")
+                              : std::string(Controls::InputName(cfg.controls.Pad(a, cfg.byLabel),
+                                    Controls::StyleOf(pads.controllers.empty() ? nullptr : pads.controllers[0])));
+            };
             std::string hint = touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
-                               : cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK";
+                               : btn(Controls::A) + ": SELECT   " + btn(Controls::B) + ": BACK";
             if (menuPage == 1)
             {
-                if (!(touchPadUsed && touchPad.visible)) hint = cfg.byLabel ? "A: CHANGE   B: BACK" : "RIGHT: CHANGE   BOTTOM: BACK";
+                if (!(touchPadUsed && touchPad.visible)) hint = btn(Controls::A) + ": CHANGE   " + btn(Controls::B) + ": BACK";
                 if (capturing >= 0) hint = ctlKeyboard ? "ESC: LEAVE IT AS IT WAS" : "OR WAIT 5 SECONDS: AS IT WAS";
                 else if (menu.selected == 0 && ctlHasKeyboard) hint = "CHANGE: KEYBOARD OR CONTROLLER";
                 else if (menu.selected == ctlRow0 + Controls::SWAP) hint = "SWAPS WHICH SCREEN IS LARGE";

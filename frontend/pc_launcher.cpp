@@ -446,6 +446,24 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                     fprintf(stderr, "[launcher] controller: %s\n", name ? name : "?");
                 }
                 break;
+            case SDL_CONTROLLERDEVICEREMOVED:
+                for (size_t i = 0; i < pads.size(); i++)
+                    if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == e.cdevice.which)
+                    {
+                        SDL_GameControllerClose(pads[i]);
+                        pads.erase(pads.begin() + i);
+                        break;
+                    }
+                break;
+            case SDL_JOYDEVICEREMOVED:
+                for (size_t i = 0; i < joys.size(); i++)
+                    if (SDL_JoystickInstanceID(joys[i]) == e.jdevice.which)
+                    {
+                        SDL_JoystickClose(joys[i]);
+                        joys.erase(joys.begin() + i);
+                        break;
+                    }
+                break;
             case SDL_JOYDEVICEADDED:
                 // Any other gamepad (SDL has no layout for it), as the games take it (main.cpp, Pads).
                 if (!SDL_IsGameController(e.jdevice.which))
@@ -700,14 +718,26 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
             if (texture) SDL_DestroyTexture(texture);
             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ow, oh);
         }
+        // A controller's buttons named as it has them (PlayStation's CROSS, TRIANGLE, ...) and as
+        // CONTROLS has them, while one is connected.
+        const bool padIn = !pads.empty() || !joys.empty();
+        auto btn = [&](int a) {
+            const int def = a == Controls::A ? Controls::IN_A : a == Controls::B ? Controls::IN_B : Controls::IN_Y;
+            return std::string(Controls::InputName(ctl.PadCustom() ? ctl.Pad(a, ctl.byLabel) : def,
+                Controls::StyleOf(pads.empty() ? nullptr : pads[0])));
+        };
 #ifdef __ANDROID__
-        const std::string hint = games.empty() ? "TAP OR PRESS A TO CHOOSE YOUR ROMS FOLDER    BACK: QUIT"
-                                               : "TAP A GAME TWICE OR PRESS A TO PLAY    Y: SETTINGS    BACK: QUIT";
-        const char* pageHint = "TAP AN OPTION THEN TAP AGAIN TO CHANGE    DRAG TO SCROLL    BACK: DONE";
+        const std::string hint = games.empty() ? "TAP OR PRESS " + (padIn ? btn(Controls::A) : std::string("A")) + " TO CHOOSE YOUR ROMS FOLDER    BACK: QUIT"
+                               : padIn ? "TAP A GAME TWICE OR PRESS " + btn(Controls::A) + " TO PLAY    " + btn(Controls::Y) + ": SETTINGS    BACK: QUIT"
+                                       : std::string("TAP A GAME TWICE TO PLAY    SETTINGS: AT THE TOP    BACK: QUIT");
+        const std::string pageHint = padIn ? "UP / DOWN: CHOOSE    " + btn(Controls::A) + ": CHANGE    " + btn(Controls::B) + ": BACK"
+                                           : std::string("TAP AN OPTION THEN TAP AGAIN TO CHANGE    DRAG TO SCROLL    BACK: DONE");
 #else
-        const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    H: SETTINGS    ESC: QUIT"
-                                               : "ENTER OR A: PLAY    H OR Y: SETTINGS    O: ROMS FOLDER    ESC: QUIT";
-        const char* pageHint = "UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC OR B: BACK";
+        const std::string hint = games.empty() ? std::string("O: OPEN THE ROMS FOLDER    H: SETTINGS    ESC: QUIT")
+                               : padIn ? btn(Controls::A) + ": PLAY    " + btn(Controls::Y) + ": SETTINGS    " + btn(Controls::B) + ": QUIT"
+                                       : std::string("ENTER: PLAY    H: SETTINGS    O: ROMS FOLDER    ESC: QUIT");
+        const std::string pageHint = padIn ? "UP / DOWN: CHOOSE    LEFT / RIGHT / " + btn(Controls::A) + ": CHANGE    " + btn(Controls::B) + ": BACK"
+                                           : std::string("UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC: BACK");
 #endif
         static const Launcher::Theme theme;
         if (guide) page.Draw(canvas, pageHint, theme);
