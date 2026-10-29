@@ -4,7 +4,7 @@
 Deck or other handheld PC, an Android phone or a modded Nintendo Switch: one screen,
 widescreen, 60 fps, up to 4K on a PC and 720p on the Switch.** No more squinting at two tiny stacked DS screens.
 
-![Pokémon DS Widescreen: Black 2, White 2, Black, White, SoulSilver, HeartGold and Platinum in widescreen at 60 fps, on a Nintendo Switch, a PC, a Steam Deck, an Android phone and a Mac](docs/screenshots/trailer.gif)
+![Pokémon DS Widescreen: Black 2, White 2, Black, White, SoulSilver, HeartGold and Platinum in widescreen at 60 fps, on a Nintendo Switch, a PC, a Steam Deck, an Android phone and a Mac](docs/screenshots/trailer-2.gif)
 
 ## Downloads
 
