@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Android: the first public test build** (`pokemon-ds-wide-android.apk`), all seven games in one
+  app, with on-screen controls and controller support. README: an Android section.
 - **START opens the pause menu** (+ on the Switch, a controller's START on a PC or phone). The
   games hardly use the DS's START; START BUTTON in the settings puts it back (then + and − together,
   or START and SELECT, open the menu as before).

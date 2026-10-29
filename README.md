@@ -1,21 +1,21 @@
 # Pokémon DS Widescreen
 
-**Your favourite DS Pokémon games on a PC (Windows and Linux) or a modded
-Nintendo Switch: one screen, widescreen, 60 fps, up to 4K on a PC and 720p on
-the Switch.** No more squinting at two tiny stacked DS screens.
+**Your favourite DS Pokémon games on a PC (Windows and Linux), an Android phone
+or a modded Nintendo Switch: one screen, widescreen, 60 fps, up to 4K on a PC
+and 720p on the Switch.** No more squinting at two tiny stacked DS screens.
 
 ![Black 2: cycling along Castelia City's waterfront in widescreen, with the in-between frames on](docs/screenshots/black2-castelia-bike-60fps.gif)
 
 ## Downloads
 
-| | PC (Windows and Linux) | Nintendo Switch |
-|---|---|---|
-| **Download: all seven games in one program** | [Windows and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
-| Pokémon Black 2 and White 2 | ✅ | ✅ |
-| Pokémon Black and White | ✅ | ✅ |
-| Pokémon SoulSilver and HeartGold | ✅ | ✅ |
-| Pokémon Platinum | ✅ | ✅ |
-| Pokémon Omega Ruby | 🛠️ in the works (its own project) | 🛠️ in the works |
+| | PC (Windows and Linux) | Android (test build) | Nintendo Switch |
+|---|---|---|---|
+| **Download: all seven games in one program** | [Windows and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-android.apk](../../releases/tag/android-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
+| Pokémon Black 2 and White 2 | ✅ | ✅ | ✅ |
+| Pokémon Black and White | ✅ | ✅ | ✅ |
+| Pokémon SoulSilver and HeartGold | ✅ | ✅ | ✅ |
+| Pokémon Platinum | ✅ | ✅ | ✅ |
+| Pokémon Omega Ruby | 🛠️ in the works (its own project) | | 🛠️ in the works |
 
 One program per platform: start it and pick the game from the list. The
 downloads are free of the games themselves: you bring your own ROMs, and the
@@ -29,6 +29,7 @@ cartridge. Copy it in under the game's name, in this folder:
 | Where you play | Folder |
 |---|---|
 | PC (Windows, Linux, Steam Deck) | the `saves` folder beside the program |
+| Android | the `saves` folder inside the folder you chose for your ROMs |
 | Nintendo Switch | `/switch/pokemon-ds-wide/` on the SD card |
 
 | Game | Save name |
@@ -218,6 +219,32 @@ the next one falls back by itself (hold L while starting for the interpreter).
 
 ---
 
+## On Android (test build)
+
+1. **Download** [`pokemon-ds-wide-android.apk`](../../releases/tag/android-v1) on
+   your phone and open it. Android asks to allow installing apps from your
+   browser or Files app the first time: allow it, then install.
+2. **Put your ROMs** in a folder on the phone (any names), for example `ROMs` in
+   its internal storage.
+3. **Start Pokemon DS**, tap the screen, allow access to files, and pick that
+   folder. Tap a game twice (or press A on a controller) to play.
+
+**Controls:** on-screen buttons (D-pad, A, B, X, Y, L, R, START, SELECT and
+MENU at the top) while you play by touch; tap the picture itself to touch the
+DS's touch screen. A controller (Bluetooth or USB: Xbox, PlayStation, Backbone,
+Razer Kishi and others) plays as a DS and hides the on-screen buttons; its
+**Start** opens the pause menu and its right trigger fast forwards.
+
+**Saves** go in a `saves` folder inside your ROMs folder (made for you). The
+settings and `game.log` are in `Android/data/io.github.mamesj.pokemonds/files`.
+
+**What it needs:** Android 7.0 or newer on a 64-bit phone. The 3D world is drawn
+by the processor at 720P to start (3D RESOLUTION in the settings: Y in the list,
+or SETTINGS at the top right). Tested on a Pixel 9 Pro XL, where it runs at full
+speed; please tell us how yours runs (see [Reporting a bug](#reporting-a-bug)).
+
+---
+
 ## The games
 
 ### Pokémon Black 2 and White 2
@@ -305,6 +332,7 @@ OLED in handheld mode; a PC has room to spare, and draws the same picture up to
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
 - PC: speeds on a range of PCs are estimates so far (see above).
+- Android: a test build, so far tested on one phone (a Pixel 9 Pro XL).
 - Found a bug? See [Reporting a bug](#reporting-a-bug).
 
 ## What's next
