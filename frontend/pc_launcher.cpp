@@ -324,6 +324,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     // (Touch: a finger pressed at downY, dragged far enough to scroll the page.)
     int downY = 0, downScroll = 0;
     bool pressed = false, dragging = false;
+    int tapPlay = -1; // (the game a finger is on that was already chosen: played when it lifts)
     bool guide = false;
     Launcher::SettingsPage page;
     auto toggleGuide = [&]() {
@@ -481,16 +482,25 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                     }
                     break;
                 }
+                const int i = Launcher::TileAt(canvas, (int)games.size(), first, mx, my);
                 if (e.type == SDL_MOUSEBUTTONUP)
                 {
+                    // A tap on the chosen game plays it when the finger lifts (not as it lands:
+                    // the finger would still be on the screen when the game starts, and touch it).
+                    const bool play = tapPlay >= 0 && i == tapPlay && e.button.which == SDL_TOUCH_MOUSEID;
+                    tapPlay = -1;
                     dragging = pressed = false;
+                    if (play) choose();
                     break;
                 }
-                const int i = Launcher::TileAt(canvas, (int)games.size(), first, mx, my);
-                // A tap (or click) on the chosen game plays it; on another, chooses that one.
+                // A tap on another game chooses that one; a double click plays.
                 const bool touch = e.type == SDL_MOUSEBUTTONDOWN && e.button.which == SDL_TOUCH_MOUSEID;
-                if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && i >= 0 &&
-                    (e.button.clicks >= 2 || (touch && i == selected)))
+                if (touch && i >= 0 && i == selected)
+                {
+                    tapPlay = i;
+                    break;
+                }
+                if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && i >= 0 && e.button.clicks >= 2)
                 {
                     choose();
                     break;
