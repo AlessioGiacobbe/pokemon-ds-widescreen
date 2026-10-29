@@ -101,4 +101,6 @@ built on melonDS. Its source code:
 SDL2 (SDL2.dll on Windows, libSDL2-2.0.so.0 on Linux) is under the zlib licence
 (LICENSE-SDL2.txt).
 Pokemon is a trademark of Nintendo, Creatures and GAME FREAK. This project is not affiliated
-with or endorsed by them.
+with or endorsed by them. The box art in the game list belongs to Nintendo, Creatures,
+GAME FREAK and The Pokemon Company and is shown only to tell the games apart; if you hold the
+rights and want it removed, open an issue on the GitHub page and it will be taken out.

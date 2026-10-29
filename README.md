@@ -335,7 +335,10 @@ addresses come from ssrecomp's own SoulSilver layout. The DS is emulated by [mel
 
 GPL-3.0-or-later (see `LICENSE`), as required by melonDS. Not affiliated with
 or endorsed by Nintendo, Game Freak, The Pokémon Company or the melonDS
-project; Pokémon is a trademark of its owners.
+project; Pokémon is a trademark of its owners. The box art in the PC game list belongs to
+Nintendo, Creatures, GAME FREAK and The Pokémon Company and is shown only to tell the games
+apart; it is not part of this repository's code. If you hold the rights and want it removed,
+open an issue and it will be taken out.
 
 ---
 
