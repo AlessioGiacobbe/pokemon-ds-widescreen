@@ -68,18 +68,54 @@ inline int InputFromKey(const std::string& s)
     return -1;
 }
 
-// As printed on the controller. (On the Switch, main.cpp's ReadPad has already turned SDL's
-// Xbox positions into the Switch's labels.)
-inline const char* InputName(int i)
+// Which names a controller's buttons have (StyleOf): Xbox's (and most others'), PlayStation's or
+// Nintendo's.
+enum Style { XBOX, PLAYSTATION, NINTENDO };
+
+inline int StyleOf(SDL_GameController* c)
+{
+    if (!c) return XBOX;
+    switch (SDL_GameControllerGetType(c))
+    {
+    case SDL_CONTROLLER_TYPE_PS3:
+    case SDL_CONTROLLER_TYPE_PS4:
+    case SDL_CONTROLLER_TYPE_PS5:
+        return PLAYSTATION;
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+#endif
+        return NINTENDO;
+    default:
+        return XBOX;
+    }
+}
+
+// As printed on the controller. (SDL gives A to the bottom button of an Xbox or PlayStation pad
+// and to the button labelled A of a Nintendo one, as does main.cpp's ReadPad on the Switch.)
+inline const char* InputName(int i, int style = XBOX)
 {
 #ifdef __SWITCH__
-    static const char* n[IN_COUNT] = { "A", "B", "X", "Y", "-", "HOME", "+", "LEFT STICK", "RIGHT STICK", "L", "R",
-                                       "UP", "DOWN", "LEFT", "RIGHT", "ZL", "ZR" };
-#else
-    static const char* n[IN_COUNT] = { "A", "B", "X", "Y", "BACK", "GUIDE", "START", "LEFT STICK", "RIGHT STICK", "LB", "RB",
-                                       "UP", "DOWN", "LEFT", "RIGHT", "LT", "RT" };
+    style = NINTENDO;
 #endif
-    return i >= 0 && i < IN_COUNT ? n[i] : "-";
+    static const char* xbox[IN_COUNT] = { "A", "B", "X", "Y", "BACK", "GUIDE", "START", "LEFT STICK", "RIGHT STICK", "LB", "RB",
+                                          "UP", "DOWN", "LEFT", "RIGHT", "LT", "RT" };
+    static const char* ps[IN_COUNT] = { "CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "SHARE", "PS", "OPTIONS", "L3", "R3", "L1", "R1",
+                                        "UP", "DOWN", "LEFT", "RIGHT", "L2", "R2" };
+    static const char* nin[IN_COUNT] = { "A", "B", "X", "Y", "-", "HOME", "+", "LEFT STICK", "RIGHT STICK", "L", "R",
+                                         "UP", "DOWN", "LEFT", "RIGHT", "ZL", "ZR" };
+    if (i < 0 || i >= IN_COUNT) return "-";
+    return style == PLAYSTATION ? ps[i] : style == NINTENDO ? nin[i] : xbox[i];
+}
+
+// A joystick SDL has no layout for (a generic USB pad): its buttons in the usual order of such
+// pads, as main.cpp's ReadPad reads them. CONTROLS can then move any of them where wanted.
+inline int JoyButtonInput(int button)
+{
+    static const int order[] = { IN_A, IN_B, IN_X, IN_Y, IN_LB, IN_RB, IN_BACK, IN_START, IN_LS, IN_RS, IN_GUIDE };
+    return button >= 0 && button < (int)(sizeof(order) / sizeof(order[0])) ? order[button] : -1;
 }
 
 // Where each action is on a controller as it comes: the usual buttons in their usual places. A

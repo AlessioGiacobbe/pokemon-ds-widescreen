@@ -341,6 +341,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     Canvas canvas;
     std::map<std::string, std::vector<uint32_t>> artCache;
     std::vector<SDL_GameController*> pads;
+    std::vector<SDL_Joystick*> joys; // (gamepads SDL has no layout for)
     int first = 0, result = -1, cols = 3;
     std::string note;
     // Held directions repeat, as on the Switch.
@@ -438,7 +439,27 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 quit = true;
                 break;
             case SDL_CONTROLLERDEVICEADDED:
-                if (SDL_GameController* p = SDL_GameControllerOpen(e.cdevice.which)) pads.push_back(p);
+                if (SDL_GameController* p = SDL_GameControllerOpen(e.cdevice.which))
+                {
+                    pads.push_back(p);
+                    const char* name = SDL_GameControllerName(p);
+                    fprintf(stderr, "[launcher] controller: %s\n", name ? name : "?");
+                }
+                break;
+            case SDL_JOYDEVICEADDED:
+                // Any other gamepad (SDL has no layout for it), as the games take it (main.cpp, Pads).
+                if (!SDL_IsGameController(e.jdevice.which))
+                {
+                    SDL_Joystick* j = SDL_JoystickOpen(e.jdevice.which);
+                    if (j && SDL_JoystickNumButtons(j) >= 2)
+                    {
+                        joys.push_back(j);
+                        const char* name = SDL_JoystickName(j);
+                        fprintf(stderr, "[launcher] joystick without a known layout: %s (%d buttons, %d axes, %d hats)\n",
+                            name ? name : "?", SDL_JoystickNumButtons(j), SDL_JoystickNumAxes(j), SDL_JoystickNumHats(j));
+                    }
+                    else if (j) SDL_JoystickClose(j);
+                }
                 break;
             case SDL_KEYDOWN:
             {
@@ -476,9 +497,11 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
             }
             case SDL_CONTROLLERAXISMOTION:
             case SDL_CONTROLLERBUTTONDOWN:
+            case SDL_JOYBUTTONDOWN:
             {
-                // (Changed controller buttons: each does its action here. A trigger counts once
-                // pushed past half way.)
+                // A controller's button (Controls::IN_*): a trigger counts once pushed past half
+                // way; a joystick SDL has no layout for goes by Controls::JoyButtonInput (a known
+                // controller's own joystick events are left to its controller events).
                 int in = -1;
                 if (e.type == SDL_CONTROLLERAXISMOTION)
                 {
@@ -488,23 +511,24 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                     if (v > 0.5f && trig[t] <= 0.5f) in = t ? Controls::IN_RT : Controls::IN_LT;
                     trig[t] = v;
                 }
+                else if (e.type == SDL_JOYBUTTONDOWN)
+                {
+                    bool generic = false;
+                    for (SDL_Joystick* j : joys) generic |= SDL_JoystickInstanceID(j) == e.jbutton.which;
+                    if (!generic) break;
+                    in = Controls::JoyButtonInput(e.jbutton.button);
+                }
                 else in = e.cbutton.button;
-                if (ctl.PadCustom())
-                {
-                    const int act = in >= 0 ? ctl.ActionOfPad(in, ctl.byLabel) : -1;
-                    if (act == Controls::A || act == Controls::START) choose();
-                    else if (act == Controls::B || act == Controls::SELECT) { if (guide) guide = false; else quit = true; }
-                    else if (act == Controls::Y) toggleGuide();
-                    break;
-                }
-                if (e.type != SDL_CONTROLLERBUTTONDOWN) break;
-                switch (e.cbutton.button)
-                {
-                case SDL_CONTROLLER_BUTTON_A: case SDL_CONTROLLER_BUTTON_START: choose(); break;
-                case SDL_CONTROLLER_BUTTON_B: case SDL_CONTROLLER_BUTTON_BACK: if (guide) guide = false; else quit = true; break;
-                case SDL_CONTROLLER_BUTTON_Y: toggleGuide(); break;
-                default: break;
-                }
+                if (in < 0) break;
+                // The buttons changed in CONTROLS do their actions; otherwise A (or START) plays, B
+                // (or BACK) goes back and Y opens the settings.
+                const int act = ctl.PadCustom() ? ctl.ActionOfPad(in, ctl.byLabel)
+                              : in == Controls::IN_A || in == Controls::IN_START ? Controls::A
+                              : in == Controls::IN_B || in == Controls::IN_BACK ? Controls::B
+                              : in == Controls::IN_Y ? Controls::Y : -1;
+                if (act == Controls::A || act == Controls::START) choose();
+                else if (act == Controls::B || act == Controls::SELECT) { if (guide) guide = false; else quit = true; }
+                else if (act == Controls::Y) toggleGuide();
                 break;
             }
             case SDL_MOUSEMOTION:
@@ -624,6 +648,16 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
             else if (down(Controls::UP) || ay < -16000) dir = 3;
             else if (down(Controls::DOWN) || ay > 16000) dir = 4;
             if (dir) break;
+        }
+        for (SDL_Joystick* j : joys)
+        {
+            if (dir) break;
+            const Uint8 h = SDL_JoystickNumHats(j) > 0 ? SDL_JoystickGetHat(j, 0) : 0;
+            const int ax = SDL_JoystickNumAxes(j) >= 2 ? SDL_JoystickGetAxis(j, 0) : 0, ay = SDL_JoystickNumAxes(j) >= 2 ? SDL_JoystickGetAxis(j, 1) : 0;
+            if ((h & SDL_HAT_LEFT) || ax < -16000) dir = 1;
+            else if ((h & SDL_HAT_RIGHT) || ax > 16000) dir = 2;
+            else if ((h & SDL_HAT_UP) || ay < -16000) dir = 3;
+            else if ((h & SDL_HAT_DOWN) || ay > 16000) dir = 4;
         }
         held = dir && dir == heldDir ? held + 1 : dir ? 1 : 0;
         heldDir = dir;

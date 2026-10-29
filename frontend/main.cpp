@@ -1204,10 +1204,8 @@ static PadState ReadPad(Pads& pads)
     for (size_t k = 0; k < pads.joysticks.size(); k++)
     {
         SDL_Joystick* j = pads.joysticks[k];
-        static const int order[] = { PAD_A, PAD_B, PAD_X, PAD_Y, PAD_LB, PAD_RB, PAD_BACK, PAD_START };
-        const int n = std::min(SDL_JoystickNumButtons(j), (int)(sizeof(order) / sizeof(order[0])));
-        for (int i = 0; i < n; i++)
-            st.btn[order[i]] |= SDL_JoystickGetButton(j, i) != 0;
+        for (int i = 0; i < SDL_JoystickNumButtons(j); i++)
+            if (const int in = Controls::JoyButtonInput(i); in >= 0) st.btn[in] |= SDL_JoystickGetButton(j, i) != 0;
         if (SDL_JoystickNumHats(j) > 0)
         {
             const Uint8 h = SDL_JoystickGetHat(j, 0);
@@ -3881,13 +3879,15 @@ int main(int argc, char** argv)
     auto buildMenu = [&]() {
         if (menuPage == 1)
         {
+            // (The names on the first controller connected: Xbox's, PlayStation's or Nintendo's.)
+            const int padStyle = Controls::StyleOf(pads.controllers.empty() ? nullptr : pads.controllers[0]);
             menu.items.clear();
             if (ctlHasKeyboard) menu.items.push_back({ "CHANGING", ctlKeyboard ? "KEYBOARD" : "CONTROLLER" });
             for (int a = 0; a < Controls::COUNT; a++)
             {
                 std::string v = capturing == a ? (ctlKeyboard ? "PRESS A KEY" : "PRESS A BUTTON")
                               : ctlKeyboard ? Controls::KeyName(cfg.controls.Key(a))
-                                            : Controls::InputName(cfg.controls.Pad(a, cfg.byLabel));
+                                            : Controls::InputName(cfg.controls.Pad(a, cfg.byLabel), padStyle);
                 menu.items.push_back({ Controls::ActionName(a), v });
             }
             menu.items.push_back({ "RESET ALL", "" });
