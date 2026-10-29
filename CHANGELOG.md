@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Android: the first public test build** (`pokemon-ds-wide-android.apk`), all seven games in one
+- **Android: the first public release** (`pokemon-ds-wide-android.apk`), all seven games in one
   app, with on-screen controls and controller support. README: an Android section.
 - **START opens the pause menu** (+ on the Switch, a controller's START on a PC or phone). The
   games hardly use the DS's START; START BUTTON in the settings puts it back (then + and − together,
@@ -33,7 +33,7 @@
   you fast forward; turn it on for more FPS in fast forward (the world at 360P while it is held).
 - **PC: box art in the game list**, built into the program, as on the Switch (your own pictures in
   `icons/` still take its place).
-- **Android (test build, not released yet): one app for all seven games** with the game list,
+- **Android: one app for all seven games** with the game list,
   built by `tools/android/build_all.sh`. The first time, tap the screen, allow access to files
   and pick the folder with your ROMs (saves go in a `saves` folder inside it). On touch screens
   the game list, its settings page and the pause menu take taps (drag to scroll the settings), and

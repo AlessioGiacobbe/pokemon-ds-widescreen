@@ -8,7 +8,7 @@ and 720p on the Switch.** No more squinting at two tiny stacked DS screens.
 
 ## Downloads
 
-| | PC (Windows and Linux) | Android (test build) | Nintendo Switch |
+| | PC (Windows and Linux) | Android | Nintendo Switch |
 |---|---|---|---|
 | **Download: all seven games in one program** | [Windows and Linux](../../releases/tag/pc-v1) | [pokemon-ds-wide-android.apk](../../releases/tag/android-v1) | [pokemon-ds-wide-all-switch.zip](../../releases/tag/all-games-v2) |
 | Pokémon Black 2 and White 2 | ✅ | ✅ | ✅ |
@@ -219,7 +219,7 @@ the next one falls back by itself (hold L while starting for the interpreter).
 
 ---
 
-## On Android (test build)
+## On Android
 
 1. **Download** [`pokemon-ds-wide-android.apk`](../../releases/tag/android-v1) on
    your phone and open it. Android asks to allow installing apps from your
@@ -332,7 +332,7 @@ OLED in handheld mode; a PC has room to spare, and draws the same picture up to
   of the wide view. Loading more of the map, as Black 2 and White 2 do, should
   fix it.
 - PC: speeds on a range of PCs are estimates so far (see above).
-- Android: a test build, so far tested on one phone (a Pixel 9 Pro XL).
+- Android: tested on one phone so far (a Pixel 9 Pro XL).
 - Found a bug? See [Reporting a bug](#reporting-a-bug).
 
 ## What's next
