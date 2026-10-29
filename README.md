@@ -80,8 +80,8 @@ DS game, presented the way it should look on a modern screen.
 It starts in borderless fullscreen at 1080p with 60 fps; **F11** switches to a
 window. In the game list, arrow keys or a controller choose, **Enter** or **A**
 plays, **H** (or a controller's **Y**) opens the settings and **O** opens the
-`roms` folder. While playing, **Esc** (or a controller's Guide button, or Start
-and Select together) opens the pause menu; **QUIT** there goes back to the list.
+`roms` folder. While playing, **Esc** (or a controller's **Start** or Guide button)
+opens the pause menu; **QUIT** there goes back to the list.
 
 **Controls:** any controller (Xbox, PlayStation, Switch Pro and others) plays
 as a DS; hold its right trigger to fast forward. On the keyboard: arrow keys,
@@ -154,8 +154,9 @@ Tell us how yours runs, with its `game.log`.
 
 In the list the D-pad or a stick moves between games, **A** plays, **Y** opens
 the settings (the pause menu's options, each explained) and **+** goes back to
-the Homebrew Menu. It opens on the game you played last. While playing, **+
-and − together** open the pause menu; **QUIT** there saves and comes back to
+the Homebrew Menu. It opens on the game you played last. While playing, **+**
+opens the pause menu (START BUTTON in the settings can make + the DS's START
+again, with + and − together for the menu); **QUIT** there saves and comes back to
 the list (also when started from its HOME Menu icon). With only one game found
 there is no list: it starts straight away. **Touch screen:** tap it in handheld
 mode; docked, the right stick moves a cursor and **ZL** touches. Pressing the
