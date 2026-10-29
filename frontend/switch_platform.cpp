@@ -133,7 +133,22 @@ std::string InstallHomeIcons(const std::vector<Launcher::Game>& games)
         const Launcher::KnownGame* k = Launcher::Known(g.code);
         e.name = k ? k->name : g.name;
         e.args = "--game " + g.code;
-        e.icon = IconJpeg(g);
+        // The icon: the player's own picture in icons/ if there is one, else the box art built
+        // into the program, else the list's picture (a one-game program's icon can be a placeholder).
+        Launcher::Game pic = g;
+        const std::string dir = g_self.substr(0, g_self.find_last_of('/'));
+        struct stat is;
+        const bool own = stat((dir + "/icons/" + g.code + ".jpg").c_str(), &is) == 0 || stat((dir + "/icons/" + g.code + ".png").c_str(), &is) == 0;
+#ifdef SSR_PC_ART
+        size_t size = 0;
+        std::vector<uint32_t> art;
+        if (!own)
+            if (const unsigned char* data = PcLauncher::BuiltInArt(g.code.c_str(), size))
+                if (Launcher::LoadArt(data, size, art)) pic.art = art;
+#else
+        (void)own;
+#endif
+        e.icon = IconJpeg(pic);
         if (e.icon.empty()) continue;
         // (For checking: the icons also written to a forwarder-debug folder beside the program, if there.)
         const std::string debugDir = g_self.substr(0, g_self.find_last_of('/')) + "/forwarder-debug";
@@ -498,11 +513,9 @@ bool Start(int& argc, char**& argv)
                 for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
                 // A game with no picture of its own takes one another copy of it has (the icon of
                 // its one-game program, say).
-                for (Launcher::Game& g : games)
-                    for (const Launcher::Game& other : games)
-                        if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
 #ifdef SSR_PC_ART
-                // Else the box art built into the program.
+                // Else the box art built into the program (before another copy's picture, which is
+                // its one-game program's icon: that can be a placeholder).
                 for (Launcher::Game& g : games)
                 {
                     size_t size = 0;
@@ -510,6 +523,9 @@ bool Start(int& argc, char**& argv)
                         if (const unsigned char* data = PcLauncher::BuiltInArt(g.code.c_str(), size)) Launcher::LoadArt(data, size, g.art);
                 }
 #endif
+                for (Launcher::Game& g : games)
+                    for (const Launcher::Game& other : games)
+                        if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
                 chosen = PickGame(games, chosen, SettingsPath(dir));
                 if (chosen < 0) return false;
                 if (FILE* f = fopen(lastPath.c_str(), "w"))
