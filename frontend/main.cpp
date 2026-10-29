@@ -5372,6 +5372,44 @@ int main(int argc, char** argv)
             }
         }
 
+        // Platinum's introduction: Professor Rowan's YES / NO ("Please touch a button on the
+        // Touch Screen below") takes only a touch, and the game ignores the buttons there. While
+        // its two buttons are on the touch screen (YES red at x 100-140, y 70-92, NO blue below
+        // it at y 110-132), A touches YES and B touches NO, so a controller can answer too.
+        if (pt.on && funcWatchOn && !paused && funcWatch.Ran(pt.intro, 2))
+        {
+            static uint32_t prevYesNoKeys = 0;
+            static int yesNoTouch = 0, yesNoY = 0;
+            const uint32_t edge = keys & ~prevYesNoKeys;
+            prevYesNoKeys = keys;
+            const u32* bottom = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
+            auto near = [&](int x, int y, int r, int g, int b) {
+                const u32 c = bottom[y * 256 + x];
+                return std::abs((int)((c >> 16) & 0xFF) - r) < 40 && std::abs((int)((c >> 8) & 0xFF) - g) < 40 &&
+                       std::abs((int)(c & 0xFF) - b) < 40;
+            };
+            const bool shown = bottom && near(108, 76, 251, 89, 89) && near(132, 84, 251, 89, 89) &&
+                               near(108, 116, 73, 154, 219) && near(132, 124, 73, 154, 219);
+            if (shown || yesNoTouch > 0)
+            {
+                if (shown && yesNoTouch == 0 && (edge & ((1u << KEY_A) | (1u << KEY_B))))
+                {
+                    yesNoTouch = 4;
+                    yesNoY = (edge & (1u << KEY_A)) ? 81 : 121;
+                    fprintf(stderr, "[yes-no] frame %u: %s touched\n", frame, yesNoY == 81 ? "YES" : "NO");
+                }
+                // (A would only bring up "Please touch a button" again.)
+                keys &= ~((1u << KEY_A) | (1u << KEY_B));
+            }
+            if (yesNoTouch > 0)
+            {
+                touching = true;
+                touchX = 120;
+                touchY = yesNoY;
+                yesNoTouch--;
+            }
+        }
+
         if (ref && !paused)
         {
             TraceLog.clear();
