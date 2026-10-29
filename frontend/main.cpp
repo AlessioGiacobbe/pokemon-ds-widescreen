@@ -1820,6 +1820,10 @@ int main(int argc, char** argv)
         // left out of Android's list, and is lost if SDL cannot open it over USB itself.
         SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "0");
 #endif
+#ifdef __SWITCH__
+        // The touch screen is read from its finger events (see switchFinger), not as a mouse.
+        SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#endif
         // The controller keeps working while another window has the focus (on Windows SDL
         // otherwise ignores it then, as when the game was started from the setup window).
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
@@ -3895,6 +3899,13 @@ int main(int argc, char** argv)
 #ifdef __ANDROID__
     touchPadUsed = true;
 #endif
+#ifdef __SWITCH__
+    // The Switch's touch screen: its SDL sends finger events and no mouse events made from them,
+    // so a finger is followed here (the first one down) and taken as the mouse below.
+    bool switchFinger = false;
+    SDL_FingerID switchFingerId = 0;
+    float switchFingerX = 0, switchFingerY = 0;
+#endif
     // Touch cursor for devices without a touchscreen: moved with the right stick or IJKL,
     // pressed with the left trigger or Space.
     float cursorX = 128, cursorY = 96;
@@ -4424,9 +4435,51 @@ int main(int argc, char** argv)
         {
             SDL_Event ev;
             touchPad.NextFrame();
+            // The pause menu takes taps on itself: a row is chosen and used at once (a setting
+            // changes: the left part of the box back, the rest forward); a tap beside the box
+            // closes the menu.
+            auto menuTap = [&](float fx, float fy) {
+                const int item = menu.ItemAt((int)fx, (int)fy);
+                if (item == -2) nav.back = true;
+                else if (item >= 0)
+                {
+                    menu.selected = item;
+                    if (menu.items[item].value.empty()) nav.accept = true;
+                    else if (fx < menu.drawnX + menu.drawnW / 3) nav.left = true;
+                    else nav.right = true;
+                }
+            };
             while (SDL_PollEvent(&ev))
             {
                 if (ev.type == SDL_QUIT) running = false;
+#ifdef __SWITCH__
+                else if (ev.type == SDL_FINGERDOWN || ev.type == SDL_FINGERMOTION || ev.type == SDL_FINGERUP)
+                {
+                    int ow = 0, oh = 0;
+                    SDL_GetRendererOutputSize(renderer, &ow, &oh);
+                    const float fx = ev.tfinger.x * ow, fy = ev.tfinger.y * oh;
+                    if (ev.type == SDL_FINGERDOWN && !switchFinger)
+                    {
+                        if (menu.open)
+                        {
+                            menuTap(fx, fy);
+                            continue;
+                        }
+                        switchFinger = true;
+                        switchFingerId = ev.tfinger.fingerId;
+                    }
+                    if (switchFinger && ev.tfinger.fingerId == switchFingerId)
+                    {
+                        switchFingerX = fx;
+                        switchFingerY = fy;
+                        if (ev.type == SDL_FINGERUP)
+                        {
+                            switchFinger = false;
+                            mouseDown = false;
+                        }
+                    }
+                }
+#endif
                 else if (ev.type == SDL_APP_WILLENTERBACKGROUND || ev.type == SDL_APP_TERMINATING)
                 {
                     // A phone may close the app at any time once it is in the background.
@@ -4444,15 +4497,7 @@ int main(int argc, char** argv)
                     // beside the box, away from the buttons, closes the menu.
                     if (menu.open && ev.type == SDL_FINGERDOWN && (!touchPad.visible || touchPad.HitButton(fx, fy) == TouchPad::NONE))
                     {
-                        const int item = menu.ItemAt((int)fx, (int)fy);
-                        if (item == -2) nav.back = true;
-                        else if (item >= 0)
-                        {
-                            menu.selected = item;
-                            if (menu.items[item].value.empty()) nav.accept = true;
-                            else if (fx < menu.drawnX + menu.drawnW / 3) nav.left = true;
-                            else nav.right = true;
-                        }
+                        menuTap(fx, fy);
                         continue;
                     }
                     if (ev.type == SDL_FINGERDOWN)
@@ -4542,6 +4587,14 @@ int main(int argc, char** argv)
             }
             mouseX = int(double(mouseX) * outW / windowW);
             mouseY = int(double(mouseY) * outH / windowH);
+#ifdef __SWITCH__
+            if (switchFinger)
+            {
+                mouseDown = true;
+                mouseX = (int)switchFingerX;
+                mouseY = (int)switchFingerY;
+            }
+#endif
             ps = ReadPad(pads);
             if (touchPadUsed)
             {
