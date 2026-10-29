@@ -21,6 +21,9 @@
 #else
 #include <unistd.h>
 #endif
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
 
 // (stb_image's code here, for the list's pictures: only JPEG and PNG.)
 #define STB_IMAGE_IMPLEMENTATION
@@ -126,7 +129,98 @@ void SetConfigFullscreen(const std::string& cfg, bool on)
 struct Folders
 {
     std::string dir, roms, saves, funcs, cfg;
+    std::string art; // where the list's own pictures are (icons/IREO.jpg ...)
 };
+
+#ifdef __ANDROID__
+// The Android app's activity (tools/android/allgames/.../GameActivity.java): its static
+// methods, called through JNI.
+jclass ActivityClass(JNIEnv* env)
+{
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (!activity) return nullptr;
+    jclass c = env->GetObjectClass(activity);
+    env->DeleteLocalRef(activity);
+    return c;
+}
+
+template <class F>
+void CallActivity(const char* method, const char* signature, F call)
+{
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    if (!env) return;
+    jclass c = ActivityClass(env);
+    if (!c) return;
+    jmethodID m = env->GetStaticMethodID(c, method, signature);
+    if (m) call(env, c, m);
+    if (env->ExceptionCheck())
+    {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    env->DeleteLocalRef(c);
+}
+
+std::string JavaString(const char* method)
+{
+    std::string out;
+    CallActivity(method, "()Ljava/lang/String;", [&](JNIEnv* env, jclass c, jmethodID m) {
+        if (jstring str = (jstring)env->CallStaticObjectMethod(c, m))
+        {
+            const char* utf = env->GetStringUTFChars(str, nullptr);
+            if (utf) out = utf;
+            env->ReleaseStringUTFChars(str, utf);
+            env->DeleteLocalRef(str);
+        }
+    });
+    return out;
+}
+
+bool JavaBool(const char* method)
+{
+    bool out = false;
+    CallActivity(method, "()Z", [&](JNIEnv* env, jclass c, jmethodID m) { out = env->CallStaticBooleanMethod(c, m); });
+    return out;
+}
+
+void JavaVoid(const char* method)
+{
+    CallActivity(method, "()V", [&](JNIEnv* env, jclass c, jmethodID m) { env->CallStaticVoidMethod(c, m); });
+}
+
+// The ROM folder the player chose (GameActivity.romFolder), with the saves in a folder inside
+// it; until one is chosen, the app's own folder.
+void SetRomFolder(Folders& fo)
+{
+    fo.roms = JavaString("romFolder");
+    fo.saves = (fo.roms.empty() ? fo.dir : fo.roms) + "/saves";
+    fo.art = fo.roms.empty() ? fo.dir : fo.roms;
+}
+
+// The function tables, packed in the APK (assets/funcs), copied out to the app's folder for
+// the emulator, which reads them by file name.
+void ExtractFuncs(const Folders& fo)
+{
+    for (const char* code : { "IREO", "IRDO", "IRBO", "IRAO", "CPUE" })
+    {
+        SDL_RWops* rw = SDL_RWFromFile((std::string("funcs/") + code + ".txt").c_str(), "rb");
+        if (!rw) continue;
+        std::string data;
+        char buf[65536];
+        size_t n;
+        while ((n = SDL_RWread(rw, buf, 1, sizeof buf)) > 0) data.append(buf, n);
+        SDL_RWclose(rw);
+        const std::string out = fo.funcs + "/" + code + ".txt";
+        struct stat st;
+        if (stat(out.c_str(), &st) == 0 && (size_t)st.st_size == data.size()) continue;
+        if (FILE* f = fopen(out.c_str(), "wb"))
+        {
+            fwrite(data.data(), 1, data.size(), f);
+            fclose(f);
+        }
+    }
+}
+#endif
 
 // Whether this program plays a game: SoulSilver and HeartGold need the program's own tables,
 // the others their function table in data/funcs.
@@ -159,7 +253,7 @@ std::vector<Launcher::Game> FindGames(const Folders& fo, std::map<std::string, s
             auto it = artCache.find(g.rom);
             if (it == artCache.end())
             {
-                Launcher::FindArt(g, fo.dir);
+                Launcher::FindArt(g, fo.art);
                 it = artCache.emplace(g.rom, g.art).first;
             }
             g.art = it->second;
@@ -182,8 +276,19 @@ void OpenFolder(const std::string& path)
 
 // The list in its own window until a game is chosen: its index in games (which is updated as
 // ROMs come and go), or -1 when the window is closed.
-int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected, bool& fullscreen, int winW, int winH)
+int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool& fullscreen, int winW, int winH)
 {
+#ifdef __ANDROID__
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1"); // (taps come as clicks here; the game takes fingers one by one)
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "0");
+    fullscreen = true;
+    // No ROM folder yet, or no access to files: the list asks for them (GameActivity).
+    bool needFolder = fo.roms.empty() || !JavaBool("canUseFiles");
+    bool wasPicking = false;
+    Uint32 lastFolderCheck = 0;
+#endif
     #ifdef _WIN32
     // The program's own icon (resource 1, when it was built with one) for its windows.
     SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
@@ -216,6 +321,9 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
     Uint32 lastScan = SDL_GetTicks();
     bool quit = false;
     // The settings page (Launcher::SettingsPage): H, F1 or a controller's Y; Esc or B back.
+    // (Touch: a finger pressed at downY, dragged far enough to scroll the page.)
+    int downY = 0, downScroll = 0;
+    bool pressed = false, dragging = false;
     bool guide = false;
     Launcher::SettingsPage page;
     auto toggleGuide = [&]() {
@@ -238,6 +346,13 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             change(1);
             return;
         }
+#ifdef __ANDROID__
+        if (needFolder || games.empty())
+        {
+            JavaVoid("chooseFolder");
+            return;
+        }
+#endif
         if (games.empty()) return;
         if (Playable(fo, games[selected]))
         {
@@ -288,7 +403,7 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 case SDLK_UP: case SDLK_w: move(3); break;
                 case SDLK_DOWN: case SDLK_s: move(4); break;
                 case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: if (!e.key.repeat) choose(); break;
-                case SDLK_ESCAPE: if (guide) guide = false; else quit = true; break;
+                case SDLK_ESCAPE: case SDLK_AC_BACK: if (guide) guide = false; else quit = true; break;
                 case SDLK_h: case SDLK_F1: toggleGuide(); break;
                 case SDLK_o: OpenFolder(fo.roms); break;
                 case SDLK_F11:
@@ -311,19 +426,84 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 break;
             case SDL_MOUSEMOTION:
             case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
             {
                 // (Window points to the canvas's pixels, which are more on a high-DPI screen.)
                 int ww = 1, wh = 1;
                 SDL_GetWindowSize(window, &ww, &wh);
-                const int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
-                const int my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
-                const int i = guide ? -1 : Launcher::TileAt(canvas, (int)games.size(), first, mx * canvas.w / ww, my * canvas.h / wh);
+                const int mx = (e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x) * canvas.w / std::max(1, ww);
+                const int my = (e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y) * canvas.h / std::max(1, wh);
+                const int s = std::max(1, canvas.h / 240);
+                // The buttons in the title band (touch screens): SETTINGS at the right, and in the
+                // settings BACK at the left; on Android FOLDER at the left of the list.
+                if (e.type == SDL_MOUSEBUTTONUP && my < 22 * s && !dragging)
+                {
+                    if (guide && mx < canvas.w / 4) guide = false;
+                    else if (!guide && mx > canvas.w * 3 / 4) toggleGuide();
+#ifdef __ANDROID__
+                    else if (!guide && mx < canvas.w / 4) JavaVoid("chooseFolder");
+#endif
+                    break;
+                }
+                if (guide)
+                {
+                    // The settings: a finger dragged scrolls; a tap chooses an option, a second
+                    // tap on it changes it.
+                    if (e.type == SDL_MOUSEBUTTONDOWN)
+                    {
+                        downY = my;
+                        downScroll = page.scroll;
+                        dragging = false;
+                        pressed = true;
+                    }
+                    else if (e.type == SDL_MOUSEMOTION && pressed)
+                    {
+                        if (std::abs(my - downY) > page.lineH / 2) dragging = true;
+                        if (dragging)
+                        {
+                            page.follow = false;
+                            page.scroll = downScroll - (my - downY) / std::max(1, page.lineH);
+                        }
+                    }
+                    else if (e.type == SDL_MOUSEBUTTONUP)
+                    {
+                        if (pressed && !dragging)
+                        {
+                            const int item = page.ItemAt(my);
+                            if (item >= 0 && page.items[item].key)
+                            {
+                                if (item == page.selected) change(1);
+                                else page.selected = item;
+                                page.follow = false;
+                            }
+                        }
+                        pressed = dragging = false;
+                    }
+                    break;
+                }
+                if (e.type == SDL_MOUSEBUTTONUP)
+                {
+                    dragging = pressed = false;
+                    break;
+                }
+                const int i = Launcher::TileAt(canvas, (int)games.size(), first, mx, my);
+                // A tap (or click) on the chosen game plays it; on another, chooses that one.
+                const bool touch = e.type == SDL_MOUSEBUTTONDOWN && e.button.which == SDL_TOUCH_MOUSEID;
+                if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && i >= 0 &&
+                    (e.button.clicks >= 2 || (touch && i == selected)))
+                {
+                    choose();
+                    break;
+                }
                 if (i >= 0 && i != selected && (e.type == SDL_MOUSEBUTTONDOWN || (e.motion.xrel || e.motion.yrel)))
                 {
                     selected = i;
                     note.clear();
                 }
-                if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && i >= 0 && e.button.clicks >= 2) choose();
+#ifdef __ANDROID__
+                // (Asking for the ROM folder: a tap anywhere.)
+                if (e.type == SDL_MOUSEBUTTONDOWN && i < 0 && my >= 22 * s && (needFolder || games.empty())) choose();
+#endif
                 break;
             }
             case SDL_MOUSEWHEEL:
@@ -350,6 +530,24 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
         heldDir = dir;
         if (held == 1 || (held > 8 && held % 3 == 0)) move(dir);
 
+#ifdef __ANDROID__
+        // Back from Android's folder picker (or its "All files access" page): the folder it
+        // gave, and the games in it at once.
+        const bool pickingNow = JavaBool("picking");
+        if ((wasPicking && !pickingNow) || (needFolder && SDL_GetTicks() - lastFolderCheck > 1000))
+        {
+            lastFolderCheck = SDL_GetTicks();
+            SetRomFolder(fo);
+            needFolder = fo.roms.empty() || !JavaBool("canUseFiles");
+            if (!needFolder)
+            {
+                MakeDir(fo.saves);
+                lastScan = 0;
+                fprintf(stderr, "[launcher] ROM folder %s\n", fo.roms.c_str());
+            }
+        }
+        wasPicking = pickingNow;
+#endif
         // ROMs put in the folder (or taken out) show up by themselves.
         if (SDL_GetTicks() - lastScan > 1500)
         {
@@ -369,23 +567,56 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             if (texture) SDL_DestroyTexture(texture);
             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ow, oh);
         }
+#ifdef __ANDROID__
+        const std::string hint = games.empty() ? "TAP OR PRESS A TO CHOOSE YOUR ROMS FOLDER    BACK: QUIT"
+                                               : "TAP A GAME TWICE OR PRESS A TO PLAY    Y: SETTINGS    BACK: QUIT";
+        const char* pageHint = "TAP AN OPTION THEN TAP AGAIN TO CHANGE    DRAG TO SCROLL    BACK: DONE";
+#else
         const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    H: SETTINGS    ESC: QUIT"
                                                : "ENTER OR A: PLAY    H OR Y: SETTINGS    O: ROMS FOLDER    ESC: QUIT";
+        const char* pageHint = "UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC OR B: BACK";
+#endif
         static const Launcher::Theme theme;
-        if (guide) page.Draw(canvas, "UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC OR B: BACK", theme);
+        if (guide) page.Draw(canvas, pageHint, theme);
         else cols = Launcher::Draw(canvas, games, selected, first, note, hint, theme);
+        {
+            // The title band's buttons (for touch screens and the mouse): SETTINGS, or BACK in
+            // the settings; on Android FOLDER, to choose the ROM folder again.
+            const int s = std::max(1, canvas.h / 240);
+            if (guide) canvas.Text(8 * s, 7 * s, "< BACK", s, theme.hint);
+            else
+            {
+                canvas.Text(canvas.w - 8 * s - Canvas::TextWidth("SETTINGS", s), 7 * s, "SETTINGS", s, theme.hint);
+#ifdef __ANDROID__
+                canvas.Text(8 * s, 7 * s, "FOLDER", s, theme.hint);
+#endif
+            }
+        }
         if (games.empty() && !guide)
         {
             const int s = std::max(1, canvas.h / 240);
+#ifdef __ANDROID__
+            const bool asking = needFolder;
+            const char* lines[] = { asking ? "CHOOSE YOUR ROMS FOLDER" : "NO GAMES FOUND", "",
+                                    asking ? "TAP ANYWHERE: ALLOW ACCESS TO FILES, THEN PICK THE FOLDER" : "NO .NDS FILES IN",
+                                    asking ? "WITH YOUR .NDS FILES. SAVES GO IN A SAVES FOLDER INSIDE IT." : fo.roms.c_str(),
+                                    "",
+                                    "IT PLAYS POKEMON BLACK / WHITE / BLACK 2 / WHITE 2 (ENGLISH)",
+                                    "SOULSILVER / HEARTGOLD / PLATINUM (US)" };
+            const char* heading = lines[0];
+#else
             const char* lines[] = { "NO GAMES FOUND", "",
                                     "PUT YOUR ROMS IN THE ROMS FOLDER BESIDE THIS PROGRAM.", "THEY SHOW UP HERE BY THEMSELVES.", "",
                                     "IT PLAYS POKEMON BLACK / WHITE / BLACK 2 / WHITE 2 (ENGLISH)",
                                     "SOULSILVER / HEARTGOLD / PLATINUM (US)" };
+            const char* heading = lines[0];
+#endif
             int y = canvas.h / 3;
             for (const char* l : lines)
             {
-                const int ls = !strcmp(l, "NO GAMES FOUND") ? s + 1 : s;
-                const int ts = Canvas::TextWidth(l, ls) <= canvas.w - 8 ? ls : std::max(1, ls - 1);
+                const int ls = l == heading ? s + 1 : s;
+                int ts = ls;
+                while (ts > 1 && Canvas::TextWidth(l, ts) > canvas.w - 8) ts--;
                 canvas.Text((canvas.w - Canvas::TextWidth(l, ts)) / 2, y, l, ts, ls > s ? theme.title : theme.name);
                 y += 12 * s;
             }
@@ -399,7 +630,11 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
     if (texture) SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+#ifndef __ANDROID__
+    // (Not on Android: SDL stays up for the game, which opens its own window in the same
+    // activity.)
     SDL_Quit();
+#endif
     return result;
 }
 }
@@ -409,13 +644,33 @@ bool Start(int& argc, char**& argv)
     // With arguments (a ROM given by hand, the test harness) the program runs as it always has.
     if (argc >= 2) return true;
     Folders fo;
+#ifdef __ANDROID__
+    // The app's own folder on the shared storage (Android/data/io.github.mamesj.pokemonds/
+    // files: settings, game.log, the function tables), which a PC over USB can open; the
+    // ROMs and saves in the folder the player chooses (GameActivity).
+    {
+        const char* ext = SDL_AndroidGetExternalStoragePath();
+        const char* own = SDL_AndroidGetInternalStoragePath();
+        fo.dir = ext ? ext : own ? own : ".";
+    }
+    fo.funcs = fo.dir + "/data/funcs";
+    fo.cfg = fo.dir + "/settings.cfg";
+    MakeDir(fo.dir);
+    MakeDir(fo.dir + "/data");
+    MakeDir(fo.funcs);
+    ExtractFuncs(fo);
+    SetRomFolder(fo);
+    if (!fo.roms.empty()) MakeDir(fo.saves);
+#else
     fo.dir = ProgramDir();
     fo.roms = fo.dir + "/roms";
     fo.saves = fo.dir + "/saves";
     fo.funcs = fo.dir + "/data/funcs";
     fo.cfg = fo.dir + "/settings.cfg";
+    fo.art = fo.dir;
     MakeDir(fo.roms);
     MakeDir(fo.saves);
+#endif
 
     // The log goes to game.log beside the program (the last game's is kept as game-previous.log:
     // QUIT starts the program again for the list, whose few lines would otherwise replace it).
@@ -486,7 +741,9 @@ void Finish()
     if (!g_change) return;
     fflush(stderr);
     // The program again, without arguments: the list.
-#ifdef _WIN32
+#if defined(__ANDROID__)
+    JavaVoid("restart"); // (GameActivity: a new process, which opens on the list)
+#elif defined(_WIN32)
     wchar_t self[32768];
     const DWORD n = GetModuleFileNameW(nullptr, self, 32768);
     if (n == 0 || n >= 32768) return;

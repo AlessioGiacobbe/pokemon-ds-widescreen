@@ -228,6 +228,25 @@ def build(skeleton, abi, libmain, libsdl, rom, key_path, out):
     return out
 
 
+def build_files(skeleton, files, key_path, out):
+    """The all-games app (tools/android/build_all.sh): the skeleton plus any files, given as
+    (name in the APK, path on disk) pairs, e.g. ('lib/arm64-v8a/libmain.so', ...) and
+    ('assets/funcs/IREO.txt', ...); no ROM. Signed like build()."""
+    tmp = out + '.unsigned'
+    with zipfile.ZipFile(skeleton) as src, zipfile.ZipFile(tmp, 'w') as z:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            stored = item.filename == 'resources.arsc' or item.filename.endswith('.png')
+            write_aligned(z, item.filename, data, not stored, 4)
+        for name, path in files:
+            write_aligned(z, name, open(path, 'rb').read(), True, 4)
+    signed = sign_v2(open(tmp, 'rb').read(), load_key(key_path))
+    with open(out, 'wb') as f:
+        f.write(signed)
+    os.remove(tmp)
+    return out
+
+
 if __name__ == '__main__':
     if len(sys.argv) != 8:
         sys.exit(__doc__)

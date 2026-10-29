@@ -118,6 +118,13 @@ if(ANDROID)
     target_include_directories(ssrecomp PRIVATE melonDS/src frontend runtime)
     target_compile_definitions(ssrecomp PRIVATE SSR_NO_PNG SSR_VERSION="${SSR_VERSION}")
     target_link_libraries(ssrecomp PRIVATE core SDL2::SDL2 android log)
+    # The all-games app (tools/android/build_all.sh): no game inside, the game list from the
+    # PC program (frontend/pc_launcher.cpp) with the ROMs in a folder the player chooses.
+    option(SSR_PC_ALL_GAMES "The all-games program with its game list" OFF)
+    if(SSR_PC_ALL_GAMES)
+        target_sources(ssrecomp PRIVATE frontend/pc_launcher.cpp)
+        target_compile_definitions(ssrecomp PRIVATE SSR_PC_LAUNCHER)
+    endif()
 elseif(SSR_SWITCH)
     # On the Switch the game is an .nro, a program for the Homebrew Menu, made from the
     # executable below. Like the Android app it holds the player's own game, so it is built

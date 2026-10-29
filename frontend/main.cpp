@@ -1468,15 +1468,19 @@ int main(int argc, char** argv)
         // for bug reports: in the app's folder on the shared storage
         // (Android/data/io.github.clickingmaster.ssrecomp/files), which a file manager or
         // a PC over USB can open, or else beside the save.
+        setenv("SSR_PERF", "1", 0);
+#ifndef SSR_PC_LAUNCHER
         const char* ext = SDL_AndroidGetExternalStoragePath();
         if (!ext || !freopen((std::string(ext) + "/log.txt").c_str(), "w", stderr))
             freopen("log.txt", "w", stderr);
         setvbuf(stderr, nullptr, _IOLBF, 0);
-        setenv("SSR_PERF", "1", 0);
         androidArgs = { "ssrecomp", "rom.nds", "--save", std::string(dir ? dir : ".") + "/soulsilver.sav", "--fullscreen" };
         for (auto& a : androidArgs) androidArgv.push_back(a.data());
         argc = (int)androidArgv.size();
         argv = androidArgv.data();
+#endif
+        // (The all-games app: no ROM inside; the game list (pc_launcher.cpp) finds the
+        // player's ROMs and sends the log to game.log in the app's folder.)
     }
 #endif
 #ifdef __SWITCH__
@@ -1665,6 +1669,11 @@ int main(int argc, char** argv)
     cfg.fullscreen = true;
     cfg.wideLines = 1080;
     cfg.fps60 = true;
+#ifdef __ANDROID__
+    // (The Android app draws the world with the processor: 720 lines, a phone's screen
+    // height or near it.)
+    cfg.wideLines = 720;
+#endif
 #endif
     if (!opt.headless) cfg.Load(opt.config);
 #ifdef __SWITCH__
@@ -3732,7 +3741,7 @@ int main(int argc, char** argv)
         M_LAYOUT, M_LARGE,
 #endif
         M_FPS60,
-#ifndef __SWITCH__
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
         M_FULLSCREEN,
 #endif
         M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
@@ -3747,7 +3756,9 @@ int main(int argc, char** argv)
         M_SHOWFPS,
 #ifndef __SWITCH__
         M_BUTTONS,
-        M_PADTOUCH, // (the Switch has its touch screen)
+#endif
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
+        M_PADTOUCH, // (the Switch and phones have their touch screens)
 #endif
 #if SSR_MENU_EMULATION
         M_EMULATION,
@@ -3779,8 +3790,10 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
             // (Always full screen on the Switch. CPU BOOST was here: the system kept taking
             // its boost mode away, so the game dropped frames; sys-clk sets the clocks there.)
+#ifndef __ANDROID__
             // (Borderless: a window the size of the screen, so other windows come up at once.)
             { "BORDERLESS FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
+#endif
 #endif
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
@@ -3819,6 +3832,8 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
             // (Nothing to choose on the Switch: its labels are the DS's positions.)
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
+#endif
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
 #endif
 #if SSR_MENU_EMULATION
@@ -3844,7 +3859,7 @@ int main(int argc, char** argv)
         toast = msg;
         toastUntil = frame + 120;
     };
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(SSR_PC_LAUNCHER)
     bool updateSaid = false;
     UpdateCheck::Start();
 #endif
@@ -4752,7 +4767,7 @@ int main(int argc, char** argv)
                 cfg.fps60 = !cfg.fps60;
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
                 break;
-#ifndef __SWITCH__
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
             case M_FULLSCREEN:
                 cfg.fullscreen = !cfg.fullscreen;
                 if (window)
@@ -4812,6 +4827,8 @@ int main(int argc, char** argv)
             case M_BUTTONS:
                 cfg.byLabel = !cfg.byLabel;
                 break;
+#endif
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
@@ -5894,7 +5911,7 @@ int main(int argc, char** argv)
             canvas.Text(outW - Canvas::TextWidth(">>", sc) - 4 * sc, cornerY + 4 * sc, ">>", sc, 0xFFFFFFFF);
             overlayUsed = true;
         }
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(SSR_PC_LAUNCHER)
         if (!updateSaid && UpdateCheck::g_done)
         {
             updateSaid = true;

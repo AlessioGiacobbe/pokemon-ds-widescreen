@@ -407,12 +407,17 @@ inline std::vector<Setting> SettingsList()
     // start lighter. Until either is set, AUTO.)
     l.push_back({ "fps60", "60 FPS", onOff, "", "ON: THE 3D WORLD GETS IN-BETWEEN FRAMES AND MOVES AT 60 FRAMES A SECOND (THE GAMES DRAW IT AT 30). OFF: 30 AS ON A DS." });
 #else
+    // (A PC, and the Android app: no BORDERLESS FULLSCREEN, WORLD ON GPU or STICK TOUCH CURSOR
+    // there, which is always full screen, draws the world with the processor and has a touch
+    // screen.)
     l.push_back({ "view", "SCREEN LAYOUT", { { "merged", "MERGED" }, { "hybrid", "HYBRID" }, { "side", "SIDE" }, { "vertical", "VERTICAL" }, { "top", "TOP" }, { "bottom", "BOTTOM" } }, "merged",
                   "MERGED: THE ONE WIDESCREEN PICTURE. THE OTHERS SHOW THE TWO DS SCREENS LAID OUT AS ON OTHER EMULATORS." });
     l.push_back({ "large_screen", "LARGE SCREEN", { { "auto", "AUTO" }, { "top", "TOP" }, { "bottom", "BOTTOM" } }, "auto",
                   "FOR THE LAYOUTS WITH A LARGE AND A SMALL SCREEN: WHICH ONE IS LARGE. AUTO FOLLOWS WHAT THE GAME IS DOING." });
     l.push_back({ "fps60", "60 FPS", onOff, "1", "ON: THE 3D WORLD GETS IN-BETWEEN FRAMES AND MOVES AT 60 FRAMES A SECOND (THE GAMES DRAW IT AT 30). OFF: 30 AS ON A DS." });
+#ifndef __ANDROID__
     l.push_back({ "fullscreen", "BORDERLESS FULLSCREEN", onOff, "1", "ON: FILLS YOUR SCREEN AS A BORDERLESS WINDOW AT ITS OWN RESOLUTION. SWITCHING TO OTHER WINDOWS IS INSTANT. F11 DOES THE SAME." });
+#endif
 #endif
     l.push_back({ "smooth", "SMOOTH SCALING", onOff, "0", "ON: THE PICTURE IS SOFTENED AS IT IS SCALED UP TO YOUR SCREEN. OFF: SHARP PIXELS." });
     l.push_back({ "wide", "WIDESCREEN WORLD", onOff, "1", "ON: THE 3D WORLD IS DRAWN OUT TO THE SIDES OF THE 16:9 SCREEN. OFF: ONLY AS WIDE AS A DS SCREEN." });
@@ -425,21 +430,32 @@ inline std::vector<Setting> SettingsList()
                   "HOW MANY LINES THE WIDE 3D WORLD IS DRAWN WITH. 720 IS FULL SHARPNESS ON THE SWITCH. LOWER IS LIGHTER ON THE CONSOLE." });
     l.push_back({ "auto_detail", "LOWER DETAIL WHEN BUSY", onOff, "1", "ON: DROPS THE WORLD DETAIL FOR A MOMENT WHEN DRAWING CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." });
 #else
+#ifdef __ANDROID__
+    l.push_back({ "wide_lines", "3D RESOLUTION", { { "192", "192P (DS)" }, { "288", "288P" }, { "384", "384P" }, { "540", "540P" }, { "720", "720P" }, { "1080", "1080P" } }, "720",
+                  "HOW SHARP THE 3D WORLD IS. 720P SUITS MOST PHONES. LOWER IF YOURS CANNOT KEEP UP OR TO SAVE BATTERY. SPRITES AND TEXT KEEP THEIR DS PIXELS." });
+    l.push_back({ "auto_detail", "LOWER RES WHEN BUSY", onOff, "1", "ON: DROPS THE 3D RESOLUTION FOR A MOMENT WHEN THE PHONE CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." });
+#else
     l.push_back({ "wide_lines", "3D RESOLUTION", { { "192", "192P (DS)" }, { "288", "288P" }, { "384", "384P" }, { "540", "540P" }, { "720", "720P" }, { "1080", "1080P" }, { "1440", "1440P (2K)" }, { "2160", "2160P (4K)" } }, "1080",
                   "HOW SHARP THE 3D WORLD IS. PICK YOUR SCREEN RESOLUTION OR LOWER IF YOUR PC CANNOT KEEP UP. SPRITES AND TEXT KEEP THEIR DS PIXELS." });
     l.push_back({ "auto_detail", "LOWER RES WHEN BUSY", onOff, "1", "ON: DROPS THE 3D RESOLUTION FOR A MOMENT WHEN YOUR PC CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." });
     l.push_back({ "wide_gpu", "WORLD ON GPU", onOff, "1", "ON: THE WIDE 3D WORLD IS DRAWN BY YOUR GRAPHICS CARD (OPENGL 4.3). TURN IT OFF IF THE WORLD LOOKS WRONG OR THE GAME WILL NOT START: THE PROCESSOR THEN DRAWS IT (THAT WANTS A FAST PC)." });
 #endif
+#endif
     l.push_back({ "show_fps", "FPS COUNTER", onOff, "0", "SHOWS THE FRAMES A SECOND IN A CORNER." });
 #ifndef __SWITCH__
     l.push_back({ "buttons", "BUTTONS", { { "labels", "BY LABEL" }, { "positions", "BY POSITION" } }, "labels",
                   "BY LABEL: THE BUTTON MARKED A IS THE DS A ON ANY CONTROLLER. BY POSITION: THE BUTTONS WHERE A DS HAS THEM (XBOX A IS DS B)." });
+#ifndef __ANDROID__
     l.push_back({ "pad_touch", "STICK TOUCH CURSOR", onOff, "0", "ON: THE RIGHT STICK MOVES A CURSOR ON THE TOUCH SCREEN AND THE LEFT TRIGGER PRESSES IT." });
+#endif
 #endif
     // Only in the pause menu.
 #ifdef __SWITCH__
     l.push_back({ nullptr, "THE PAUSE MENU", {}, "", "PRESS + AND - TOGETHER WHILE PLAYING. EVERYTHING ABOVE IS THERE TOO AND CAN BE CHANGED AS YOU PLAY." });
     l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD ZR (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
+#elif defined(__ANDROID__)
+    l.push_back({ nullptr, "THE PAUSE MENU", {}, "", "THE MENU BUTTON AT THE TOP OF THE SCREEN WHILE PLAYING OR THE GUIDE BUTTON OF A CONTROLLER (OR START AND SELECT TOGETHER). EVERYTHING ABOVE IS THERE TOO." });
+    l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD THE RIGHT TRIGGER OF A CONTROLLER (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
 #else
     l.push_back({ nullptr, "THE PAUSE MENU", {}, "", "ESC ON THE KEYBOARD. ON A CONTROLLER: ITS GUIDE BUTTON (XBOX / PS) OR START AND SELECT TOGETHER. EVERYTHING ABOVE IS THERE TOO." });
     l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD THE RIGHT TRIGGER OR LEFT SHIFT (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
@@ -478,6 +494,22 @@ struct SettingsPage
     std::vector<Setting> items = SettingsList();
     std::vector<std::string> lines; // the file, as it is
     int selected = 0, scroll = 0;
+    // Draw keeps the chosen option in view while follow is set (the keys and the D-pad); a
+    // finger scrolling the page clears it. Draw also notes, for taps (ItemAt), where each
+    // option's name line is and how tall a line is.
+    bool follow = true;
+    int lineH = 20;
+    std::vector<std::pair<int, int>> rows; // (option, the top of its name line)
+
+    // The option whose part of the page (its name and the lines below it) is at y, or -1.
+    int ItemAt(int y) const
+    {
+        int found = -1;
+        for (const auto& r : rows)
+            if (r.second - lineH / 4 <= y) found = r.first;
+        if (found >= 0 && !rows.empty() && y > rows.back().second + 6 * lineH) return -1;
+        return found;
+    }
 
     void Open(const std::string& cfgPath, bool keepChoice = false)
     {
@@ -533,6 +565,7 @@ struct SettingsPage
     }
     void Move(int d)
     {
+        follow = true;
         for (int i = selected + d; i >= 0 && i < (int)items.size(); i += d)
             if (items[i].key)
             {
@@ -597,15 +630,21 @@ struct SettingsPage
             if (i == selected) selLast = (int)out.size() - 1;
             out.push_back({ "", "", -1, false });
         }
-        const int top = 30 * s, bottom = c.h - 18 * s, lineH = 10 * ts;
+        const int top = 30 * s, bottom = c.h - 18 * s;
+        lineH = 10 * ts;
         const int fit = std::max(1, (bottom - top) / lineH);
-        if (selFirst < scroll) scroll = selFirst;
-        if (selLast >= scroll + fit) scroll = selLast - fit + 1;
+        if (follow)
+        {
+            if (selFirst < scroll) scroll = selFirst;
+            if (selLast >= scroll + fit) scroll = selLast - fit + 1;
+        }
         scroll = std::max(0, std::min(scroll, (int)out.size() - fit));
+        rows.clear();
         int y = top;
         for (int i = scroll; i < (int)out.size() && y + lineH <= bottom; i++, y += lineH)
         {
             const Line& l = out[i];
+            if (l.name) rows.push_back({ l.item, y });
             const bool sel = l.item == selected && l.item >= 0 && items[l.item].key;
             if (l.name)
             {
