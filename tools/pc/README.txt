@@ -54,6 +54,11 @@ PICTURE SETTINGS (Esc menu)
   BORDERLESS FULLSCREEN    on to start: fills your screen at its own resolution as a
                      borderless window, so switching to other windows is instant. F11
                      switches between it and a window.
+  DESKTOP SHORTCUTS        (settings page only) CREATE puts a shortcut for each game in the list
+                     on your desktop (Linux: also in your apps menu), with its picture. It
+                     starts that game straight away; QUIT in the pause menu still comes back
+                     to the list. The same from a command line:
+                     "Pokemon DS Launcher.exe" --game IREO (the game codes are under icons/).
 
 
 WHERE THINGS ARE KEPT

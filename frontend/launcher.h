@@ -392,7 +392,7 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
 // done in the pause menu. The list's font has capitals, digits and : - + . / < > ! ( ) only.
 struct Setting
 {
-    const char* key;  // nullptr: told about, not set here
+    const char* key;  // nullptr: told about, not set here; "!...": something to do, not stored
     const char* name;
     std::vector<std::pair<std::string, std::string>> values; // stored, shown
     std::string def;  // the stored value when the file has none ("": the game decides, AUTO)
@@ -438,7 +438,7 @@ inline std::vector<Setting> SettingsList()
     l.push_back({ "wide_lines", "3D RESOLUTION", { { "192", "192P (DS)" }, { "288", "288P" }, { "384", "384P" }, { "540", "540P" }, { "720", "720P" }, { "1080", "1080P" }, { "1440", "1440P (2K)" }, { "2160", "2160P (4K)" } }, "1080",
                   "HOW SHARP THE 3D WORLD IS. PICK YOUR SCREEN RESOLUTION OR LOWER IF YOUR PC CANNOT KEEP UP. SPRITES AND TEXT KEEP THEIR DS PIXELS." });
     l.push_back({ "auto_detail", "LOWER RES WHEN BUSY", onOff, "1", "ON: DROPS THE 3D RESOLUTION FOR A MOMENT WHEN YOUR PC CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." });
-    l.push_back({ "ff_low_res", "FAST FORWARD LOW RES", onOff, "0", "ON: THE 3D WORLD DROPS TO 360P WHILE YOU FAST FORWARD, FOR MORE FPS (A FASTER FAST FORWARD IF YOUR PC CANNOT KEEP UP). OFF: YOUR 3D RESOLUTION STAYS." });
+    l.push_back({ "ff_low_res", "FAST FORWARD LOW RES", onOff, "0", "ON: THE 3D WORLD DROPS TO 360P WHILE YOU FAST FORWARD FOR MORE FPS (A FASTER FAST FORWARD IF YOUR PC CANNOT KEEP UP). OFF: YOUR 3D RESOLUTION STAYS." });
     l.push_back({ "wide_gpu", "WORLD ON GPU", onOff, "1", "ON: THE WIDE 3D WORLD IS DRAWN BY YOUR GRAPHICS CARD (OPENGL 4.3). TURN IT OFF IF THE WORLD LOOKS WRONG OR THE GAME WILL NOT START: THE PROCESSOR THEN DRAWS IT (THAT WANTS A FAST PC)." });
 #endif
 #endif
@@ -448,6 +448,14 @@ inline std::vector<Setting> SettingsList()
                   "BY LABEL: THE BUTTON MARKED A IS THE DS A ON ANY CONTROLLER. BY POSITION: THE BUTTONS WHERE A DS HAS THEM (XBOX A IS DS B)." });
 #ifndef __ANDROID__
     l.push_back({ "pad_touch", "STICK TOUCH CURSOR", onOff, "0", "ON: THE RIGHT STICK MOVES A CURSOR ON THE TOUCH SCREEN AND THE LEFT TRIGGER PRESSES IT." });
+    // (frontend/shortcuts.h, made by the game list: pc_launcher.cpp.)
+#ifdef _WIN32
+    l.push_back({ "!shortcuts", "DESKTOP SHORTCUTS", { { "", "CREATE" } }, "",
+                  "PUTS A SHORTCUT FOR EACH GAME IN THIS LIST ON YOUR DESKTOP WITH ITS PICTURE. IT STARTS THAT GAME STRAIGHT AWAY (QUIT IN THE PAUSE MENU STILL COMES BACK TO THIS LIST). CREATE AGAIN AFTER ADDING GAMES OR MOVING THIS FOLDER." });
+#else
+    l.push_back({ "!shortcuts", "DESKTOP SHORTCUTS", { { "", "CREATE" } }, "",
+                  "PUTS A SHORTCUT FOR EACH GAME IN THIS LIST ON YOUR DESKTOP AND IN YOUR APPS MENU WITH ITS PICTURE. IT STARTS THAT GAME STRAIGHT AWAY. ON THE STEAM DECK THEY ALSO SHOW UP IN ADD A NON-STEAM GAME. CREATE AGAIN AFTER ADDING GAMES OR MOVING THIS FOLDER." });
+#endif
 #endif
 #endif
     // Only in the pause menu.
@@ -541,6 +549,7 @@ struct SettingsPage
     // The index of the shown value (-1: AUTO).
     int ValueIndex(const Setting& s) const
     {
+        if (s.key[0] == '!') return 0; // (something to do: its one value is what it says)
         std::string v = Stored(s.key);
         if (v.empty()) v = s.def;
         if (v.empty()) return -1;
@@ -580,6 +589,7 @@ struct SettingsPage
     {
         if (selected < 0 || selected >= (int)items.size() || !items[selected].key) return nullptr;
         const Setting& s = items[selected];
+        if (s.key[0] == '!') return s.key; // (done by the caller)
         const int n = (int)s.values.size();
         const int i = ValueIndex(s);
         const int next = i < 0 ? (d > 0 ? 0 : n - 1) : (i + d + n) % n;

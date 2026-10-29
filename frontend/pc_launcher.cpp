@@ -33,6 +33,9 @@
 #include "thirdparty/stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
 #include "launcher.h"
+#if !defined(__ANDROID__) && !defined(__SWITCH__)
+#include "shortcuts.h"
+#endif
 
 // How many chunks the program's SoulSilver tables have (none in a build without them).
 extern const uint32_t rc_num_chunks;
@@ -344,6 +347,17 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     };
     auto change = [&](int d) {
         const char* key = page.Change(d);
+#if !defined(__ANDROID__) && !defined(__SWITCH__)
+        // DESKTOP SHORTCUTS: made at once; what came of it shown as the option's value.
+        if (key && !strcmp(key, "!shortcuts"))
+        {
+            std::string where;
+            const int made = Shortcuts::Make(fo.dir, games, where);
+            page.items[page.selected].values[0].second =
+                games.empty() ? "NO GAMES YET" : made > 0 ? std::to_string(made) + " MADE " + where : "FAILED: " + where;
+            return;
+        }
+#endif
         // (BORDERLESS FULLSCREEN applies to this window too, as F11 does.)
         if (key && !strcmp(key, "fullscreen"))
         {
@@ -662,8 +676,15 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
 
 bool Start(int& argc, char**& argv)
 {
-    // With arguments (a ROM given by hand, the test harness) the program runs as it always has.
-    if (argc >= 2) return true;
+    // "--game IREO" (the desktop shortcuts, shortcuts.h): that game at once, without the list.
+    // Other arguments (a ROM given by hand, the test harness): the program runs as it always has.
+    std::string direct;
+    if (argc == 3 && !strcmp(argv[1], "--game"))
+    {
+        direct = argv[2];
+        for (char& c : direct) c = (char)toupper((unsigned char)c);
+    }
+    else if (argc >= 2) return true;
     Folders fo;
 #ifdef __ANDROID__
     // The app's own folder on the shared storage (Android/data/io.github.mamesj.pokemonds/
@@ -725,7 +746,15 @@ bool Start(int& argc, char**& argv)
     }
     int winW = 1280, winH = 720;
     bool fullscreen = ConfigFullscreen(fo.cfg, winW, winH);
-    chosen = PickGame(fo, games, chosen, fullscreen, winW, winH);
+    int directGame = -1;
+    for (size_t i = 0; i < games.size() && !direct.empty(); i++)
+        if (games[i].code == direct && Playable(fo, games[i]))
+        {
+            directGame = (int)i;
+            break;
+        }
+    if (!direct.empty() && directGame < 0) fprintf(stderr, "[launcher] --game %s: not in the list\n", direct.c_str());
+    chosen = directGame >= 0 ? directGame : PickGame(fo, games, chosen, fullscreen, winW, winH);
     if (chosen < 0) return false;
     g_canChange = true;
     const Launcher::Game& game = games[chosen];

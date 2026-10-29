@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **PC: desktop shortcuts for each game**: DESKTOP SHORTCUTS on the game list's settings page
+  makes them, with the box art as their icons; each starts its game without the list
+  (`--game IREO` on a command line does the same).
 - **PC: FAST FORWARD LOW RES**, a new setting, off to start: your 3D resolution now stays while
   you fast forward; turn it on for more FPS in fast forward (the world at 360P while it is held).
 - **PC: box art in the game list**, built into the program, as on the Switch (your own pictures in

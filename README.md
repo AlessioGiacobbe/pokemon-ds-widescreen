@@ -85,6 +85,10 @@ menu before you play, each option explained. The ones that matter most on a PC:
 | BORDERLESS FULLSCREEN | ON | fills your screen; F11 does the same |
 | SCREEN LAYOUT | MERGED | the one widescreen picture, or the two DS screens laid out as on other emulators |
 
+**Desktop shortcuts:** DESKTOP SHORTCUTS on the settings page puts a shortcut for each
+game on your desktop (on Linux also in your apps menu, and so in the Steam Deck's "Add a
+Non-Steam Game" list), with its box art; each starts its game straight away.
+
 **What it needs:** Windows 10 or 11 (64-bit), or 64-bit Linux from late 2023 on
 (Ubuntu 24.04, Fedora 39, SteamOS 3.5 or newer); nothing else to install. For WORLD
 ON GPU, a graphics card with OpenGL 4.3, which nearly any from 2012 on has with

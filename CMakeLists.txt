@@ -307,6 +307,8 @@ else()
         endif()
         set_target_properties(ssrecomp PROPERTIES WIN32_EXECUTABLE ON)
         target_link_options(ssrecomp PRIVATE -static)
+        # (The game list's desktop shortcuts: frontend/shortcuts.h.)
+        target_link_libraries(ssrecomp PRIVATE ole32 shell32 uuid)
     endif()
 endif()
 # The all-games program's game list: pictures of the games built into it (SSR_PC_ART, a folder of
