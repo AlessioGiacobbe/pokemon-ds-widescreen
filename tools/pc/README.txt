@@ -19,7 +19,8 @@ GETTING STARTED
 2. Put your ROMs in the roms folder. Any file names are fine.
 3. Start Pokemon DS Launcher.exe (Windows) or pokemon-ds-wide (Linux).
 4. Pick a game from the list: arrow keys or a controller's D-pad, then Enter or A.
-   You can also double-click a game. Press O in the list to open the roms folder.
+   You can also double-click a game. Press O in the list to open the roms folder, and H (or
+   a controller's Y) for a guide to every option in the Esc menu.
 
 Windows may warn that the program is from an unknown publisher the first time: choose
 "More info", then "Run anyway".

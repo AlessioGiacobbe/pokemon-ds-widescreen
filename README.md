@@ -85,7 +85,8 @@ The separate downloads above are still there if you only want one or two.
    game.
 
 **Using the list:** the D-pad or a stick moves between games, **A** plays,
-**+** goes back to the Homebrew Menu. It opens on the game you played last.
+**Y** shows a guide to every pause-menu option, **+** goes back to the Homebrew Menu.
+It opens on the game you played last.
 **QUIT** in the pause menu (+ and − together) saves and comes back to the list
 (started from a forwarder it closes instead; start it again to pick another).
 With only one game found there is no list: it starts straight away.
@@ -246,6 +247,7 @@ what is recommended, and every game always uses the one wide screen:
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
 | LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
 | WORLD ON GPU | ON | the world drawn by the graphics chip |
+| ONE FRAME AHEAD | ON | each frame shown at an even time, smoother in busy places; OFF is a frame (17 ms) quicker to react |
 
 The games run on melonDS's FAST JIT. If a start ever fails with it, the next
 one falls back by itself (hold L while starting for the interpreter).

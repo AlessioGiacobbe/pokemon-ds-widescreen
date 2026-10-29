@@ -215,8 +215,15 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
     int held = 0, heldDir = 0;
     Uint32 lastScan = SDL_GetTicks();
     bool quit = false;
+    // The pause menu's guide (Launcher::DrawGuide): H, F1 or a controller's Y; Esc or B back.
+    bool guide = false;
+    int guideScroll = 0;
+    auto toggleGuide = [&]() {
+        guide = !guide;
+        guideScroll = 0;
+    };
     auto choose = [&]() {
-        if (games.empty()) return;
+        if (games.empty() || guide) return;
         if (Playable(fo, games[selected]))
         {
             result = selected;
@@ -226,6 +233,11 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             note = games[selected].known ? "THIS DOWNLOAD DOES NOT HAVE THIS GAME" : "THIS GAME IS NOT ONE THAT THIS PLAYS";
     };
     auto move = [&](int dir) { // 1 left, 2 right, 3 up, 4 down
+        if (guide)
+        {
+            guideScroll += dir == 3 ? -2 : dir == 4 ? 2 : 0;
+            return;
+        }
         if (games.empty()) return;
         int to = selected;
         if (dir == 1) to = selected - 1;
@@ -260,7 +272,10 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 case SDLK_UP: case SDLK_w: move(3); break;
                 case SDLK_DOWN: case SDLK_s: move(4); break;
                 case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: if (!e.key.repeat) choose(); break;
-                case SDLK_ESCAPE: quit = true; break;
+                case SDLK_ESCAPE: if (guide) guide = false; else quit = true; break;
+                case SDLK_h: case SDLK_F1: toggleGuide(); break;
+                case SDLK_PAGEUP: if (guide) guideScroll -= 10; break;
+                case SDLK_PAGEDOWN: if (guide) guideScroll += 10; break;
                 case SDLK_o: OpenFolder(fo.roms); break;
                 case SDLK_F11:
                     fullscreen = !fullscreen;
@@ -274,7 +289,8 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 switch (e.cbutton.button)
                 {
                 case SDL_CONTROLLER_BUTTON_A: case SDL_CONTROLLER_BUTTON_START: choose(); break;
-                case SDL_CONTROLLER_BUTTON_B: case SDL_CONTROLLER_BUTTON_BACK: quit = true; break;
+                case SDL_CONTROLLER_BUTTON_B: case SDL_CONTROLLER_BUTTON_BACK: if (guide) guide = false; else quit = true; break;
+                case SDL_CONTROLLER_BUTTON_Y: toggleGuide(); break;
                 default: break;
                 }
                 break;
@@ -286,7 +302,7 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 SDL_GetWindowSize(window, &ww, &wh);
                 const int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
                 const int my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
-                const int i = Launcher::TileAt(canvas, (int)games.size(), first, mx * canvas.w / ww, my * canvas.h / wh);
+                const int i = guide ? -1 : Launcher::TileAt(canvas, (int)games.size(), first, mx * canvas.w / ww, my * canvas.h / wh);
                 if (i >= 0 && i != selected && (e.type == SDL_MOUSEBUTTONDOWN || (e.motion.xrel || e.motion.yrel)))
                 {
                     selected = i;
@@ -296,7 +312,8 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 break;
             }
             case SDL_MOUSEWHEEL:
-                move(e.wheel.y > 0 ? 3 : 4);
+                if (guide) guideScroll += e.wheel.y > 0 ? -2 : 2;
+                else move(e.wheel.y > 0 ? 3 : 4);
                 break;
             default:
                 break;
@@ -338,10 +355,12 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             if (texture) SDL_DestroyTexture(texture);
             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ow, oh);
         }
-        const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    ESC: QUIT" : "ENTER OR A: PLAY    O: ROMS FOLDER    ESC: QUIT";
+        const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    H: MENU GUIDE    ESC: QUIT"
+                                               : "ENTER OR A: PLAY    H OR Y: MENU GUIDE    O: ROMS FOLDER    ESC: QUIT";
         static const Launcher::Theme theme;
-        cols = Launcher::Draw(canvas, games, selected, first, note, hint, theme);
-        if (games.empty())
+        if (guide) Launcher::DrawGuide(canvas, guideScroll, "UP / DOWN / MOUSE WHEEL: SCROLL    ESC OR B: BACK", theme);
+        else cols = Launcher::Draw(canvas, games, selected, first, note, hint, theme);
+        if (games.empty() && !guide)
         {
             const int s = std::max(1, canvas.h / 240);
             const char* lines[] = { "NO GAMES FOUND", "",

@@ -378,9 +378,123 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
     // More games above or below the ones shown.
     if (first > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, th.hint);
     if ((first + rows) * cols < (int)games.size()) c.Fill(c.w / 2 - 8 * s, bottom - 2 * s, 16 * s, s, th.hint);
-    const std::string hint = !note.empty() ? note : !hintText.empty() ? hintText : "A: PLAY    +: QUIT";
+    const std::string hint = !note.empty() ? note : !hintText.empty() ? hintText : "A: PLAY    Y: MENU GUIDE    +: QUIT";
     c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, th.hint);
     return cols;
+}
+
+// The pause menu's guide (Y on the Switch's list, H or a controller's Y on a PC's): what each of
+// its options does, for someone choosing before they play. Kept in step with the menu in
+// main.cpp (buildMenu). The list's font has capitals, digits and : - + . / < > ! ( ) only.
+struct GuideEntry
+{
+    const char* name;
+    const char* text;
+};
+inline std::vector<GuideEntry> GuideEntries()
+{
+    return {
+#ifdef __SWITCH__
+        { "OPENING THE MENU", "PRESS + AND - TOGETHER WHILE PLAYING. UP AND DOWN CHOOSE. LEFT AND RIGHT OR A CHANGE. B GOES BACK TO THE GAME." },
+#else
+        { "OPENING THE MENU", "ESC ON THE KEYBOARD. ON A CONTROLLER: ITS GUIDE BUTTON (XBOX / PS) OR START AND SELECT TOGETHER." },
+        { "SCREEN LAYOUT", "MERGED: THE ONE WIDESCREEN PICTURE. HYBRID / SIDE / VERTICAL / TOP / BOTTOM: THE TWO DS SCREENS LAID OUT AS ON OTHER EMULATORS." },
+        { "LARGE SCREEN", "FOR THE LAYOUTS WITH A LARGE AND A SMALL SCREEN: WHICH ONE IS LARGE. AUTO FOLLOWS WHAT THE GAME IS DOING." },
+#endif
+        { "60 FPS", "ON: THE 3D WORLD GETS IN-BETWEEN FRAMES AND MOVES AT 60 FRAMES A SECOND (THE GAMES DRAW IT AT 30). OFF: 30 AS ON A DS." },
+#ifdef __SWITCH__
+        { "ONE FRAME AHEAD", "ON: THE GAME RUNS ONE FRAME AHEAD OF THE SCREEN AND EVERY FRAME IS SHOWN AT AN EVEN TIME. SMOOTHER IN BUSY TOWNS AND BATTLES. OFF: EACH FRAME IS SHOWN AS SOON AS IT IS READY. ONE FRAME (17 MS) LESS DELAY AFTER A BUTTON BUT LESS EVEN WHEN BUSY." },
+#else
+        { "BORDERLESS FULLSCREEN", "ON: FILLS YOUR SCREEN AS A BORDERLESS WINDOW AT ITS OWN RESOLUTION. SWITCHING TO OTHER WINDOWS IS INSTANT. F11 DOES THE SAME." },
+#endif
+        { "SMOOTH SCALING", "ON: THE PICTURE IS SOFTENED AS IT IS SCALED UP TO YOUR SCREEN. OFF: SHARP PIXELS." },
+        { "WIDESCREEN WORLD", "ON: THE 3D WORLD IS DRAWN OUT TO THE SIDES OF THE 16:9 SCREEN. OFF: ONLY AS WIDE AS A DS SCREEN." },
+        { "WIDE MAP LOADING", "BLACK / WHITE / BLACK 2 / WHITE 2: LOADS MORE OF THE MAP AROUND YOU SO THE WIDE VIEW HAS LAND AT ITS EDGES. A CHANGE APPLIES THE NEXT TIME THE GAME STARTS." },
+        { "BATTLE BUTTONS", "WHERE THE BATTLE MENU GOES. CORNER: SMALL BUTTONS IN A CORNER. PANEL: THE FIGHT / BAG / POKEMON / RUN PANEL FROM THE GAME BESIDE THE BATTLE. STRIP (BLACK AND WHITE): LARGE BUTTONS IN THE MESSAGE BOX." },
+#ifdef __SWITCH__
+        { "WORLD DETAIL", "HOW MANY LINES THE WIDE 3D WORLD IS DRAWN WITH. 720 IS FULL SHARPNESS ON THE SWITCH. LOWER IS LIGHTER ON THE CONSOLE." },
+        { "LOWER DETAIL WHEN BUSY", "ON: DROPS THE WORLD DETAIL FOR A MOMENT WHEN DRAWING CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." },
+        { "WORLD ON GPU", "ON: THE WIDE 3D WORLD IS DRAWN BY THE SWITCH GRAPHICS CHIP. LEAVE IT ON." },
+#else
+        { "3D RESOLUTION", "HOW SHARP THE 3D WORLD IS: 720P / 1080P / 1440P (2K) / 2160P (4K). PICK YOUR SCREEN RESOLUTION OR LOWER IF YOUR PC CANNOT KEEP UP. SPRITES AND TEXT KEEP THEIR DS PIXELS." },
+        { "LOWER RES WHEN BUSY", "ON: DROPS THE 3D RESOLUTION FOR A MOMENT WHEN YOUR PC CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." },
+        { "WORLD ON GPU", "ON: THE WIDE 3D WORLD IS DRAWN BY YOUR GRAPHICS CARD (OPENGL 4.3). TURN IT OFF IF THE WORLD LOOKS WRONG OR THE GAME WILL NOT START: THE PROCESSOR THEN DRAWS IT (THAT WANTS A FAST PC)." },
+#endif
+        { "FPS COUNTER", "SHOWS THE FRAMES A SECOND IN A CORNER." },
+#ifndef __SWITCH__
+        { "BUTTONS", "BY LABEL: THE BUTTON MARKED A IS THE DS A ON ANY CONTROLLER. BY POSITION: THE BUTTONS WHERE A DS HAS THEM (XBOX A IS DS B)." },
+#endif
+        { "STICK TOUCH CURSOR", "ON: THE RIGHT STICK MOVES A CURSOR ON THE TOUCH SCREEN AND THE LEFT TRIGGER PRESSES IT." },
+#ifdef __SWITCH__
+        { "FAST FORWARD", "ON: KEEPS FAST FORWARDING WITHOUT HOLDING A BUTTON. HOLDING ZR FAST FORWARDS ANYWAY (UP TO 4X)." },
+#else
+        { "FAST FORWARD", "ON: KEEPS FAST FORWARDING WITHOUT HOLDING A BUTTON. HOLDING THE RIGHT TRIGGER OR LEFT SHIFT FAST FORWARDS ANYWAY (UP TO 4X)." },
+#endif
+        { "SAVE STATE / LOAD STATE", "ONE QUICK SLOT PER GAME: SAVES OR LOADS EXACTLY WHERE YOU ARE. YOUR SAVE IN THE GAME IS SEPARATE AND STILL WORKS AS NORMAL." },
+        { "RESET GAME", "STARTS THE GAME AGAIN FROM ITS TITLE SCREEN." },
+        { "QUIT", "BACK TO THIS GAME LIST." },
+    };
+}
+
+// Words to lines of at most `chars` characters.
+inline std::vector<std::string> Wrap(const std::string& text, int chars)
+{
+    std::vector<std::string> lines;
+    std::string line, word;
+    auto flush = [&]() {
+        if (word.empty()) return;
+        if (!line.empty() && (int)(line.size() + 1 + word.size()) > chars)
+        {
+            lines.push_back(line);
+            line.clear();
+        }
+        line += (line.empty() ? "" : " ") + word;
+        word.clear();
+    };
+    for (char ch : text)
+        if (ch == ' ') flush();
+        else word += ch;
+    flush();
+    if (!line.empty()) lines.push_back(line);
+    return lines;
+}
+
+// The guide over the whole canvas, from line `scroll` (kept in range here). hint: the line along
+// the bottom.
+inline void DrawGuide(Canvas& c, int& scroll, const std::string& hint, const Theme& th = Theme())
+{
+    const int s = std::max(1, c.h / 240);
+    const int ts = std::max(1, (s * 2 + 1) / 3); // the text's scale: 2 at 720 lines, 3 at 1080
+    c.Fill(0, 0, c.w, c.h, th.bg);
+    c.Fill(0, 0, c.w, 22 * s, th.band);
+    c.Fill(0, 22 * s, c.w, th.bandLineH * s, th.bandLine);
+    const std::string title = "PAUSE MENU GUIDE";
+    c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, th.title);
+    // One column, at most 100 characters of description wide, in the middle.
+    const int width = std::min(c.w - 24 * s, 100 * 6 * ts);
+    const int x = (c.w - width) / 2;
+    struct Line { std::string text; bool name; };
+    std::vector<Line> lines;
+    for (const GuideEntry& e : GuideEntries())
+    {
+        lines.push_back({ e.name, true });
+        for (const std::string& l : Wrap(e.text, width / (6 * ts) - 2)) lines.push_back({ l, false });
+        lines.push_back({ "", false });
+    }
+    const int top = 30 * s, bottom = c.h - 18 * s, lineH = 10 * ts;
+    const int fit = std::max(1, (bottom - top) / lineH);
+    scroll = std::max(0, std::min(scroll, (int)lines.size() - fit));
+    int y = top;
+    for (int i = scroll; i < (int)lines.size() && y + lineH <= bottom; i++, y += lineH)
+    {
+        const Line& l = lines[i];
+        if (l.name) c.Text(x, y, l.text, ts, th.subSel);
+        else c.Text(x + 2 * 6 * ts, y, l.text, ts, th.name);
+    }
+    // More above or below.
+    if (scroll > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, th.hint);
+    if (scroll + fit < (int)lines.size()) c.Fill(c.w / 2 - 8 * s, bottom + s, 16 * s, s, th.hint);
+    c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, th.hint);
 }
 
 }

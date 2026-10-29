@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A guide to the pause menu in the game list**: press Y (on a PC also H or F1) to read what
+  every option does before you play.
+- **Switch: ONE FRAME AHEAD in the pause menu**, on by default (see below): turn it off for a
+  frame less delay after a button, or to compare.
+
 - **PC: the Windows program is now `Pokemon DS Launcher.exe`**, with its own icon, and the
   menu's FULLSCREEN is called BORDERLESS FULLSCREEN (which is what it always was) and WORLD DETAIL
   is 3D RESOLUTION, shown as 720P, 1080P, 1440P (2K) or 2160P (4K). The game list
@@ -22,7 +27,8 @@
   makes its picture late when the frames around it are quick. At a 1581 MHz CPU clock, frames
   shown unevenly (over 17.5 ms after the last): White 2's Aspertia City from 39% to 17%, a
   Black 2 battle from 29% to 19%, Platinum's Snowpoint City from 30% to 10%, a HeartGold route from 19% to 2%. The cost is one
-  more frame (17 ms) between pressing a button and seeing it.
+  more frame (17 ms) between pressing a button and seeing it; ONE FRAME AHEAD in the pause menu
+  turns it off.
 - **Switch: fewer late frames in towns and battles.** Preparing the 3D pictures for the
   graphics chip, sending them and collecting them now happens on the Switch's spare cores
   instead of between the game's own work, about 1 ms less a frame. Measured from save states,

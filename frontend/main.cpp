@@ -1277,6 +1277,7 @@ struct Settings
     bool fastMem = true;  // ... and its fast memory (also read at start-up)
     bool cgearOff = true; // Black 2: answer its C-Gear question on starting (cgear_start=off|ask)
     bool pipeline = true; // Switch: show each frame while the next one is emulated (emuthread.h)
+    bool frameAhead = true; // ... and one frame further ahead, shown at even times (`ahead`)
     // The 3D scene drawn by the graphics chip (melonDS/src/GPU3D_GLThread.h). Off unless asked
     // for: on the Switch, turning it on hung the whole console (Oct 24), so there it is only
     // read from ssrecomp.cfg ("gpu3d_test=1"), never offered in the menu or on by default. (The
@@ -1336,6 +1337,7 @@ struct Settings
             else if (k == "fastmem") fastMem = v == "1";
             else if (k == "cgear_start") cgearOff = v != "ask";
             else if (k == "pipeline") pipeline = v != "0";
+            else if (k == "frame_ahead") frameAhead = v != "0";
             else if (k == "gpu3d_test") gpu3d = v == "1";
             else if (k == "wide_gpu") wideGpu = v == "1";
             else if (k == "ds3d_gpu") ds3dGpu = v != "0";
@@ -1385,6 +1387,7 @@ struct Settings
         f << "fastmem=" << (fastMem ? 1 : 0) << "\n";
         f << "cgear_start=" << (cgearOff ? "off" : "ask") << "\n";
         f << "pipeline=" << (pipeline ? 1 : 0) << "\n";
+        f << "frame_ahead=" << (frameAhead ? 1 : 0) << "\n";
 #endif
     }
 };
@@ -3705,6 +3708,9 @@ int main(int argc, char** argv)
         M_LAYOUT, M_LARGE,
 #endif
         M_FPS60,
+#ifdef __SWITCH__
+        M_AHEAD,
+#endif
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
@@ -3747,6 +3753,12 @@ int main(int argc, char** argv)
             { "LARGE SCREEN", large[focus.mode] },
 #endif
             { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
+#ifdef __SWITCH__
+            // ON: the game runs one frame ahead of the screen and each frame is shown at an even
+            // time (`ahead`), smoother where frames take nearly 16.7 ms; OFF: each frame shown
+            // as soon as it is made, a frame sooner after a button.
+            { "ONE FRAME AHEAD", cfg.frameAhead ? "ON" : "OFF" },
+#endif
 #ifndef __SWITCH__
             // (Always full screen on the Switch. CPU BOOST was here: the system kept taking
             // its boost mode away, so the game dropped frames; sys-clk sets the clocks there.)
@@ -4172,10 +4184,12 @@ int main(int argc, char** argv)
     // longer than 16.7 ms then no longer makes its picture late, as long as the frames around
     // it make up for it. Each frame reaches the screen a frame later. Not with the OpenGL 3D
     // of a PC (GPU3D_GLThread.h), which works on this thread between the emulation's steps.
-    bool ahead = pipelined && !(getenv("SSR_AHEAD") && getenv("SSR_AHEAD")[0] == '0');
+    // ONE FRAME AHEAD in the menu turns it on and off (cfg.frameAhead).
+    bool aheadAllowed = pipelined && !(getenv("SSR_AHEAD") && getenv("SSR_AHEAD")[0] == '0');
 #ifdef SSR_GPU3D
-    if (melonDS::GLThreadRenderer::Current) ahead = false;
+    if (melonDS::GLThreadRenderer::Current) aheadAllowed = false;
 #endif
+    bool ahead = aheadAllowed && cfg.frameAhead;
     if (ahead) fprintf(stderr, "[pipeline] frames shown one frame later, at even times\n");
     DrawJob aheadJobs[3];
     int aheadHead = 0, aheadCount = 0;
@@ -4703,6 +4717,21 @@ int main(int argc, char** argv)
                 cfg.fps60 = !cfg.fps60;
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
                 break;
+#ifdef __SWITCH__
+            case M_AHEAD:
+                cfg.frameAhead = !cfg.frameAhead;
+                // (Paused: the emulation thread is idle. Whatever is still waiting to be shown
+                // goes first, so that no picture is lost or shown twice in the switch.)
+                while (aheadCount) presentDue(true);
+                if (pendingJob.valid)
+                {
+                    drawFrame(pendingJob);
+                    pendingJob.valid = false;
+                }
+                ahead = aheadAllowed && cfg.frameAhead;
+                fprintf(stderr, "[pipeline] one frame ahead %s\n", ahead ? "on" : aheadAllowed ? "off" : "off (not available)");
+                break;
+#endif
 #ifndef __SWITCH__
             case M_FULLSCREEN:
                 cfg.fullscreen = !cfg.fullscreen;
