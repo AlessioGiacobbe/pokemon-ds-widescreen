@@ -1685,11 +1685,12 @@ int main(int argc, char** argv)
     if (!opt.headless) cfg.Load(opt.config);
 #ifdef __SWITCH__
     // Not in the Switch's pause menu any more, so what an older version saved is not kept: the
-    // world on the graphics chip, one frame ahead, and no stick touch cursor (the Switch has
-    // its touch screen). (A test run's "set" lines below can still change them.)
+    // world on the graphics chip, one frame ahead, and the stick touch cursor (the right stick
+    // moves it, ZL touches: docked there is no touch screen, and some questions take only a
+    // touch, Platinum's first YES / NO). (A test run's "set" lines below can still change them.)
     cfg.wideGpu = true;
     cfg.frameAhead = true;
-    cfg.padTouch = false;
+    cfg.padTouch = true;
 #endif
     for (const std::string& kv : opt.sets) cfg.Apply(kv);
     if (!opt.sets.empty() || opt.keepSettings) cfg.readOnly = true;
@@ -4989,7 +4990,10 @@ int main(int argc, char** argv)
             if (cfg.padTouch)
             {
                 if (pressed(PAD_RS)) focus.manualFlip = !focus.manualFlip;
+#ifndef __SWITCH__
+                // (Not on the Switch: a left stick pressed while walking would change the view.)
                 if (pressed(PAD_LS)) layout = LayoutNext(layout);
+#endif
                 if (fabsf(ps.rx) > 0.2f) curDX += ps.rx;
                 if (fabsf(ps.ry) > 0.2f) curDY += ps.ry;
                 if (ps.lt > 0.3f) curPress = true;

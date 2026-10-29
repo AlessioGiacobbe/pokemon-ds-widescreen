@@ -4,7 +4,8 @@
 
 - **Switch: the touch screen works** in handheld mode. Taps did not reach the game, so
   questions answered only by touch (Platinum's first YES / NO with Professor Rowan) could not be
-  answered. Docked, the right stick moves a cursor and ZL touches.
+  answered. Docked (or handheld), the right stick moves a cursor and ZL touches; pressing the
+  right stick in shows the other screen.
 - **Switch: HOME MENU ICONS** in the all-in-one's settings (Y in the list): an icon on the HOME
   Menu for each game, with its box art, that starts the game straight away. Made on the console
   (no PC or keys file); like any forwarder they need sigpatches. The list shows box art for every
