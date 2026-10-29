@@ -1,0 +1,46 @@
+# Builds the Mac download (Pokemon DS Widescreen.app, tools/mac/build_all.sh) for Apple silicon
+# and Intel Macs. Started by the maintainer's publish script (or by hand: Actions tab > Mac
+# download > Run workflow); the zips are then the run's artifacts.
+#
+# Its inputs come from a draft (unpublished) release, mac-build-inputs: SoulSilver and
+# HeartGold's tables (addresses only, made from the maintainer's ROM by tables_only.py), the
+# game list's pictures and the icon. No ROM, save or game code is ever given to this workflow.
+name: Mac download
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install "cmake>=3.21,<4" ninja
+      - name: The inputs (tables of addresses, pictures, icon)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p inputs
+          gh release download mac-build-inputs -R "${{ github.repository }}" -p mac-inputs.tar.gz -D inputs
+          tar -xzf inputs/mac-inputs.tar.gz -C inputs
+          ls inputs
+      - run: tools/mac/build_all.sh inputs/build-gen-tables inputs/box-art inputs/icon.jpg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: build-mac-dist/pokemon-ds-wide-pc-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error

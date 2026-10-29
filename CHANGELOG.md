@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Mac: Pokemon DS Widescreen.app** for Apple silicon and Intel Macs (macOS 11 or newer), built on
+  GitHub's Macs (`tools/mac/build_all.sh`, `.github/workflows/mac.yml`). Its ROMs, saves and
+  settings go in `~/Library/Application Support/Pokemon DS Widescreen`; the world is drawn by the
+  processor (a Mac's OpenGL stops at 4.1), at 720P to start. Not notarised: right click > Open the
+  first time.
 - **Linux: an AppImage** (`pokemon-ds-wide-pc-linux-x86_64.AppImage`), the program as one file, for
   Gear Lever and other AppImage managers, which also update it from the release. Its ROMs, saves
   and settings go in `~/.local/share/pokemon-ds-wide` (O in the game list opens its roms folder);

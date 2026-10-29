@@ -1683,9 +1683,9 @@ int main(int argc, char** argv)
     cfg.wideLines = 1080;
     cfg.fps60 = true;
     cfg.ffLowRes = false; // (FAST FORWARD LOW RES: the resolution stays unless it is turned on)
-#ifdef __ANDROID__
-    // (The Android app draws the world with the processor: 720 lines, a phone's screen
-    // height or near it.)
+#if defined(__ANDROID__) || defined(__APPLE__)
+    // (The Android app and the Mac draw the world with the processor: 720 lines. A Mac's OpenGL
+    // stops at 4.1, short of WORLD ON GPU's 4.3.)
     cfg.wideLines = 720;
 #endif
 #endif

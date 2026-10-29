@@ -2,6 +2,8 @@
 #ifdef SSR_PC_LAUNCHER
 #include "pc_launcher.h"
 
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,6 +22,9 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
 #endif
 #ifdef __ANDROID__
 #include <jni.h>
@@ -282,7 +287,14 @@ void OpenFolder(const std::string& path)
 {
     std::string url = "file://";
     if (path.empty() || path[0] != '/') url += "/"; // (C:/... on Windows)
-    for (char c : path) url += c == '\\' ? '/' : c;
+    // (Escaped as a URL: a Mac opens none with a space in it, as in "Application Support".)
+    static const char hex[] = "0123456789ABCDEF";
+    for (char ch : path)
+    {
+        const unsigned char c = (unsigned char)(ch == '\\' ? '/' : ch);
+        if (isalnum(c) || strchr("/-._~:", c) || c >= 0x80) url += (char)c;
+        else { url += '%'; url += hex[c >> 4]; url += hex[c & 15]; }
+    }
 #if SDL_VERSION_ATLEAST(2, 0, 14)
     if (SDL_OpenURL(url.c_str()) != 0) fprintf(stderr, "[launcher] could not open %s: %s\n", url.c_str(), SDL_GetError());
 #endif
@@ -706,7 +718,18 @@ bool Start(int& argc, char**& argv)
 #else
     fo.dir = ProgramDir();
     fo.funcs = fo.dir + "/data/funcs";
-#if !defined(_WIN32)
+#if defined(__APPLE__)
+    // The Mac app: the program's folder is inside the app (Contents/Resources, with the function
+    // tables), which macOS may keep read-only, so the ROMs, saves and settings are in the user's
+    // Application Support folder (O in the list opens its roms folder in the Finder).
+    if (fo.dir.find(".app/Contents/") != std::string::npos)
+    {
+        const char* home = getenv("HOME");
+        fo.dir = std::string(home ? home : ".") + "/Library/Application Support/Pokemon DS Widescreen";
+        for (size_t i = 1; i <= fo.dir.size(); i++) // (each folder on the way, as mkdir -p)
+            if (i == fo.dir.size() || fo.dir[i] == '/') MakeDir(fo.dir.substr(0, i));
+    }
+#elif !defined(_WIN32)
     // From an AppImage (the Linux download for Gear Lever and the like): the program's folder is
     // the AppImage's own, read-only, so the ROMs, saves and settings are in the user's data
     // folder (~/.local/share/pokemon-ds-wide, O in the list opens its roms folder); the function
@@ -821,6 +844,11 @@ void Finish()
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
     }
+#elif defined(__APPLE__)
+    char self[4096];
+    uint32_t size = sizeof self;
+    if (_NSGetExecutablePath(self, &size) != 0) return;
+    execl(self, self, (char*)nullptr);
 #else
     char self[4096];
     const ssize_t n = readlink("/proc/self/exe", self, sizeof self - 1);
