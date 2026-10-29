@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Switch: HOME MENU ICONS could fail with THIS BUILD HAS NO FORWARDER** when the game list had no
+  game that needed the program's built-in tables (only SoulSilver and HeartGold, or games with their
+  own funcs.txt). Fixed.
 - **LOWER DETAIL WHEN BUSY (LOWER RES WHEN BUSY on a PC or phone) is off to start**, on every
   platform, also for players who had it on from before; turn it on in the settings if you want it.
 - **Android: the first public release** (`pokemon-ds-wide-android.apk`), all seven games in one

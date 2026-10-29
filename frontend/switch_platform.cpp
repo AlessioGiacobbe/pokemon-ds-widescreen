@@ -167,6 +167,11 @@ std::string InstallHomeIcons(const std::vector<Launcher::Game>& games)
         struct stat ds;
         SwitchForwarder::SetDebugFolder(stat(debugDir.c_str(), &ds) == 0 ? debugDir : "");
     }
+    // The forwarder's parts are in the romfs, mounted the first time something needs it: the list
+    // mounts it only to look for a game's function table, which it did not need with only
+    // SoulSilver and HeartGold, or games with their own funcs.txt (then: THIS BUILD HAS NO
+    // FORWARDER).
+    if (!RomfsReady()) fprintf(stderr, "[switch] the program's romfs could not be mounted\n");
     std::string error;
     const int made = SwitchForwarder::Install(g_self, entries, error);
     fprintf(stderr, "[switch] HOME Menu icons: %d of %d%s%s\n", made, (int)entries.size(), error.empty() ? "" : ", ", error.c_str());
