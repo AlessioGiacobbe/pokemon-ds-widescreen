@@ -553,7 +553,8 @@ inline std::vector<Setting> SettingsList()
 #ifdef __SWITCH__
     l.push_back({ nullptr, "KEYS AND BUTTONS", {}, "", "IN THE PAUSE MENU (CONTROLS): GIVE ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER BUTTON. GIVING ONE A BUTTON ANOTHER ONE HAD SWAPS THE TWO." });
 #else
-    l.push_back({ nullptr, "KEYS AND BUTTONS", {}, "", "IN THE PAUSE MENU (CONTROLS): GIVE ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER KEY OR CONTROLLER BUTTON. GIVING ONE A KEY OR BUTTON ANOTHER ONE HAD SWAPS THE TWO. THIS LIST FOLLOWS THE ONES YOU CHANGE (A PLAYS / B GOES BACK / Y OPENS THESE SETTINGS)." });
+    l.push_back({ "!keys", "KEYS AND BUTTONS", { { "", "CHANGE" } }, "",
+                  "GIVE ANY DS BUTTON / THE PAUSE MENU / FAST FORWARD / SWAP SCREENS ANOTHER KEY OR CONTROLLER BUTTON. GIVING ONE A KEY OR BUTTON ANOTHER ONE HAD SWAPS THE TWO. ALSO IN THE PAUSE MENU (CONTROLS). THIS LIST FOLLOWS THE ONES YOU CHANGE (A PLAYS / B GOES BACK / Y OPENS THESE SETTINGS)." });
 #endif
     l.push_back({ nullptr, "SAVE STATE / LOAD STATE", {}, "", "IN THE PAUSE MENU: ONE QUICK SLOT PER GAME. YOUR SAVE IN THE GAME IS SEPARATE AND STILL WORKS AS NORMAL." });
     l.push_back({ nullptr, "RESET GAME / QUIT", {}, "", "IN THE PAUSE MENU: START THE GAME AGAIN FROM ITS TITLE SCREEN / BACK TO THIS GAME LIST." });
@@ -612,6 +613,7 @@ inline int GroupOf(const Setting& s)
         if (!strcmp(s.key, k)) return 0;
     for (const char* k : controls)
         if (!strcmp(s.key, k)) return 2;
+    if (!strcmp(s.key, "!keys")) return 2;
     if (s.key[0] == '!') return 3; // (DESKTOP SHORTCUTS, HOME MENU ICONS)
     return 1;
 }

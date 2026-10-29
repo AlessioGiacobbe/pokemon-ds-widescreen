@@ -125,8 +125,8 @@ opens the pause menu; **QUIT** there goes back to the list.
 as a DS; hold its right trigger to fast forward. On the keyboard: arrow keys,
 X/Z for A/B, S/A for X/Y, Q/W for L/R, Enter for START, Backspace for SELECT,
 the mouse for the touch screen and Left Shift to fast forward. The `README.txt`
-inside has the full list. **CONTROLS > KEYS AND BUTTONS** in the pause menu changes any of
-them, on the keyboard and on a controller (the game list follows the ones you change).
+inside has the full list. **CONTROLS > KEYS AND BUTTONS** in the pause menu (or on the game list's
+settings page) changes any of them, on the keyboard and on a controller (the game list follows the ones you change).
 
 **Saves** go in the `saves` folder, one per game (`black2.sav`, `soulsilver.sav`,
 `platinum.sav`, ...). To carry on from another emulator, put its `.sav` there
