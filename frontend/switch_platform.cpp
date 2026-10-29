@@ -135,9 +135,23 @@ std::string InstallHomeIcons(const std::vector<Launcher::Game>& games)
         e.args = "--game " + g.code;
         e.icon = IconJpeg(g);
         if (e.icon.empty()) continue;
+        // (For checking: the icons also written to a forwarder-debug folder beside the program, if there.)
+        const std::string debugDir = g_self.substr(0, g_self.find_last_of('/')) + "/forwarder-debug";
+        struct stat ds;
+        if (stat(debugDir.c_str(), &ds) == 0)
+            if (FILE* f = fopen((debugDir + "/" + g.code + ".jpg").c_str(), "wb"))
+            {
+                fwrite(e.icon.data(), 1, e.icon.size(), f);
+                fclose(f);
+            }
         entries.push_back(std::move(e));
     }
     if (entries.empty()) return "NO GAMES TO ADD";
+    {
+        const std::string debugDir = g_self.substr(0, g_self.find_last_of('/')) + "/forwarder-debug";
+        struct stat ds;
+        SwitchForwarder::SetDebugFolder(stat(debugDir.c_str(), &ds) == 0 ? debugDir : "");
+    }
     std::string error;
     const int made = SwitchForwarder::Install(g_self, entries, error);
     fprintf(stderr, "[switch] HOME Menu icons: %d of %d%s%s\n", made, (int)entries.size(), error.empty() ? "" : ", ", error.c_str());

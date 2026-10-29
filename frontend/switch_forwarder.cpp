@@ -19,6 +19,7 @@ namespace SwitchForwarder
 {
 namespace
 {
+std::string g_debugFolder;
 constexpr u32 IVFC_MAX_LEVEL = 6;
 constexpr u32 IVFC_HASH_BLOCK_SIZE = 0x4000;
 constexpr u32 PFS0_EXEFS_HASH_BLOCK_SIZE = 0x10000;
@@ -662,6 +663,17 @@ Result InstallOne(const std::string& nroPath, const Entry& e, const std::vector<
     data.infos[1] = packaged[0].info;
     data.infos[2] = packaged[1].info;
 
+    if (!g_debugFolder.empty())
+        for (const Nca& nca : ncas)
+        {
+            char path[512];
+            snprintf(path, sizeof path, "%s/%016lX-%d.nca", g_debugFolder.c_str(), (unsigned long)tid, (int)nca.type);
+            if (FILE* f = fopen(path, "wb"))
+            {
+                fwrite(nca.data.data(), 1, nca.data.size(), f);
+                fclose(f);
+            }
+        }
     // Written to the storage, registered, and the HOME Menu told.
     NcmContentStorage cs;
     Result rc = ncmOpenContentStorage(&cs, storage);
@@ -695,6 +707,8 @@ Result InstallOne(const std::string& nroPath, const Entry& e, const std::vector<
     return 0;
 }
 }
+
+void SetDebugFolder(const std::string& folder) { g_debugFolder = folder; }
 
 int Install(const std::string& nroPath, const std::vector<Entry>& entries, std::string& error)
 {

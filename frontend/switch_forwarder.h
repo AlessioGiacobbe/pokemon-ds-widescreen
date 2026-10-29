@@ -21,4 +21,7 @@ struct Entry
 // ("sdmc:/switch/pokemon-ds-wide/pokemon-ds-wide.nro") with its arguments. Returns how many were
 // installed; error says what failed, if anything did.
 int Install(const std::string& nroPath, const std::vector<Entry>& entries, std::string& error);
+
+// For checking: the NCAs made are also written to this folder (empty: not).
+void SetDebugFolder(const std::string& folder);
 }
