@@ -168,6 +168,19 @@ struct Menu
         return -1;
     }
 
+    // Where the box and its rows were last drawn (Draw), in the canvas's pixels.
+    mutable int drawnX = 0, drawnY = 0, drawnW = 0, drawnH = 0, drawnLineH = 0, drawnFirstY = 0;
+
+    // The row at (x, y) of the canvas the menu was drawn on (touch screens): its index, -1 for
+    // a point in the box but on no row, -2 for a point outside the box.
+    int ItemAt(int x, int y) const
+    {
+        if (drawnW <= 0 || x < drawnX || x >= drawnX + drawnW || y < drawnY || y >= drawnY + drawnH) return -2;
+        if (drawnLineH <= 0 || y < drawnFirstY) return -1;
+        const int i = (y - drawnFirstY) / drawnLineH;
+        return i < (int)items.size() ? i : -1;
+    }
+
     void Draw(Canvas& c, const std::string& title, const std::string& hint) const
     {
         int scale = c.h / 240;
@@ -182,6 +195,13 @@ struct Menu
         if (boxW > c.w - 8) boxW = c.w - 8;
         int boxH = lineH * rows + 6 * scale;
         int bx = (c.w - boxW) / 2, by = (c.h - boxH) / 2;
+        // (Kept for ItemAt: where the rows were drawn.)
+        drawnX = bx;
+        drawnY = by;
+        drawnW = boxW;
+        drawnH = boxH;
+        drawnLineH = lineH;
+        drawnFirstY = by + (hasTitle ? lineH : 0) + 5 * scale - 2 * scale;
 
         c.Fill(0, 0, c.w, c.h, 0xA0000000);
         c.Fill(bx - scale, by - scale, boxW + 2 * scale, boxH + 2 * scale, 0xFFE8E8E8);

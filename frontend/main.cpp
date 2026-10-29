@@ -4424,6 +4424,22 @@ int main(int argc, char** argv)
                     SDL_GetRendererOutputSize(renderer, &ow, &oh);
                     touchPad.Layout(ow, oh);
                     float fx = ev.tfinger.x * ow, fy = ev.tfinger.y * oh;
+                    // The pause menu takes taps on itself: a row is chosen and used at once (a
+                    // setting changes: the left part of the box back, the rest forward); a tap
+                    // beside the box, away from the buttons, closes the menu.
+                    if (menu.open && ev.type == SDL_FINGERDOWN && (!touchPad.visible || touchPad.HitButton(fx, fy) == TouchPad::NONE))
+                    {
+                        const int item = menu.ItemAt((int)fx, (int)fy);
+                        if (item == -2) nav.back = true;
+                        else if (item >= 0)
+                        {
+                            menu.selected = item;
+                            if (menu.items[item].value.empty()) nav.accept = true;
+                            else if (fx < menu.drawnX + menu.drawnW / 3) nav.left = true;
+                            else nav.right = true;
+                        }
+                        continue;
+                    }
                     if (ev.type == SDL_FINGERDOWN)
                     {
                         // A finger on the screen brings the controls back (that finger only
@@ -5936,7 +5952,8 @@ int main(int argc, char** argv)
         }
         if (menu.open)
         {
-            menu.Draw(canvas, "", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
+            menu.Draw(canvas, "", touchPadUsed && touchPad.visible ? "TAP: CHOOSE   TAP OUTSIDE: BACK"
+                                 : cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
             overlayUsed = true;
         }
 
