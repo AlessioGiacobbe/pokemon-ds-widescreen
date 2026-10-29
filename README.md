@@ -132,7 +132,7 @@ In the list the D-pad or a stick moves between games, **A** plays, **Y** opens
 the settings (the pause menu's options, each explained) and **+** goes back to
 the Homebrew Menu. It opens on the game you played last. While playing, **+
 and − together** open the pause menu; **QUIT** there saves and comes back to
-the list (started from a forwarder it closes instead). With only one game found
+the list (also when started from its HOME Menu icon). With only one game found
 there is no list: it starts straight away.
 
 **One program per pair of games** (the other Switch downloads): unzip to the
