@@ -226,6 +226,12 @@ struct TouchPad
         // D-pad: a cross on a faint disc.
         Disc(v, dpadX, dpadY, dpadR, dpadR, { 0, 0, 0, 40 });
         const float arm = dpadR * 0.36f;
+        // (A dark edge around the cross, as around the buttons, so that it shows on light
+        // scenery too: towns and snow.)
+        const float edge = dpadR * 0.05f;
+        Quad(v, dpadX - dpadR * 0.92f - edge, dpadY - arm - edge, dpadX + dpadR * 0.92f + edge, dpadY + arm + edge, dark);
+        Quad(v, dpadX - arm - edge, dpadY - dpadR * 0.92f - edge, dpadX + arm + edge, dpadY - arm - edge, dark);
+        Quad(v, dpadX - arm - edge, dpadY + arm + edge, dpadX + arm + edge, dpadY + dpadR * 0.92f + edge, dark);
         Quad(v, dpadX - dpadR * 0.92f, dpadY - arm, dpadX + dpadR * 0.92f, dpadY + arm, idle);
         Quad(v, dpadX - arm, dpadY - dpadR * 0.92f, dpadX + arm, dpadY - arm, idle);
         Quad(v, dpadX - arm, dpadY + arm, dpadX + arm, dpadY + dpadR * 0.92f, idle);

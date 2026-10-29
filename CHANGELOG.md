@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Android (test build, not released yet): one app for all seven games** with the game list,
+  built by `tools/android/build_all.sh`. The first time, tap the screen, allow access to files
+  and pick the folder with your ROMs (saves go in a `saves` folder inside it). On touch screens
+  the game list, its settings page and the pause menu take taps (drag to scroll the settings), and
+  the on-screen D-pad has a dark edge so that it shows on light scenery.
 - **Settings in the game list**: press Y (on a PC also H or F1) to set the pause menu's options
   before you play, each with what it does written under it.
 - **Switch: a shorter pause menu.** WORLD ON GPU and STICK TOUCH CURSOR are gone from it: the
