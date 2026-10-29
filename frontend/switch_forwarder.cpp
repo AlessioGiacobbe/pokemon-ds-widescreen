@@ -674,6 +674,10 @@ Result InstallOne(const std::string& nroPath, const Entry& e, const std::vector<
                 fclose(f);
             }
         }
+    // An entry made before goes first, record and parts: its parts are the same files as the new
+    // ones when nothing has changed, and removing it after writing them took them away again
+    // (the HOME Menu then showed the entry loading forever).
+    nsDeleteApplicationEntity(tid);
     // Written to the storage, registered, and the HOME Menu told.
     NcmContentStorage cs;
     Result rc = ncmOpenContentStorage(&cs, storage);
@@ -700,7 +704,6 @@ Result InstallOne(const std::string& nroPath, const Entry& e, const std::vector<
     ncmContentMetaDatabaseClose(&db);
     if (R_FAILED(rc)) return rc;
 
-    nsDeleteApplicationEntity(tid); // (an entry made before: its old parts)
     if (R_FAILED(rc = PushApplicationRecord(nsApp, tid, &record, 1))) return rc;
     InvalidateApplicationControlCache(nsApp, tid);
     fprintf(stderr, "[forwarder] %s: title %016lX\n", e.name.c_str(), (unsigned long)tid);
