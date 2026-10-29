@@ -13,7 +13,7 @@
 #
 # The results, in build-pc-dist/:
 #   pokemon-ds-wide-pc-windows-x86_64.zip   Pokemon DS Launcher.exe, SDL2.dll, data/, roms/
-#   pokemon-ds-wide-pc-linux-x86_64.tar.gz  pokemon-ds-wide, data/, roms/ (needs SDL2 installed)
+#   pokemon-ds-wide-pc-linux-x86_64.tar.gz  pokemon-ds-wide, libSDL2-2.0.so.0, data/, roms/
 #
 # Needs Linux or WSL2 (Ubuntu 24.04) with git, CMake, Ninja, Python 3 and curl; for Windows also
 # MinGW-w64 (sudo apt install g++-mingw-w64-x86-64-posix), for Linux SDL2's development files
@@ -34,6 +34,9 @@ BW1_COMMIT=0d05b6ccc61fcea090d8318a00af9f1634810e18
 SDL_VERSION=2.30.9
 SDL_URL="https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-devel-$SDL_VERSION-mingw.tar.gz"
 SDL_SHA256=b188d165dc4a0372042bff3d0c18e9bb90772581e92a7b8b47b521b47714f75c
+# (Linux: SDL2's source, built here and put in the download; see "Compiling for Linux".)
+SDL_SRC_URL="https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-$SDL_VERSION.tar.gz"
+SDL_SRC_SHA256=24b574f71c87a763f50704bbb630cbe38298d544a1f890f099a4696b1d6beba4
 
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
@@ -120,7 +123,7 @@ stage() {
 check_contents() { # list of paths, one per line, relative to the download's top folder
     python3 -c "
 import re, sys
-ok = re.compile(r'^pokemon-ds-wide/(pokemon-ds-wide|Pokemon DS Launcher\.exe|SDL2\.dll|LICENSE\.txt|LICENSE-SDL2\.txt|README\.txt|roms/|data/|data/funcs/|data/funcs/(IREO|IRDO|IRBO|IRAO|CPUE)\.txt)?$')
+ok = re.compile(r'^pokemon-ds-wide/(pokemon-ds-wide|Pokemon DS Launcher\.exe|SDL2\.dll|libSDL2-2\.0\.so\.0|LICENSE\.txt|LICENSE-SDL2\.txt|README\.txt|roms/|data/|data/funcs/|data/funcs/(IREO|IRDO|IRBO|IRAO|CPUE)\.txt)?$')
 bad = [l for l in sys.stdin.read().splitlines() if l and not ok.match(l)]
 if bad: sys.exit('unexpected files in the download: %s' % bad)
 "
@@ -167,6 +170,25 @@ with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:
 fi
 
 if [ "$TARGET" != windows ]; then
+    # SDL2 comes with the download, built here from its source with its display and sound parts
+    # (X11, Wayland, PulseAudio, ALSA) loaded only when used, so that it needs nothing but the C
+    # library: SteamOS (the Steam Deck) and other systems without SDL2 run the download as it
+    # is. The program looks for it beside itself first (RPATH $ORIGIN, see CMakeLists.txt).
+    # (Ubuntu's own libSDL2 is linked to some twenty libraries, so it is not the one shipped.)
+    LSDL="$HERE/build-pc-deps/SDL2-$SDL_VERSION-linux"
+    if [ ! -f "$LSDL/build/libSDL2-2.0.so.0" ]; then
+        say "SDL2 $SDL_VERSION for Linux, from its source"
+        mkdir -p "$LSDL"
+        curl -fsSL -o "$LSDL/src.tar.gz" "$SDL_SRC_URL"
+        echo "$SDL_SRC_SHA256  $LSDL/src.tar.gz" | sha256sum -c --quiet ||
+            fail "SDL2's source does not match its checksum: $LSDL/src.tar.gz"
+        tar -xzf "$LSDL/src.tar.gz" -C "$LSDL"
+        cmake -S "$LSDL/SDL2-$SDL_VERSION" -B "$LSDL/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF -DSDL_RPATH=OFF >/dev/null
+        ninja -C "$LSDL/build" >/dev/null
+    fi
+    extra="$(readelf -d "$LSDL/build/libSDL2-2.0.so.0" | grep NEEDED | grep -v 'libc\.so\|libm\.so' || true)"
+    [ -z "$extra" ] || fail "the SDL2 built for the download needs more than the C library: $extra"
     say "Compiling for Linux"
     cmake -S . -B build-pc-linux "${COMMON[@]}" >/dev/null
     ninja -C build-pc-linux ssrecomp
@@ -174,6 +196,10 @@ if [ "$TARGET" != windows ]; then
     stage "$OUT"
     cp build-pc-linux/ssrecomp "$OUT/pokemon-ds-wide"
     strip "$OUT/pokemon-ds-wide"
+    readelf -d "$OUT/pokemon-ds-wide" | grep -q 'R.*PATH.*\$ORIGIN' || fail "the Linux program does not look for SDL2 beside itself"
+    cp "$LSDL/build/libSDL2-2.0.so.0" "$OUT/libSDL2-2.0.so.0"
+    strip "$OUT/libSDL2-2.0.so.0"
+    cp "$LSDL/SDL2-$SDL_VERSION/LICENSE.txt" "$OUT/LICENSE-SDL2.txt"
     TGZ=pokemon-ds-wide-pc-linux-x86_64.tar.gz
     tar -czf "build-pc-dist/$TGZ" -C build-pc-dist/linux pokemon-ds-wide
     tar -tzf "build-pc-dist/$TGZ" | check_contents

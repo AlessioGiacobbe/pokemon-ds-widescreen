@@ -279,6 +279,11 @@ else()
         target_sources(ssrecomp PRIVATE frontend/pc_launcher.cpp)
         target_compile_definitions(ssrecomp PRIVATE SSR_PC_LAUNCHER)
     endif()
+    if(UNIX AND NOT APPLE AND SSR_PC_ALL_GAMES)
+        # The Linux download carries its own SDL2 beside the program (tools/pc/build_all.sh),
+        # found there first: $ORIGIN, the program's folder.
+        set_target_properties(ssrecomp PROPERTIES BUILD_RPATH "$ORIGIN")
+    endif()
     if(WIN32 AND SSR_PC_ALL_GAMES)
         # A window program (no console window behind it; the log goes to game.log), with a
         # manifest that makes the C library's file names UTF-8 (folders named in any letters), and the C++

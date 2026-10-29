@@ -24,7 +24,19 @@ GETTING STARTED
 
 Windows may warn that the program is from an unknown publisher the first time: choose
 "More info", then "Run anyway".
-On Linux, SDL2 must be installed (Ubuntu and Debian: sudo apt install libsdl2-2.0-0).
+On Linux there is nothing else to install: SDL2 comes with it (libSDL2-2.0.so.0).
+
+
+STEAM DECK
+----------
+
+1. In Desktop Mode, unpack the Linux download (for example into your Games folder) and put
+   your ROMs in its roms folder.
+2. In Steam: Games > Add a Non-Steam Game to My Library > Browse, set the file type to
+   All Files and choose pokemon-ds-wide.
+3. Back in Gaming Mode, start it from your library with a gamepad controller layout.
+4. The Deck's screen is 1280x800: set 3D RESOLUTION to 720P in the settings (Y in the game
+   list), full sharpness there and easier on the battery.
 
 
 PICTURE SETTINGS (Esc menu)
@@ -86,6 +98,7 @@ SOURCE AND LICENCE
 This program is free software under the GNU General Public License version 3 (LICENSE.txt),
 built on melonDS. Its source code:
   https://github.com/mamesj/pokemon-ds-widescreen
-SDL2 (SDL2.dll on Windows) is under the zlib licence (LICENSE-SDL2.txt).
+SDL2 (SDL2.dll on Windows, libSDL2-2.0.so.0 on Linux) is under the zlib licence
+(LICENSE-SDL2.txt).
 Pokemon is a trademark of Nintendo, Creatures and GAME FREAK. This project is not affiliated
 with or endorsed by them.

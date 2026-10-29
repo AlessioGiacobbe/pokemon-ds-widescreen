@@ -85,10 +85,16 @@ menu before you play, each option explained. The ones that matter most on a PC:
 | SCREEN LAYOUT | MERGED | the one widescreen picture, or the two DS screens laid out as on other emulators |
 
 **What it needs:** Windows 10 or 11 (64-bit), or 64-bit Linux from late 2023 on
-(Ubuntu 24.04, Fedora 39, SteamOS 3.5 or newer) with SDL2 installed. For WORLD
+(Ubuntu 24.04, Fedora 39, SteamOS 3.5 or newer); nothing else to install. For WORLD
 ON GPU, a graphics card with OpenGL 4.3, which nearly any from 2012 on has with
 up-to-date drivers; without it, the processor draws the world (that wants a
 much faster processor).
+
+**Steam Deck:** in Desktop Mode, unpack the Linux download and put your ROMs in
+its `roms` folder; in Steam, **Games > Add a Non-Steam Game to My Library**,
+browse to `pokemon-ds-wide` (file type: All Files); then start it from your
+library in Gaming Mode with a gamepad controller layout. Set 3D RESOLUTION to
+720P for the Deck's 1280x800 screen.
 
 **How fast a PC?** Not measured on a range of PCs yet, so these are estimates.
 The Switch runs all seven games at 60 fps, and one core of any PC from the last

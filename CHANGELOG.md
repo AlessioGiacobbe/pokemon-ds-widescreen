@@ -7,6 +7,8 @@
 - **Switch: a shorter pause menu.** WORLD ON GPU and STICK TOUCH CURSOR are gone from it: the
   world is always drawn by the graphics chip (if it ever fails to keep going, the processor
   draws it for that start only), and the Switch has its touch screen.
+- **PC: the Linux download brings its own SDL2**, so nothing needs installing first, and it
+  runs on the Steam Deck (SteamOS): see the Steam Deck steps in the README.
 - **PC: a first start in borderless fullscreen at 1080P with 60 FPS on** (F11 or the settings
   for a window; LOWER RES WHEN BUSY brings the 3D resolution down on a PC that cannot keep up).
 - **PC: the Windows program is now `Pokemon DS Launcher.exe`**, with its own icon, and the
