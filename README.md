@@ -93,7 +93,8 @@ opens the pause menu; **QUIT** there goes back to the list.
 as a DS; hold its right trigger to fast forward. On the keyboard: arrow keys,
 X/Z for A/B, S/A for X/Y, Q/W for L/R, Enter for START, Backspace for SELECT,
 the mouse for the touch screen and Left Shift to fast forward. The `README.txt`
-inside has the full list.
+inside has the full list. **CONTROLS** in the pause menu changes any of them, on the
+keyboard and on a controller (the game list follows the ones you change).
 
 **Saves** go in the `saves` folder, one per game (`black2.sav`, `soulsilver.sav`,
 `platinum.sav`, ...). To carry on from another emulator, put its `.sav` there
@@ -249,7 +250,8 @@ the next one falls back by itself (hold L while starting for the interpreter).
 MENU at the top) while you play by touch; tap the picture itself to touch the
 DS's touch screen. A controller (Bluetooth or USB: Xbox, PlayStation, Backbone,
 Razer Kishi and others) plays as a DS and hides the on-screen buttons; its
-**Start** opens the pause menu and its right trigger fast forwards.
+**Start** opens the pause menu and its right trigger fast forwards. **CONTROLS** in
+the pause menu changes which button does what.
 
 **Saves** go in a `saves` folder inside your ROMs folder (made for you). The
 settings and `game.log` are in `Android/data/io.github.mamesj.pokemonds/files`.

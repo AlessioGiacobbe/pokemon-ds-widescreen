@@ -38,6 +38,7 @@
 #include "thirdparty/stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
 #include "launcher.h"
+#include "controls.h"
 #if !defined(__ANDROID__) && !defined(__SWITCH__)
 #include "shortcuts.h"
 #endif
@@ -353,6 +354,12 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     int tapPlay = -1; // (the game a finger is on that was already chosen: played when it lifts)
     bool guide = false;
     Launcher::SettingsPage page;
+    // The keys and buttons changed in a game's CONTROLS (controls.h): A plays, B goes back, Y opens
+    // the settings, the directions move, as they do in the game. Keys and buttons not changed
+    // keep doing what they always did here.
+    Controls::Bindings ctl;
+    ctl.Load(fo.cfg);
+    float trig[2] = {}; // (the triggers as last seen: one pushed past half way is a press)
     auto toggleGuide = [&]() {
         guide = !guide;
         if (guide) page.Open(fo.cfg);
@@ -434,6 +441,19 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 if (SDL_GameController* p = SDL_GameControllerOpen(e.cdevice.which)) pads.push_back(p);
                 break;
             case SDL_KEYDOWN:
+            {
+                int act = -1;
+                for (int a = 0; a < Controls::COUNT; a++)
+                    if (ctl.KeyCustom(a) && ctl.key[a] == e.key.keysym.scancode) act = a;
+                if (act >= 0)
+                {
+                    if (act == Controls::A || act == Controls::START) { if (!e.key.repeat) choose(); }
+                    else if (act == Controls::B || act == Controls::MENU) { if (guide) guide = false; else quit = true; }
+                    else if (act == Controls::Y) toggleGuide();
+                    else if (act >= Controls::UP && act <= Controls::RIGHT)
+                        move(act == Controls::LEFT ? 1 : act == Controls::RIGHT ? 2 : act == Controls::UP ? 3 : 4);
+                    break;
+                }
                 switch (e.key.keysym.sym)
                 {
                 case SDLK_LEFT: case SDLK_a: move(1); break;
@@ -453,7 +473,31 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 default: break;
                 }
                 break;
+            }
+            case SDL_CONTROLLERAXISMOTION:
             case SDL_CONTROLLERBUTTONDOWN:
+            {
+                // (Changed controller buttons: each does its action here. A trigger counts once
+                // pushed past half way.)
+                int in = -1;
+                if (e.type == SDL_CONTROLLERAXISMOTION)
+                {
+                    const int t = e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? 0 : e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT ? 1 : -1;
+                    if (t < 0) break;
+                    const float v = e.caxis.value / 32767.0f;
+                    if (v > 0.5f && trig[t] <= 0.5f) in = t ? Controls::IN_RT : Controls::IN_LT;
+                    trig[t] = v;
+                }
+                else in = e.cbutton.button;
+                if (ctl.PadCustom())
+                {
+                    const int act = in >= 0 ? ctl.ActionOfPad(in, ctl.byLabel) : -1;
+                    if (act == Controls::A || act == Controls::START) choose();
+                    else if (act == Controls::B || act == Controls::SELECT) { if (guide) guide = false; else quit = true; }
+                    else if (act == Controls::Y) toggleGuide();
+                    break;
+                }
+                if (e.type != SDL_CONTROLLERBUTTONDOWN) break;
                 switch (e.cbutton.button)
                 {
                 case SDL_CONTROLLER_BUTTON_A: case SDL_CONTROLLER_BUTTON_START: choose(); break;
@@ -462,6 +506,7 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                 default: break;
                 }
                 break;
+            }
             case SDL_MOUSEMOTION:
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP:
@@ -567,10 +612,17 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
         for (SDL_GameController* p : pads)
         {
             const int ax = SDL_GameControllerGetAxis(p, SDL_CONTROLLER_AXIS_LEFTX), ay = SDL_GameControllerGetAxis(p, SDL_CONTROLLER_AXIS_LEFTY);
-            if (SDL_GameControllerGetButton(p, SDL_CONTROLLER_BUTTON_DPAD_LEFT) || ax < -16000) dir = 1;
-            else if (SDL_GameControllerGetButton(p, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || ax > 16000) dir = 2;
-            else if (SDL_GameControllerGetButton(p, SDL_CONTROLLER_BUTTON_DPAD_UP) || ay < -16000) dir = 3;
-            else if (SDL_GameControllerGetButton(p, SDL_CONTROLLER_BUTTON_DPAD_DOWN) || ay > 16000) dir = 4;
+            // (The buttons the directions have in CONTROLS: the D-pad unless changed.)
+            auto down = [&](int a) {
+                const int in = ctl.Pad(a, ctl.byLabel);
+                if (in == Controls::IN_LT || in == Controls::IN_RT)
+                    return SDL_GameControllerGetAxis(p, in == Controls::IN_LT ? SDL_CONTROLLER_AXIS_TRIGGERLEFT : SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000;
+                return SDL_GameControllerGetButton(p, (SDL_GameControllerButton)in) != 0;
+            };
+            if (down(Controls::LEFT) || ax < -16000) dir = 1;
+            else if (down(Controls::RIGHT) || ax > 16000) dir = 2;
+            else if (down(Controls::UP) || ay < -16000) dir = 3;
+            else if (down(Controls::DOWN) || ay > 16000) dir = 4;
             if (dir) break;
         }
         held = dir && dir == heldDir ? held + 1 : dir ? 1 : 0;

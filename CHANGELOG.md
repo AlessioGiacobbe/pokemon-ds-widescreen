@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Remappable controls: CONTROLS in the pause menu.** Every DS button, the pause menu, fast
+  forward and swapping the screens can be given another key on the keyboard and another button
+  on a controller (triggers too). Choose one and press the key or button for it; giving it one
+  that something else had swaps the two, and RESET ALL puts everything back. On the PC, Mac and
+  Android game list, A, B, Y and the directions follow the ones you change.
 - **Mac: Pokemon DS Widescreen.app** for Apple silicon and Intel Macs (macOS 11 or newer), built on
   GitHub's Macs (`tools/mac/build_all.sh`, `.github/workflows/mac.yml`). Its ROMs, saves and
   settings go in `~/Library/Application Support/Pokemon DS Widescreen`; the world is drawn by the

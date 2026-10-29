@@ -237,6 +237,7 @@ struct PadState
 };
 
 #include "touchpad.h"
+#include "controls.h"
 
 static int PadButtonFromName(const std::string& n)
 {
@@ -1066,22 +1067,17 @@ static void Compose(const Layout& layout, int w, int h, const u32* top, const u3
     }
 }
 
-static uint32_t KeyboardKeys()
+// DS buttons from the keyboard (the keys in CONTROLS, Controls::DefaultKey to start with).
+static uint32_t KeyboardKeys(const Controls::Bindings& b)
 {
     const Uint8* st = SDL_GetKeyboardState(nullptr);
+    static const int ds[12] = { KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_START, KEY_SELECT,
+                                KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT }; // (Controls::A to RIGHT)
     uint32_t k = 0;
-    if (st[SDL_SCANCODE_X]) k |= 1 << KEY_A;
-    if (st[SDL_SCANCODE_Z]) k |= 1 << KEY_B;
-    if (st[SDL_SCANCODE_S]) k |= 1 << KEY_X;
-    if (st[SDL_SCANCODE_A]) k |= 1 << KEY_Y;
-    if (st[SDL_SCANCODE_Q]) k |= 1 << KEY_L;
-    if (st[SDL_SCANCODE_W]) k |= 1 << KEY_R;
-    if (st[SDL_SCANCODE_RETURN]) k |= 1 << KEY_START;
-    if (st[SDL_SCANCODE_RSHIFT] || st[SDL_SCANCODE_BACKSPACE]) k |= 1 << KEY_SELECT;
-    if (st[SDL_SCANCODE_UP]) k |= 1 << KEY_UP;
-    if (st[SDL_SCANCODE_DOWN]) k |= 1 << KEY_DOWN;
-    if (st[SDL_SCANCODE_LEFT]) k |= 1 << KEY_LEFT;
-    if (st[SDL_SCANCODE_RIGHT]) k |= 1 << KEY_RIGHT;
+    for (int a = Controls::A; a <= Controls::RIGHT; a++)
+        if (st[b.Key(a)]) k |= 1 << ds[a];
+    // (Backspace is SELECT too, unless it was given to something.)
+    if (st[SDL_SCANCODE_BACKSPACE] && b.ActionOfKey(SDL_SCANCODE_BACKSPACE) < 0) k |= 1 << KEY_SELECT;
     return k;
 }
 
@@ -1232,6 +1228,43 @@ static PadState ReadPad(Pads& pads)
     return st;
 }
 
+// The controller as CONTROLS has it: each action's button (Controls::Bindings) pressed puts the
+// button that action has as it comes (Controls::DefaultPad) down, so the game, the menus and
+// START opening the menu all follow the new layout. A trigger given to a button is pressed past
+// half way; FAST FORWARD given to a button holds the right trigger right down. The left trigger
+// (the touch cursor's press) and the left stick's click (the next layout) stay where they are
+// unless an action took them.
+static PadState RemapPad(const PadState& p, const Controls::Bindings& b, bool byLabel)
+{
+    if (!b.PadCustom()) return p;
+    auto on = [&](int in) { return in < PAD_COUNT ? p.btn[in] : in == Controls::IN_LT ? p.lt > 0.5f : p.rt > 0.5f; };
+    PadState o = p;
+    for (bool& x : o.btn) x = false;
+    bool used[Controls::IN_COUNT] = {};
+    for (int a = 0; a < Controls::COUNT; a++)
+    {
+        const int in = b.Pad(a, byLabel);
+        if (in < 0) continue;
+        used[in] = true;
+        if (a == Controls::FAST) o.rt = in == Controls::IN_RT ? p.rt : on(in) ? 1.0f : 0.0f;
+        else o.btn[Controls::DefaultPad(a, byLabel)] |= on(in);
+    }
+    o.btn[PAD_LS] = !used[Controls::IN_LS] && p.btn[PAD_LS];
+    o.lt = used[Controls::IN_LT] ? 0.0f : p.lt;
+    return o;
+}
+
+// The input first pressed in `now` that was not in `before` (Controls::IN_*), or -1: what is
+// pressed for a binding in CONTROLS.
+static int NewPadInput(const PadState& now, const PadState& before)
+{
+    for (int i = 0; i < PAD_COUNT; i++)
+        if (now.btn[i] && !before.btn[i]) return i;
+    if (now.lt > 0.5f && before.lt <= 0.5f) return Controls::IN_LT;
+    if (now.rt > 0.5f && before.rt <= 0.5f) return Controls::IN_RT;
+    return -1;
+}
+
 // DS buttons from the controller. With byLabel the button printed "A" is A on any pad;
 // otherwise the DS diamond is mapped by position (right = A, bottom = B).
 static uint32_t PadKeys(const PadState& p, bool byLabel)
@@ -1305,6 +1338,7 @@ struct Settings
     int battleButtons = 1;
     // The PC all-games program: the window's size when it last closed (0: 1280x720, a wide view).
     int windowW = 0, windowH = 0;
+    Controls::Bindings controls; // CONTROLS (controls.h): map_key_* and map_pad_* lines
 
     void Load(const std::string& path)
     {
@@ -1328,6 +1362,7 @@ struct Settings
             size_t eq = line.find('=');
             if (eq == std::string::npos) return;
             std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+            if (controls.Apply(k, v)) return;
             // "view" replaced the older "layout" key when the merged view became the default.
             if (k == "view") layout = v;
             else if (k == "large_screen") focusMode = v == "top" ? 1 : v == "bottom" ? 2 : 0;
@@ -1386,6 +1421,7 @@ struct Settings
         f << "ff_low_res=" << (ffLowRes ? 1 : 0) << "\n";
         f << "start_button=" << (startMenu ? "menu" : "ds") << "\n";
         f << "battle_buttons=" << (battleButtons == 0 ? "corner" : battleButtons == 2 ? "panel" : "strip") << "\n";
+        controls.Save(f);
 #ifdef SSR_PC_LAUNCHER
         if (windowW > 0 && windowH > 0) f << "window=" << windowW << "x" << windowH << "\n";
 #endif
@@ -3806,6 +3842,7 @@ int main(int argc, char** argv)
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
+        M_CONTROLS,
         M_STARTBTN,
         M_FAST,
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
@@ -3823,7 +3860,40 @@ int main(int argc, char** argv)
         while (i + 1 < detailCount && detailLines[i + 1] <= cfg.wideLines) i++;
         return i;
     };
+    // CONTROLS (controls.h): a page of the pause menu with each action's key or button. Choosing
+    // one waits for the key or button to give it (capturing, until captureUntil; a controller's
+    // buttons must all be let go first, captureReleased); ESC, or 5 seconds, leaves it as it was.
+    // CHANGING says which is shown and changed, the keyboard's keys or a controller's buttons.
+    int menuPage = 0; // 0 the pause menu, 1 CONTROLS
+#ifdef __SWITCH__
+    const bool ctlHasKeyboard = false; // (the Switch: a controller only)
+#else
+    const bool ctlHasKeyboard = true;
+#endif
+    bool ctlKeyboard = false;
+    int capturing = -1;
+    uint32_t captureUntil = 0;
+    bool captureReleased = false;
+    bool navHoldOff = false; // (the button just given: ignored by the menu until let go)
+    PadState physPad, prevPhysPad; // the controller as it is, before RemapPad
+    const int ctlRow0 = ctlHasKeyboard ? 1 : 0; // the first action's row
+    const int ctlRowReset = ctlRow0 + Controls::COUNT, ctlRowBack = ctlRowReset + 1;
     auto buildMenu = [&]() {
+        if (menuPage == 1)
+        {
+            menu.items.clear();
+            if (ctlHasKeyboard) menu.items.push_back({ "CHANGING", ctlKeyboard ? "KEYBOARD" : "CONTROLLER" });
+            for (int a = 0; a < Controls::COUNT; a++)
+            {
+                std::string v = capturing == a ? (ctlKeyboard ? "PRESS A KEY" : "PRESS A BUTTON")
+                              : ctlKeyboard ? Controls::KeyName(cfg.controls.Key(a))
+                                            : Controls::InputName(cfg.controls.Pad(a, cfg.byLabel));
+                menu.items.push_back({ Controls::ActionName(a), v });
+            }
+            menu.items.push_back({ "RESET ALL", "" });
+            menu.items.push_back({ "BACK", "" });
+            return;
+        }
 #ifndef __SWITCH__
         static const char* large[] = { "AUTO", "TOP", "BOTTOM" };
 #endif
@@ -3890,6 +3960,7 @@ int main(int argc, char** argv)
             { "EMULATION", std::string(!cfg.jit ? "INTERPRETER" : cfg.fastMem ? "FAST JIT" : "JIT")
                 + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : "") },
 #endif
+            { "CONTROLS", "" },
             { "START BUTTON", cfg.startMenu ? "PAUSE MENU" : "DS START" },
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
@@ -4548,22 +4619,37 @@ int main(int argc, char** argv)
                 else if (ev.type == SDL_KEYDOWN && !ev.key.repeat)
                 {
                     SDL_Keycode k = ev.key.keysym.sym;
-                    if (k == SDLK_ESCAPE || k == SDLK_AC_BACK)
+                    const int sc = ev.key.keysym.scancode;
+                    // (The action CONTROLS gives this key, if any: those keys do that and nothing else.)
+                    const int act = cfg.controls.ActionOfKey(sc);
+                    if (menu.open && capturing >= 0)
+                    {
+                        // CONTROLS waiting for a key: ESC leaves it as it was.
+                        if (k != SDLK_ESCAPE && k != SDLK_AC_BACK && ctlKeyboard)
+                        {
+                            cfg.controls.SetKey(capturing, sc);
+                            cfg.Save(opt.config);
+                        }
+                        capturing = -1;
+                        buildMenu();
+                    }
+                    else if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || act == Controls::MENU)
                     {
                         if (menu.open) nav.back = true;
                         else toggleMenu = true;
                     }
                     else if (menu.open)
                     {
-                        if (k == SDLK_UP) nav.up = true;
-                        else if (k == SDLK_DOWN) nav.down = true;
-                        else if (k == SDLK_LEFT) nav.left = true;
-                        else if (k == SDLK_RIGHT) nav.right = true;
-                        else if (k == SDLK_RETURN || k == SDLK_x) nav.accept = true;
-                        else if (k == SDLK_z) nav.back = true;
+                        if (k == SDLK_UP || act == Controls::UP) nav.up = true;
+                        else if (k == SDLK_DOWN || act == Controls::DOWN) nav.down = true;
+                        else if (k == SDLK_LEFT || act == Controls::LEFT) nav.left = true;
+                        else if (k == SDLK_RIGHT || act == Controls::RIGHT) nav.right = true;
+                        else if (k == SDLK_RETURN || act == Controls::A) nav.accept = true;
+                        else if (act == Controls::B) nav.back = true;
                     }
+                    else if (act == Controls::SWAP) focus.manualFlip = !focus.manualFlip;
+                    else if (act >= 0) {} // (a DS button, or fast forward: read as held, below)
                     else if (k == SDLK_TAB) layout = LayoutNext(layout);
-                    else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
                     else if (k == SDLK_F2) focus.mode = (focus.mode + 1) % 3;
                     else if (k == SDLK_F5) say(WriteSnapshot(*nds, quickState, frame) ? "STATE SAVED" : "SAVE STATE FAILED");
                     else if (k == SDLK_F8)
@@ -4631,6 +4717,8 @@ int main(int argc, char** argv)
             }
 #endif
             ps = ReadPad(pads);
+            physPad = ps;
+            ps = RemapPad(ps, cfg.controls, cfg.byLabel); // (CONTROLS)
             ctrlStart = ps.btn[PAD_START]; // (a controller's, before the on-screen buttons join in)
             if (touchPadUsed)
             {
@@ -4665,13 +4753,15 @@ int main(int argc, char** argv)
             const Uint8* kb = SDL_GetKeyboardState(nullptr);
             if (!menu.open)
             {
-                keys |= KeyboardKeys();
-                if (kb[SDL_SCANCODE_J]) curDX -= 1;
-                if (kb[SDL_SCANCODE_L]) curDX += 1;
-                if (kb[SDL_SCANCODE_I]) curDY -= 1;
-                if (kb[SDL_SCANCODE_K]) curDY += 1;
-                if (kb[SDL_SCANCODE_SPACE]) curPress = true;
-                if (kb[SDL_SCANCODE_LSHIFT]) kbFast = true;
+                keys |= KeyboardKeys(cfg.controls);
+                // (The touch cursor's keys, unless CONTROLS gave one of them to something.)
+                auto keyFree = [&](int s) { return kb[s] && cfg.controls.ActionOfKey(s) < 0; };
+                if (keyFree(SDL_SCANCODE_J)) curDX -= 1;
+                if (keyFree(SDL_SCANCODE_L)) curDX += 1;
+                if (keyFree(SDL_SCANCODE_I)) curDY -= 1;
+                if (keyFree(SDL_SCANCODE_K)) curDY += 1;
+                if (keyFree(SDL_SCANCODE_SPACE)) curPress = true;
+                if (kb[cfg.controls.Key(Controls::FAST)]) kbFast = true;
             }
         }
 
@@ -4822,6 +4912,43 @@ int main(int argc, char** argv)
             if (ev.rt != 0) ps.rt = ev.rt;
         }
 
+        // CONTROLS waiting for a controller's button: once every button is let go, the next one
+        // pressed. Nothing else happens meanwhile (and the button stays out of the menu).
+        if (menu.open && capturing >= 0)
+        {
+            bool anyDown = physPad.lt > 0.5f || physPad.rt > 0.5f;
+            for (bool b : physPad.btn) anyDown |= b;
+            if (!captureReleased) captureReleased = !anyDown;
+            else if (!ctlKeyboard)
+            {
+                const int in = NewPadInput(physPad, prevPhysPad);
+                if (in >= 0)
+                {
+                    cfg.controls.SetPad(capturing, in, cfg.byLabel);
+                    cfg.Save(opt.config);
+                    capturing = -1;
+                    navHoldOff = true;
+                    buildMenu();
+                }
+            }
+            if (capturing >= 0 && SDL_GetTicks() > captureUntil)
+            {
+                capturing = -1;
+                buildMenu();
+            }
+            toggleMenu = false;
+            nav = MenuInput();
+            ps = PadState();
+        }
+        prevPhysPad = physPad;
+        if (navHoldOff)
+        {
+            bool anyDown = false;
+            for (bool b : ps.btn) anyDown |= b;
+            if (anyDown) ps = PadState();
+            else navHoldOff = false;
+        }
+
         // Controller: the pause menu opens with Guide, or with Start and Select together.
         auto pressed = [&](int b) { return ps.btn[b] && !prevPad.btn[b]; };
         bool comboMenu = ps.btn[PAD_START] && ps.btn[PAD_BACK];
@@ -4851,12 +4978,41 @@ int main(int argc, char** argv)
         if (toggleMenu)
         {
             menu.open = !menu.open;
+            menuPage = 0;
+            capturing = -1;
             if (menu.open)
             {
                 menu.selected = 0;
                 buildMenu();
             }
             else swallowMenuButtons = true;
+        }
+        else if (menu.open && menuPage == 1)
+        {
+            // CONTROLS: B goes back to the pause menu.
+            int dir = 0;
+            const int hit = nav.back ? ctlRowBack : menu.Update(nav, dir);
+            if (hit == 0 && ctlHasKeyboard) ctlKeyboard = !ctlKeyboard;
+            else if (hit >= ctlRow0 && hit < ctlRowReset)
+            {
+                // (Left or right on an action, as a tap on it does: the same as choosing it.)
+                capturing = hit - ctlRow0;
+                captureUntil = SDL_GetTicks() + 5000;
+                captureReleased = false;
+            }
+            else if (hit == ctlRowReset)
+            {
+                cfg.controls.Reset();
+                cfg.Save(opt.config);
+                say("CONTROLS RESET");
+            }
+            else if (hit == ctlRowBack)
+            {
+                menuPage = 0;
+                buildMenu();
+                menu.selected = M_CONTROLS;
+            }
+            if (hit >= 0 && menuPage == 1) buildMenu();
         }
         else if (menu.open)
         {
@@ -4968,6 +5124,15 @@ int main(int argc, char** argv)
                 say("APPLIES THE NEXT TIME THE GAME STARTS");
                 break;
 #endif
+            case M_CONTROLS:
+                menuPage = 1;
+                capturing = -1;
+                // (The keyboard's keys shown first when no controller is connected.)
+                ctlKeyboard = ctlHasKeyboard && pads.Empty() && !touchPadUsed;
+                buildMenu();
+                menu.selected = ctlRow0;
+                hit = -1; // (the page is built: not again below)
+                break;
             case M_STARTBTN:
                 cfg.startMenu = !cfg.startMenu;
                 break;
@@ -5032,6 +5197,8 @@ int main(int argc, char** argv)
             // party screens must not move it afterwards, and its next showing starts from the ROM.
             const bool stripUp = singleScreenFlag && (singleScreenFlag[1] == 1 || singleScreenFlag[1] == 2);
             if (!stripUp) { stripNav.clear(); stripPubSel = -1; }
+            // (SWAP SCREENS given a button of its own in CONTROLS works without the touch cursor.)
+            if (!cfg.padTouch && cfg.controls.pad[Controls::SWAP] >= 0 && pressed(PAD_RS)) focus.manualFlip = !focus.manualFlip;
             if (cfg.padTouch)
             {
                 if (pressed(PAD_RS)) focus.manualFlip = !focus.manualFlip;
@@ -6119,13 +6286,25 @@ int main(int argc, char** argv)
         {
             std::string hint = touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
                                : cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK";
+            if (menuPage == 1)
+            {
+                if (!(touchPadUsed && touchPad.visible)) hint = cfg.byLabel ? "A: CHANGE   B: BACK" : "RIGHT: CHANGE   BOTTOM: BACK";
+                if (capturing >= 0) hint = ctlKeyboard ? "ESC: LEAVE IT AS IT WAS" : "OR WAIT 5 SECONDS: AS IT WAS";
+                else if (menu.selected == 0 && ctlHasKeyboard) hint = "CHANGE: KEYBOARD OR CONTROLLER";
+                else if (menu.selected == ctlRow0 + Controls::SWAP) hint = "SWAPS WHICH SCREEN IS LARGE";
+                menu.Draw(canvas, "CONTROLS", hint);
+            }
+            else
+            {
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
             // (What FAST FORWARD LOW RES is for, while it is the one chosen.)
             if (menu.selected == M_FFLOWRES) hint = "ON: MORE FPS IN FAST FORWARD";
 #endif
             // (What START BUTTON does, while it is the one chosen.)
             if (menu.selected == M_STARTBTN) hint = cfg.startMenu ? "START OPENS THIS MENU" : "START IS THE DS START";
+            if (menu.selected == M_CONTROLS) hint = "CHANGE THE KEYS AND BUTTONS";
             menu.Draw(canvas, "", hint);
+            }
             overlayUsed = true;
         }
 
