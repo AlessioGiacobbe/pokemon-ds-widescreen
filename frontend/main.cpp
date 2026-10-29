@@ -5159,15 +5159,22 @@ int main(int argc, char** argv)
         };
         if (!paused)
         {
+            static bool wasMouseDown = false;
             if (!opt.headless && mouseDown)
             {
                 if (merged)
                 {
                     float bx = (mouseX - view.originX) / view.unit, by = (mouseY - view.originY) / view.unit;
                     if (touchAt(bx, by, touchX, touchY)) touching = true;
+                    // (Each press in game.log: where it was and what it touched, for reports of
+                    // touches that did nothing.)
+                    if (!wasMouseDown)
+                        fprintf(stderr, "[touch] %d,%d: picture %.0f,%.0f, scene %s: %s %d,%d\n", mouseX, mouseY, bx, by,
+                                scene.name, touching ? "touch screen" : "nothing", touching ? touchX : -1, touching ? touchY : -1);
                 }
                 else if (LayoutTouch(rects[1], mouseX, mouseY, touchX, touchY)) touching = true;
             }
+            wasMouseDown = !opt.headless && mouseDown;
             if (curDX != 0 || curDY != 0 || curPress)
             {
                 // Faster with a fuller stick deflection, for both precision and reach.
@@ -5952,7 +5959,7 @@ int main(int argc, char** argv)
         }
         if (menu.open)
         {
-            menu.Draw(canvas, "", touchPadUsed && touchPad.visible ? "TAP: CHOOSE   TAP OUTSIDE: BACK"
+            menu.Draw(canvas, "", touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
                                  : cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
             overlayUsed = true;
         }
