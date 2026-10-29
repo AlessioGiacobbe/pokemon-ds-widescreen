@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **README: Use your own save**, near the top: where each platform keeps the saves, each game's
+  save name, and which save files work.
 - **One download per platform:** the all-in-one for the Switch and the PC download, each with all
   seven games. The one-game Switch downloads are no longer published; their folders keep working
   from the all-in-one's list.

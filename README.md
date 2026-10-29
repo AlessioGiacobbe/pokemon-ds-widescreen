@@ -21,6 +21,31 @@ One program per platform: start it and pick the game from the list. The
 downloads are free of the games themselves: you bring your own ROMs, and the
 program reads what it needs from them when the game starts.
 
+## Use your own save
+
+Carry on from your own save: from another emulator, a flash cart or your real
+cartridge. Copy it in under the game's name, in this folder:
+
+| Where you play | Folder |
+|---|---|
+| PC (Windows, Linux, Steam Deck) | the `saves` folder beside the program |
+| Nintendo Switch | `/switch/pokemon-ds-wide/` on the SD card |
+
+| Game | Save name |
+|---|---|
+| Black 2 / White 2 | `black2.sav` / `white2.sav` |
+| Black / White | `black.sav` / `white.sav` |
+| SoulSilver / HeartGold | `soulsilver.sav` / `heartgold.sav` |
+| Platinum | `platinum.sav` |
+
+- **Which files work:** a plain `.sav`, as melonDS, DeSmuME (Export Backup
+  Memory), flash carts (TWiLight Menu++, R4 and the like) and cartridge dump
+  tools (Checkpoint, JKSM, GodMode9) make it. A DraStic or DeSmuME `.dsv`, or an
+  Action Replay save (`.duc`), first goes through
+  [`tools/bw2/convert_save.py`](tools/bw2/convert_save.py).
+- **Check it worked:** the game list shows SAVE FOUND under the game (NEW GAME: not found).
+- **Back up first:** a save copied in replaces the one there under that name.
+
 ## What is it?
 
 A program for your PC or your Switch (as homebrew) that runs the game on the
