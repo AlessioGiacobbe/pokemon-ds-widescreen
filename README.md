@@ -67,9 +67,9 @@ inside has the full list.
 
 **Saves** go in the `saves` folder, one per game (`black2.sav`, `soulsilver.sav`,
 `platinum.sav`, ...). To carry on from another emulator, put its `.sav` there
-under that name. **Pictures** for the list: a JPEG or PNG in an `icons` folder
-beside the program, named after the game's code (`IREO.jpg` for Black 2, see
-the `README.txt`); without one, the list shows the game's own DS icon.
+under that name. **Pictures**: the list shows each game's box art; for your own,
+put a JPEG or PNG in an `icons` folder beside the program, named after the game's
+code (`IREO.jpg` for Black 2, see the `README.txt`).
 
 ![The settings page: each option with its value and what it does, 3D RESOLUTION chosen at 1080P](docs/screenshots/pc-settings-page.png)
 

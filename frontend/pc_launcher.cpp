@@ -39,6 +39,11 @@ extern const uint32_t rc_num_chunks;
 
 namespace PcLauncher
 {
+#ifdef SSR_PC_ART
+// The game list's pictures built into the program (pc_art.cpp, made by CMakeLists.txt from the
+// builder's SSR_PC_ART folder): the JPEG or PNG for a game code, or null.
+const unsigned char* BuiltInArt(const char* code, size_t& size);
+#endif
 namespace
 {
 std::vector<std::string> g_args;
@@ -254,6 +259,12 @@ std::vector<Launcher::Game> FindGames(const Folders& fo, std::map<std::string, s
             if (it == artCache.end())
             {
                 Launcher::FindArt(g, fo.art);
+#ifdef SSR_PC_ART
+                // Without one, the picture built into the program (SSR_PC_ART), if any.
+                size_t size = 0;
+                if (g.art.empty())
+                    if (const unsigned char* data = BuiltInArt(g.code.c_str(), size)) Launcher::LoadArt(data, size, g.art);
+#endif
                 it = artCache.emplace(g.rom, g.art).first;
             }
             g.art = it->second;

@@ -309,6 +309,39 @@ else()
         target_link_options(ssrecomp PRIVATE -static)
     endif()
 endif()
+# The all-games program's game list: pictures of the games built into it (SSR_PC_ART, a folder of
+# the builder's own with IREO.jpg, IRDO.jpg ... named as for the list's icons/ folder; none come
+# with the source), shown for a game the player has no picture of.
+set(SSR_PC_ART "" CACHE PATH "a folder of pictures for the game list, built into the program")
+if(SSR_PC_ALL_GAMES AND SSR_PC_ART AND IS_DIRECTORY "${SSR_PC_ART}")
+    set(_art_body "")
+    set(_art_table "")
+    foreach(code IRBO IRAO IREO IRDO IPKE IPGE CPUE)
+        foreach(ext jpg png)
+            if(EXISTS "${SSR_PC_ART}/${code}.${ext}")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SSR_PC_ART}/${code}.${ext}")
+                file(READ "${SSR_PC_ART}/${code}.${ext}" _hex HEX)
+                string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _bytes "${_hex}")
+                string(APPEND _art_body "static const unsigned char art_${code}[] = {${_bytes}};\n")
+                string(APPEND _art_table "        { \"${code}\", art_${code}, sizeof art_${code} },\n")
+                break()
+            endif()
+        endforeach()
+    endforeach()
+    # (Written only when it changes, so that configuring again does not rebuild it.)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pc_art.cpp.new"
+        "// The game list's pictures, from ${SSR_PC_ART} (CMakeLists.txt, SSR_PC_ART).\n"
+        "#include <cstddef>\n#include <cstring>\n${_art_body}"
+        "namespace PcLauncher\n{\nconst unsigned char* BuiltInArt(const char* code, size_t& size)\n{\n"
+        "    static const struct { const char* code; const unsigned char* data; size_t size; } art[] = {\n"
+        "${_art_table}        { nullptr, nullptr, 0 },\n    };\n"
+        "    for (const auto& a : art)\n"
+        "        if (a.code && !strcmp(a.code, code))\n        {\n            size = a.size;\n            return a.data;\n        }\n"
+        "    return nullptr;\n}\n}\n")
+    configure_file("${CMAKE_CURRENT_BINARY_DIR}/pc_art.cpp.new" "${CMAKE_CURRENT_BINARY_DIR}/pc_art.cpp" COPYONLY)
+    target_sources(ssrecomp PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/pc_art.cpp")
+    target_compile_definitions(ssrecomp PRIVATE SSR_PC_ART)
+endif()
 if(SSR_GPU3D)
     if(WIN32)
         target_sources(ssrecomp PRIVATE frontend/glcontext_wgl.cpp)

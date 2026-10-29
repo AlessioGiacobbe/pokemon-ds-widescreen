@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **PC: box art in the game list**, built into the program, as on the Switch (your own pictures in
+  `icons/` still take its place).
 - **Android (test build, not released yet): one app for all seven games** with the game list,
   built by `tools/android/build_all.sh`. The first time, tap the screen, allow access to files
   and pick the folder with your ROMs (saves go in a `saves` folder inside it). On touch screens

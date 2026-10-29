@@ -19,7 +19,8 @@
 # MinGW-w64 (sudo apt install g++-mingw-w64-x86-64-posix), for Linux SDL2's development files
 # (sudo apt install libsdl2-dev). SDL2 for Windows is SDL's own MinGW package, fetched once into
 # build-pc-deps/ and checked against its known checksum. The Windows program's icon:
-# SSR_PC_ICON=your.ico (optional).
+# SSR_PC_ICON=your.ico (optional). The game list's pictures, built into the program: SSR_PC_ART, a
+# folder of your own with IREO.jpg, IRDO.jpg ... named as for the list's icons/ folder (optional).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -105,6 +106,9 @@ cp tools/platinum/CPUE.txt "$DATA/funcs/CPUE.txt"
 # (SSR_PORTABLE_X86), so that it runs on any 64-bit PC.
 COMMON=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DSSR_JIT=ON -DSSR_PC_ALL_GAMES=ON -DSSR_PNG=OFF -DSSR_GPU3D=ON
         -DSSR_PORTABLE_X86=ON -DSSR_GENERATED_DIR="$HERE/build-gen-tables")
+ART="${SSR_PC_ART:-}"
+[ -n "$ART" ] && { [ -d "$ART" ] || fail "SSR_PC_ART: no such folder: $ART"; ART="$(realpath "$ART")"; say "Pictures for the game list: $ART"; }
+COMMON+=(-DSSR_PC_ART="$ART")
 mkdir -p build-pc-dist
 
 # The folder the player unpacks: the program, its function tables, an empty roms folder and the

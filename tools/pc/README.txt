@@ -60,9 +60,9 @@ WHERE THINGS ARE KEPT
   roms/           your ROMs
   icons/          pictures for the game list, if you want them: a JPEG or PNG named by the
                   game's code (IREO.jpg Black 2, IRDO White 2, IRBO Black, IRAO White,
-                  IPKE HeartGold, IPGE SoulSilver, CPUE Platinum). Without one, the list shows
-                  the game's own small DS icon. A picture named like the ROM (Black 2.jpg beside
-                  Black 2.nds) works too.
+                  IPKE HeartGold, IPGE SoulSilver, CPUE Platinum), in place of the box art
+                  the list shows. A picture named like the ROM (Black 2.jpg beside Black 2.nds)
+                  works too.
   saves/          your saved games, one per game (black2.sav, soulsilver.sav, ...)
   settings.cfg    your settings
   game.log        what happened in the last session (send it with a bug report)

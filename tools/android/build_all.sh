@@ -20,6 +20,8 @@
 # into build-android-deps/ and checked against its known checksum (the same SDL2 as the setup
 # program's Android build). Options:
 #   SSR_ANDROID_ICON=icon.png   the app's icon (any picture; default the setup program's)
+#   SSR_PC_ART=folder           pictures for the game list, built into the app (IREO.jpg ...,
+#                               named as for the PC download's icons/ folder)
 #   SSR_ANDROID_KEY=key.json    the signing key, made on the first build: keep it, as Android
 #                               only installs an update over an app signed with the same key
 #                               (default ~/.config/pokemon-ds-wide/android-signing-key.json)
@@ -35,6 +37,7 @@ JAR="$SDK/platforms/android-34/android.jar"
 ABIS="${SSR_ANDROID_ABIS:-arm64-v8a x86_64}"
 KEY="${SSR_ANDROID_KEY:-$HOME/.config/pokemon-ds-wide/android-signing-key.json}"
 ICON="${SSR_ANDROID_ICON:-$HERE/tools/appimage/ssrecomp-setup.png}"
+ART="${SSR_PC_ART:-}"
 BW2_DECOMP=https://github.com/fuddlesworth/pokebw2.git
 BW2_COMMIT=753b3fd97683fc619bb98b52e7276afac3d5e32f
 W2_COMMIT=be2c125a700c23702ba1c5a4ef63e0e970bcc87a
@@ -61,6 +64,8 @@ python3 -c 'import PIL' 2>/dev/null || fail "Pillow is not installed (Ubuntu: su
 [ -x "$BT/aapt2" ] || fail "build-tools 34.0.0 are not in $SDK (sdkmanager --install 'build-tools;34.0.0')"
 [ -f "$JAR" ] || fail "platform 34 is not in $SDK (sdkmanager --install 'platforms;android-34')"
 [ -f "$ICON" ] || fail "SSR_ANDROID_ICON: no such file: $ICON"
+[ -z "$ART" ] || [ -d "$ART" ] || fail "SSR_PC_ART: no such folder: $ART"
+[ -z "$ART" ] || ART="$(realpath "$ART")"
 
 # The symbol files of a decompilation at a fixed version, without the rest of it.
 fetch_symbols() { # dir url commit paths...
@@ -126,7 +131,7 @@ for abi in $ABIS; do
     # the building machine's AVX2.
     cmake -S . -B "build-android-all-$abi" "${ARGS[@]}" -DSDL2_DIR="$SDL_PREFIX/lib/cmake/SDL2" \
         -DSSR_JIT=ON -DSSR_PC_ALL_GAMES=ON -DSSR_PNG=OFF -DSSR_GPU3D=OFF -DSSR_PORTABLE_X86=ON \
-        -DSSR_GENERATED_DIR="$HERE/build-gen-tables" >/dev/null
+        -DSSR_GENERATED_DIR="$HERE/build-gen-tables" -DSSR_PC_ART="$ART" >/dev/null
     ninja -C "build-android-all-$abi" ssrecomp
     mkdir -p "build-android-dist/lib/$abi"
     "$STRIP" -o "build-android-dist/lib/$abi/libmain.so" "build-android-all-$abi/libmain.so"
