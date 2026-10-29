@@ -9,8 +9,10 @@
   questions answered only by touch (Platinum's first YES / NO with Professor Rowan) could not be
   answered. Docked (or handheld), the right stick moves a cursor and ZL touches; pressing the
   right stick in shows the other screen.
-- **Platinum: A and B answer Professor Rowan's YES / NO** at the start of a new game (A for YES,
-  B for NO), which the game itself only takes as a touch.
+- **Platinum: the introduction on one screen.** Professor Rowan's screen fills the view; for his
+  two questions that take a touch, the YES / NO buttons or the Poke Ball stand at the right edge
+  (touchable). A and B answer them too (A for YES, B for NO, A presses the Poke Ball's button),
+  which the game itself only takes as a touch.
 - **Switch: HOME MENU ICONS** in the all-in-one's settings (Y in the list): an icon on the HOME
   Menu for each game, with its box art, that starts the game straight away. Made on the console
   (no PC or keys file); like any forwarder they need sigpatches. The list shows box art for every

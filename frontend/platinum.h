@@ -6,7 +6,9 @@
 // on the top screen (the Poketch on the touch screen beside it), battles with their commands
 // on the touch screen. pickSceneBw2 in main.cpp picks the scenes from the functions below.
 #pragma once
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -15,6 +17,27 @@
 
 struct PtFuncs
 {
+    // The introduction's two questions answered only by a touch (Professor Rowan's), from the
+    // touch screen's picture (0xRRGGBB pixels): INTRO_YESNO, his YES / NO (YES red at x 100-140,
+    // y 70-92, NO blue at y 110-132); INTRO_BALL, "Touch the button on the middle of the Poke
+    // Ball" (the ball at x 58-200, y 26-170, its pale blue button at 128, 96); 0 for neither.
+    enum { INTRO_YESNO = 1, INTRO_BALL = 2 };
+    static int IntroTouch(const uint32_t* bottom)
+    {
+        if (!bottom) return 0;
+        auto is = [&](int x, int y, int r, int g, int b) {
+            const uint32_t c = bottom[y * 256 + x];
+            return std::abs((int)((c >> 16) & 0xFF) - r) < 40 && std::abs((int)((c >> 8) & 0xFF) - g) < 40 &&
+                   std::abs((int)(c & 0xFF) - b) < 40;
+        };
+        if (is(108, 76, 251, 89, 89) && is(132, 84, 251, 89, 89) && is(108, 116, 73, 154, 219) && is(132, 124, 73, 154, 219))
+            return INTRO_YESNO;
+        if (is(100, 70, 219, 97, 97) && is(156, 70, 219, 97, 97) && is(128, 60, 219, 97, 97) && is(100, 120, 251, 251, 251) &&
+            is(156, 120, 251, 251, 251) && is(128, 130, 251, 251, 251) && is(128, 96, 211, 227, 251))
+            return INTRO_BALL;
+        return 0;
+    }
+
     // Whether a weather with particles ran within the last `frames` frames.
     bool Weather(const FuncWatch& fw, unsigned frames) const
     {

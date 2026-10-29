@@ -2443,6 +2443,30 @@ int main(int argc, char** argv)
                 // The question (the top screen's message box) above the name and the keyboard.
                 sc = Stack("naming", { Crop(0, 0, 144, 256, 48), Crop(1, 0, 0, 256, 192) }, false, viewWidth);
             else if (ran(pt.evolution) || ran(pt.eggHatch)) alone("evolution", 0);
+            else if (ran(pt.intro))
+            {
+                // A new game's introduction: Professor Rowan, his words and the pages on the
+                // controls are all on the top screen; the touch screen only has a pattern, except
+                // for his two questions answered by a touch (PtFuncs::IntroTouch). For those, the
+                // YES / NO buttons or the Poke Ball are cut out of the touch screen and stand at
+                // the right edge of the view, above the message box (y 144 on), touchable.
+                alone("intro", 0);
+                const int touch = screens ? PtFuncs::IntroTouch(screens[1].pixels) : 0;
+                if (touch)
+                {
+                    Element crop = touch == PtFuncs::INTRO_YESNO ? Crop(1, 94, 64, 54, 74) : Crop(1, 56, 24, 146, 148);
+                    const float scale = touch == PtFuncs::INTRO_YESNO ? 1.0f : 0.6f;
+                    const float pad = 2, w = crop.sw * scale, h = crop.sh * scale;
+                    const float x = (wideView ? viewRight : 256.0f) - w - pad - 2, y = 72 - h / 2;
+                    sc.items.push_back(FillRect(x - pad, y - pad, (int)(w + 2 * pad), (int)(h + 2 * pad), 0x14141C));
+                    sc.items.back().border = true;
+                    crop.dx = x;
+                    crop.dy = y;
+                    crop.scale = scale;
+                    sc.items.push_back(crop);
+                    sc.name = "intro-touch";
+                }
+            }
             else if (ran(pt.starter))
             {
                 // The briefcase on the grass, in 3D: widened like the world.
@@ -5372,41 +5396,38 @@ int main(int argc, char** argv)
             }
         }
 
-        // Platinum's introduction: Professor Rowan's YES / NO ("Please touch a button on the
-        // Touch Screen below") takes only a touch, and the game ignores the buttons there. While
-        // its two buttons are on the touch screen (YES red at x 100-140, y 70-92, NO blue below
-        // it at y 110-132), A touches YES and B touches NO, so a controller can answer too.
+        // Platinum's introduction: two of Professor Rowan's questions take only a touch, and the
+        // game ignores the buttons there (PtFuncs::IntroTouch): his YES / NO ("Please touch a
+        // button on the Touch Screen below"), where A touches YES and B touches NO, and "Touch the
+        // button on the middle of the Poke Ball", where A touches it. So a controller can answer.
         if (pt.on && funcWatchOn && !paused && funcWatch.Ran(pt.intro, 2))
         {
-            static uint32_t prevYesNoKeys = 0;
-            static int yesNoTouch = 0, yesNoY = 0;
-            const uint32_t edge = keys & ~prevYesNoKeys;
-            prevYesNoKeys = keys;
-            const u32* bottom = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
-            auto pixelNear = [&](int x, int y, int r, int g, int b) {
-                const u32 c = bottom[y * 256 + x];
-                return std::abs((int)((c >> 16) & 0xFF) - r) < 40 && std::abs((int)((c >> 8) & 0xFF) - g) < 40 &&
-                       std::abs((int)(c & 0xFF) - b) < 40;
-            };
-            const bool shown = bottom && pixelNear(108, 76, 251, 89, 89) && pixelNear(132, 84, 251, 89, 89) &&
-                               pixelNear(108, 116, 73, 154, 219) && pixelNear(132, 124, 73, 154, 219);
-            if (shown || yesNoTouch > 0)
+            static uint32_t prevIntroKeys = 0;
+            static int introTouch = 0, introX = 0, introY = 0;
+            const uint32_t edge = keys & ~prevIntroKeys;
+            prevIntroKeys = keys;
+            const int kind = PtFuncs::IntroTouch(nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get());
+            const uint32_t answer = kind == PtFuncs::INTRO_YESNO ? (1u << KEY_A) | (1u << KEY_B) : kind ? (1u << KEY_A) : 0;
+            if (answer || introTouch > 0)
             {
-                if (shown && yesNoTouch == 0 && (edge & ((1u << KEY_A) | (1u << KEY_B))))
+                if (answer && introTouch == 0 && (edge & answer))
                 {
-                    yesNoTouch = 4;
-                    yesNoY = (edge & (1u << KEY_A)) ? 81 : 121;
-                    fprintf(stderr, "[yes-no] frame %u: %s touched\n", frame, yesNoY == 81 ? "YES" : "NO");
+                    introTouch = 4;
+                    introX = kind == PtFuncs::INTRO_YESNO ? 120 : 128;
+                    introY = kind == PtFuncs::INTRO_BALL ? 96 : (edge & (1u << KEY_A)) ? 81 : 121;
+                    fprintf(stderr, "[intro] frame %u: touched %s\n", frame,
+                            kind == PtFuncs::INTRO_BALL ? "the Poke Ball" : introY == 81 ? "YES" : "NO");
                 }
-                // (A would only bring up "Please touch a button" again.)
-                keys &= ~((1u << KEY_A) | (1u << KEY_B));
+                // (Given to the game, A would only bring up "Please touch a button" or "Not that
+                // button!".)
+                keys &= ~answer;
             }
-            if (yesNoTouch > 0)
+            if (introTouch > 0)
             {
                 touching = true;
-                touchX = 120;
-                touchY = yesNoY;
-                yesNoTouch--;
+                touchX = introX;
+                touchY = introY;
+                introTouch--;
             }
         }
 
