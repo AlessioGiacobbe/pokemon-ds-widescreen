@@ -1264,7 +1264,9 @@ struct Settings
     // view does not run out of land at its sides (frontend/bw2map.h). Read when the game starts.
     bool wideMap = true;
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
-    bool autoDetail = true; // fewer of those lines while the drawing cannot keep up
+    // Fewer of those lines while the drawing cannot keep up: off unless turned on (LOWER DETAIL /
+    // RES WHEN BUSY). Kept as busy_detail: the auto_detail an older version saved was on by default.
+    bool autoDetail = false;
     bool byLabel = true;
     bool fps60 = true;
     // Right stick as a touch cursor, left trigger as the press (the right one fast forwards),
@@ -1334,7 +1336,7 @@ struct Settings
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_map") wideMap = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
-            else if (k == "auto_detail") autoDetail = v != "0";
+            else if (k == "busy_detail") autoDetail = v == "1";
             else if (k == "buttons") byLabel = v != "positions";
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
@@ -1376,7 +1378,7 @@ struct Settings
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_map=" << (wideMap ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
-        f << "auto_detail=" << (autoDetail ? 1 : 0) << "\n";
+        f << "busy_detail=" << (autoDetail ? 1 : 0) << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
@@ -5095,7 +5097,7 @@ int main(int argc, char** argv)
             // emulation waited for it more than 1.5 ms in each of the last 3 frames: a move's
             // animation full of see-through effects), fewer lines for a while, down to 192, a
             // fifth fewer each time; back up a tenth at a time after 2 seconds without waiting.
-            // LOWER DETAIL WHEN BUSY in the menu (auto_detail) turns this off.
+            // LOWER DETAIL WHEN BUSY in the menu (busy_detail) turns this on.
             // (Not in the tests without a window, whose pictures must not depend on timing.)
             static int adaptLines = 0, slowFrames = 0, calmFrames = 0;
             static uint64_t lastWideNs = 0;

@@ -104,7 +104,7 @@ menu before you play, each option explained. The ones that matter most on a PC:
 | Setting | Starts at | What it does |
 |---|---|---|
 | 3D RESOLUTION | 1080P | how sharp the 3D world is: 720P, 1080P, 1440P (2K) or 2160P (4K) |
-| LOWER RES WHEN BUSY | ON | a lower resolution for a moment instead of slowing down |
+| LOWER RES WHEN BUSY | OFF | ON: a lower resolution for a moment instead of slowing down |
 | FAST FORWARD LOW RES | OFF | ON: 360P while fast forwarding, for more FPS on a slower PC |
 | WORLD ON GPU | ON | the world drawn by your graphics card; turn it off if it looks wrong |
 | BORDERLESS FULLSCREEN | ON | fills your screen; F11 does the same |
@@ -210,7 +210,7 @@ in busy places.
 | 60 FPS | ON | in-between frames: the games draw their 3D at 30 fps |
 | BATTLE BUTTONS | PANEL | Black 2, White 2, Black and White: the game's own FIGHT, BAG, RUN and POKÉMON panel beside the battle (Black and White also have STRIP: large buttons in the message box) |
 | WORLD DETAIL | 720 | lines the wide world is drawn with (540 if you want headroom) |
-| LOWER DETAIL WHEN BUSY | ON | fewer lines for a moment instead of slowing down |
+| LOWER DETAIL WHEN BUSY | OFF | ON: fewer lines for a moment instead of slowing down |
 
 The world is always drawn by the Switch's graphics chip, and each frame is
 shown at an even time, a frame after it is made (smoother in busy towns and

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **LOWER DETAIL WHEN BUSY (LOWER RES WHEN BUSY on a PC or phone) is off to start**, on every
+  platform, also for players who had it on from before; turn it on in the settings if you want it.
 - **Android: the first public release** (`pokemon-ds-wide-android.apk`), all seven games in one
   app, with on-screen controls and controller support. README: an Android section.
 - **START opens the pause menu** (+ on the Switch, a controller's START on a PC or phone). The

@@ -48,7 +48,8 @@ PICTURE SETTINGS (Esc menu)
                      1440P (2K), 2160P (4K) and lower for slow PCs. The 2D sprites and
                      text stay the DS's own pixels. With WORLD ON GPU, 1080P or 1440P
                      suits most PCs; 2160P needs a good graphics card.
-  LOWER RES WHEN BUSY      lowers the 3D RESOLUTION for a moment when the PC cannot keep up.
+  LOWER RES WHEN BUSY      off to start. ON: lowers the 3D RESOLUTION for a moment when the PC
+                     cannot keep up, instead of slowing down.
   FAST FORWARD LOW RES     off to start. ON: the 3D world drops to 360P while you fast forward,
                      for more FPS (a faster fast forward if your PC cannot keep up).
   BORDERLESS FULLSCREEN    on to start: fills your screen at its own resolution as a
