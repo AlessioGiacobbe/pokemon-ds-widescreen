@@ -902,13 +902,16 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                                            : std::string("UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC: BACK");
 #endif
         static const Launcher::Theme theme;
-        if (guide) page.Draw(canvas, pageHint, theme);
-        if (guide && keysOpen)
+        if (guide)
         {
-            std::string kh = keysCapture >= 0 ? (keysKeyboard ? "ESC: LEAVE IT AS IT WAS" : "OR WAIT 5 SECONDS: AS IT WAS")
-                           : padIn ? btn(Controls::A) + ": CHANGE   " + btn(Controls::B) + ": BACK" : std::string("ENTER: CHANGE   ESC: BACK");
-            if (keysCapture < 0 && keysMenu.selected == 0) kh = "CHANGE: KEYBOARD OR CONTROLLER";
-            keysMenu.Draw(canvas, "KEYS AND BUTTONS", kh);
+            page.Draw(canvas, pageHint, theme);
+            if (keysOpen)
+            {
+                std::string kh = keysCapture >= 0 ? (keysKeyboard ? "ESC: LEAVE IT AS IT WAS" : "OR WAIT 5 SECONDS: AS IT WAS")
+                               : padIn ? btn(Controls::A) + ": CHANGE   " + btn(Controls::B) + ": BACK" : std::string("ENTER: CHANGE   ESC: BACK");
+                if (keysCapture < 0 && keysMenu.selected == 0) kh = "CHANGE: KEYBOARD OR CONTROLLER";
+                keysMenu.Draw(canvas, "KEYS AND BUTTONS", kh);
+            }
         }
         else cols = Launcher::Draw(canvas, games, onSettings ? -1 : selected, first, note, hint, theme);
         {
