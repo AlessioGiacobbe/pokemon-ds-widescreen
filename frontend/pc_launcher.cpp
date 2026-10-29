@@ -361,8 +361,12 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     Controls::Bindings ctl;
     ctl.Load(fo.cfg);
     float trig[2] = {}; // (the triggers as last seen: one pushed past half way is a press)
+    // The title band's SETTINGS (and BACK on the settings page) can be chosen like a game: up
+    // from the top row (the first option), then A.
+    bool onSettings = false, onBack = false;
     auto toggleGuide = [&]() {
         guide = !guide;
+        onBack = false;
         if (guide) page.Open(fo.cfg);
     };
     auto change = [&](int d) {
@@ -387,9 +391,19 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
         }
     };
     auto choose = [&]() {
+        if (guide && onBack)
+        {
+            toggleGuide();
+            return;
+        }
         if (guide)
         {
             change(1);
+            return;
+        }
+        if (onSettings)
+        {
+            toggleGuide();
             return;
         }
 #ifdef __ANDROID__
@@ -411,8 +425,28 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
     auto move = [&](int dir) { // 1 left, 2 right, 3 up, 4 down
         if (guide)
         {
+            if (onBack)
+            {
+                if (dir == 4) onBack = false;
+                return;
+            }
             if (dir == 1 || dir == 2) change(dir == 1 ? -1 : 1);
-            else page.Move(dir == 3 ? -1 : 1);
+            else
+            {
+                const int before = page.selected;
+                page.Move(dir == 3 ? -1 : 1);
+                if (dir == 3 && page.selected == before) onBack = true; // (up from the first option)
+            }
+            return;
+        }
+        if (onSettings)
+        {
+            if (dir == 4 && !games.empty()) onSettings = false;
+            return;
+        }
+        if (dir == 3 && (games.empty() || selected < cols))
+        {
+            onSettings = true; // (up from the top row)
             return;
         }
         if (games.empty()) return;
@@ -629,9 +663,10 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
                     choose();
                     break;
                 }
-                if (i >= 0 && i != selected && (e.type == SDL_MOUSEBUTTONDOWN || (e.motion.xrel || e.motion.yrel)))
+                if (i >= 0 && (i != selected || onSettings) && (e.type == SDL_MOUSEBUTTONDOWN || (e.motion.xrel || e.motion.yrel)))
                 {
                     selected = i;
+                    onSettings = false;
                     note.clear();
                 }
 #ifdef __ANDROID__
@@ -741,15 +776,20 @@ int PickGame(Folders& fo, std::vector<Launcher::Game>& games, int selected, bool
 #endif
         static const Launcher::Theme theme;
         if (guide) page.Draw(canvas, pageHint, theme);
-        else cols = Launcher::Draw(canvas, games, selected, first, note, hint, theme);
+        else cols = Launcher::Draw(canvas, games, onSettings ? -1 : selected, first, note, hint, theme);
         {
             // The title band's buttons (for touch screens and the mouse): SETTINGS, or BACK in
             // the settings; on Android FOLDER, to choose the ROM folder again.
             const int s = std::max(1, canvas.h / 240);
-            if (guide) canvas.Text(8 * s, 7 * s, "< BACK", s, theme.hint);
+            // (The chosen one, by the D-pad: framed as a game is.)
+            auto button = [&](int x, const char* text, bool on) {
+                if (on) canvas.Fill(x - 3 * s, 4 * s, Canvas::TextWidth(text, s) + 5 * s, 13 * s, theme.frame);
+                canvas.Text(x, 7 * s, text, s, on ? theme.title : theme.hint);
+            };
+            if (guide) button(8 * s, "< BACK", onBack);
             else
             {
-                canvas.Text(canvas.w - 8 * s - Canvas::TextWidth("SETTINGS", s), 7 * s, "SETTINGS", s, theme.hint);
+                button(canvas.w - 8 * s - Canvas::TextWidth("SETTINGS", s), "SETTINGS", onSettings);
 #ifdef __ANDROID__
                 canvas.Text(8 * s, 7 * s, "FOLDER", s, theme.hint);
 #endif
