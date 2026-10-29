@@ -1659,6 +1659,14 @@ int main(int argc, char** argv)
 #endif
 #endif
     if (!opt.headless) cfg.Load(opt.config);
+#ifdef __SWITCH__
+    // Not in the Switch's pause menu any more, so what an older version saved is not kept: the
+    // world on the graphics chip, one frame ahead, and no stick touch cursor (the Switch has
+    // its touch screen). (A test run's "set" lines below can still change them.)
+    cfg.wideGpu = true;
+    cfg.frameAhead = true;
+    cfg.padTouch = false;
+#endif
     for (const std::string& kv : opt.sets) cfg.Apply(kv);
     if (!opt.sets.empty() || opt.keepSettings) cfg.readOnly = true;
 #ifdef __SWITCH__
@@ -1726,10 +1734,18 @@ int main(int argc, char** argv)
                 remove(WideGpuMarker.c_str());
                 if (cfg.wideGpu)
                 {
+#ifdef __SWITCH__
+                    // (For this start only: there is no menu row to turn it back on, and the
+                    // next start tries again.)
+                    want = false;
+                    fprintf(stderr, "[widegpu] the world on the graphics chip did not keep going last time: "
+                        "the processor draws it this time\n");
+#else
                     want = cfg.wideGpu = false;
                     cfg.Save(opt.config);
                     fprintf(stderr, "[widegpu] the world on the graphics chip did not keep going last time: turned off "
                         "(WORLD ON GPU in the pause menu turns it back on)\n");
+#endif
                 }
             }
         }
@@ -3708,14 +3724,13 @@ int main(int argc, char** argv)
         M_LAYOUT, M_LARGE,
 #endif
         M_FPS60,
-#ifdef __SWITCH__
-        M_AHEAD,
-#endif
 #ifndef __SWITCH__
         M_FULLSCREEN,
 #endif
         M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS, M_WIDELINES, M_AUTODETAIL,
-#if SSR_WORLD_ON_GPU
+#if SSR_WORLD_ON_GPU && !defined(__SWITCH__)
+        // (On the Switch always on: its fallback after a start that did not keep going is for
+        // that start only, see StartWideGpu's marker.)
         M_WIDEGPU,
 #endif
 #if SSR_MENU_GPU3D
@@ -3724,8 +3739,8 @@ int main(int argc, char** argv)
         M_SHOWFPS,
 #ifndef __SWITCH__
         M_BUTTONS,
+        M_PADTOUCH, // (the Switch has its touch screen)
 #endif
-        M_PADTOUCH,
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
@@ -3753,12 +3768,6 @@ int main(int argc, char** argv)
             { "LARGE SCREEN", large[focus.mode] },
 #endif
             { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
-#ifdef __SWITCH__
-            // ON: the game runs one frame ahead of the screen and each frame is shown at an even
-            // time (`ahead`), smoother where frames take nearly 16.7 ms; OFF: each frame shown
-            // as soon as it is made, a frame sooner after a button.
-            { "ONE FRAME AHEAD", cfg.frameAhead ? "ON" : "OFF" },
-#endif
 #ifndef __SWITCH__
             // (Always full screen on the Switch. CPU BOOST was here: the system kept taking
             // its boost mode away, so the game dropped frames; sys-clk sets the clocks there.)
@@ -3787,9 +3796,8 @@ int main(int argc, char** argv)
             }() },
             { "LOWER RES WHEN BUSY", cfg.autoDetail ? "ON" : "OFF" },
 #endif
-#if SSR_WORLD_ON_GPU
-            // ON: the widescreen world drawn by the graphics chip (deko3D on the Switch, OpenGL
-            // on a PC), not the processor.
+#if SSR_WORLD_ON_GPU && !defined(__SWITCH__)
+            // ON: the widescreen world drawn by the graphics card (OpenGL), not the processor.
             { "WORLD ON GPU", melonDS::WideGpuCurrent ? "ON" : cfg.wideGpu ? "ON (NOT AVAILABLE)" : "OFF" },
 #endif
 #if SSR_MENU_GPU3D
@@ -3803,8 +3811,8 @@ int main(int argc, char** argv)
 #ifndef __SWITCH__
             // (Nothing to choose on the Switch: its labels are the DS's positions.)
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
-#endif
             { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
+#endif
 #if SSR_MENU_EMULATION
             // Read when the game starts (SwitchPlatform::Start); a change waits for the next start.
             // FAST JIT: the JIT with fast memory.
@@ -4195,7 +4203,8 @@ int main(int argc, char** argv)
     // longer than 16.7 ms then no longer makes its picture late, as long as the frames around
     // it make up for it. Each frame reaches the screen a frame later. Not with the OpenGL 3D
     // of a PC (GPU3D_GLThread.h), which works on this thread between the emulation's steps.
-    // ONE FRAME AHEAD in the menu turns it on and off (cfg.frameAhead).
+    // Always on on the Switch (cfg.frameAhead, see where the settings are read); a test run's
+    // "set frame_ahead=0" or SSR_AHEAD=0 turns it off for comparing.
     bool aheadAllowed = pipelined && !(getenv("SSR_AHEAD") && getenv("SSR_AHEAD")[0] == '0');
 #ifdef SSR_GPU3D
     if (melonDS::GLThreadRenderer::Current) aheadAllowed = false;
@@ -4735,21 +4744,6 @@ int main(int argc, char** argv)
                 cfg.fps60 = !cfg.fps60;
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
                 break;
-#ifdef __SWITCH__
-            case M_AHEAD:
-                cfg.frameAhead = !cfg.frameAhead;
-                // (Paused: the emulation thread is idle. Whatever is still waiting to be shown
-                // goes first, so that no picture is lost or shown twice in the switch.)
-                while (aheadCount) presentDue(true);
-                if (pendingJob.valid)
-                {
-                    drawFrame(pendingJob);
-                    pendingJob.valid = false;
-                }
-                ahead = aheadAllowed && cfg.frameAhead;
-                fprintf(stderr, "[pipeline] one frame ahead %s\n", ahead ? "on" : aheadAllowed ? "off" : "off (not available)");
-                break;
-#endif
 #ifndef __SWITCH__
             case M_FULLSCREEN:
                 cfg.fullscreen = !cfg.fullscreen;
@@ -4784,7 +4778,7 @@ int main(int argc, char** argv)
                 if (cfg.gpu3d && !UseGpu3D) say("NOT AVAILABLE: SEE GAME.LOG");
                 break;
 #endif
-#if SSR_WORLD_ON_GPU
+#if SSR_WORLD_ON_GPU && !defined(__SWITCH__)
             case M_WIDEGPU:
                 // (between frames: the emulation thread is idle here)
                 cfg.wideGpu = !cfg.wideGpu;
@@ -4810,10 +4804,10 @@ int main(int argc, char** argv)
             case M_BUTTONS:
                 cfg.byLabel = !cfg.byLabel;
                 break;
-#endif
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
+#endif
 #if SSR_MENU_EMULATION
             case M_EMULATION:
                 // FAST JIT, JIT, INTERPRETER, and round again.

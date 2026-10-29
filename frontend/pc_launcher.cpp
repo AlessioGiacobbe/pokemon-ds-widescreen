@@ -215,15 +215,30 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
     int held = 0, heldDir = 0;
     Uint32 lastScan = SDL_GetTicks();
     bool quit = false;
-    // The pause menu's guide (Launcher::DrawGuide): H, F1 or a controller's Y; Esc or B back.
+    // The settings page (Launcher::SettingsPage): H, F1 or a controller's Y; Esc or B back.
     bool guide = false;
-    int guideScroll = 0;
+    Launcher::SettingsPage page;
     auto toggleGuide = [&]() {
         guide = !guide;
-        guideScroll = 0;
+        if (guide) page.Open(fo.cfg);
+    };
+    auto change = [&](int d) {
+        const char* key = page.Change(d);
+        // (BORDERLESS FULLSCREEN applies to this window too, as F11 does.)
+        if (key && !strcmp(key, "fullscreen"))
+        {
+            int w = 0, h = 0;
+            fullscreen = ConfigFullscreen(fo.cfg, w, h);
+            SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+        }
     };
     auto choose = [&]() {
-        if (games.empty() || guide) return;
+        if (guide)
+        {
+            change(1);
+            return;
+        }
+        if (games.empty()) return;
         if (Playable(fo, games[selected]))
         {
             result = selected;
@@ -235,7 +250,8 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
     auto move = [&](int dir) { // 1 left, 2 right, 3 up, 4 down
         if (guide)
         {
-            guideScroll += dir == 3 ? -2 : dir == 4 ? 2 : 0;
+            if (dir == 1 || dir == 2) change(dir == 1 ? -1 : 1);
+            else page.Move(dir == 3 ? -1 : 1);
             return;
         }
         if (games.empty()) return;
@@ -274,13 +290,12 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: if (!e.key.repeat) choose(); break;
                 case SDLK_ESCAPE: if (guide) guide = false; else quit = true; break;
                 case SDLK_h: case SDLK_F1: toggleGuide(); break;
-                case SDLK_PAGEUP: if (guide) guideScroll -= 10; break;
-                case SDLK_PAGEDOWN: if (guide) guideScroll += 10; break;
                 case SDLK_o: OpenFolder(fo.roms); break;
                 case SDLK_F11:
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                     SetConfigFullscreen(fo.cfg, fullscreen);
+                    if (guide) page.Open(fo.cfg, true); // (the page shows the file as it now is)
                     break;
                 default: break;
                 }
@@ -312,8 +327,7 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
                 break;
             }
             case SDL_MOUSEWHEEL:
-                if (guide) guideScroll += e.wheel.y > 0 ? -2 : 2;
-                else move(e.wheel.y > 0 ? 3 : 4);
+                move(e.wheel.y > 0 ? 3 : 4);
                 break;
             default:
                 break;
@@ -355,10 +369,10 @@ int PickGame(const Folders& fo, std::vector<Launcher::Game>& games, int selected
             if (texture) SDL_DestroyTexture(texture);
             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, ow, oh);
         }
-        const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    H: MENU GUIDE    ESC: QUIT"
-                                               : "ENTER OR A: PLAY    H OR Y: MENU GUIDE    O: ROMS FOLDER    ESC: QUIT";
+        const std::string hint = games.empty() ? "O: OPEN THE ROMS FOLDER    H: SETTINGS    ESC: QUIT"
+                                               : "ENTER OR A: PLAY    H OR Y: SETTINGS    O: ROMS FOLDER    ESC: QUIT";
         static const Launcher::Theme theme;
-        if (guide) Launcher::DrawGuide(canvas, guideScroll, "UP / DOWN / MOUSE WHEEL: SCROLL    ESC OR B: BACK", theme);
+        if (guide) page.Draw(canvas, "UP / DOWN: CHOOSE    LEFT / RIGHT / ENTER: CHANGE    ESC OR B: BACK", theme);
         else cols = Launcher::Draw(canvas, games, selected, first, note, hint, theme);
         if (games.empty() && !guide)
         {

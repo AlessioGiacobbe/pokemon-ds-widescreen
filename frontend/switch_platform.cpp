@@ -74,11 +74,21 @@ bool Playable(const Launcher::Game& g)
     return RomfsReady() && stat(("romfs:/funcs/" + g.code + ".txt").c_str(), &st) == 0;
 }
 
+// The settings: settings.cfg in the program's folder (ssrecomp.cfg before; an old one is renamed).
+std::string SettingsPath(const std::string& dir)
+{
+    const std::string cfgPath = dir + "/settings.cfg", oldCfg = dir + "/ssrecomp.cfg";
+    struct stat cst;
+    if (stat(cfgPath.c_str(), &cst) != 0 && stat(oldCfg.c_str(), &cst) == 0) rename(oldCfg.c_str(), cfgPath.c_str());
+    return cfgPath;
+}
+
 // The game list (launcher.h) on the screen until a game is chosen: its index, or -1 for +.
 // Shown with libnx's framebuffer, before the game's own window exists.
 // autoFrames > 0: the list is shown that many frames and the selected game played (test runs:
 // "arg --show-list" in test.txt, to time a game started after the list).
-int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFrames = 0)
+// cfgPath: the settings file, for the settings page (Y).
+int PickGame(const std::vector<Launcher::Game>& games, int selected, const std::string& cfgPath, int autoFrames = 0)
 {
     Framebuffer fb;
     if (R_FAILED(framebufferCreate(&fb, nwindowGetDefault(), 1280, 720, PIXEL_FORMAT_RGBA_8888, 2))) return selected;
@@ -89,8 +99,8 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFra
     Canvas canvas;
     canvas.Resize(1280, 720);
     int first = 0, held = 0, result = -1, cols = 3;
-    bool guide = false;
-    int guideScroll = 0;
+    bool guide = false; // the settings page (Launcher::SettingsPage)
+    Launcher::SettingsPage page;
     std::string note;
     int shown = 0;
     while (appletMainLoop())
@@ -106,17 +116,20 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFra
         const bool up = now & HidNpadButton_AnyUp, dn = now & HidNpadButton_AnyDown;
         const bool lf = now & HidNpadButton_AnyLeft, rt = now & HidNpadButton_AnyRight;
         held = (up || dn || lf || rt) ? held + 1 : 0;
-        // Y: the pause menu's guide (Launcher::DrawGuide): up and down scroll it, B or Y go back.
+        // Y: the settings page: up and down choose, left, right and A change, B or Y go back.
         if (guide)
         {
-            if (held == 1 || (held > 12 && held % 3 == 0)) guideScroll += up ? -2 : dn ? 2 : 0;
+            const bool step = held == 1 || (held > 20 && held % 6 == 0);
+            if (step && (up || dn)) page.Move(up ? -1 : 1);
+            if (step && (lf || rt)) page.Change(lf ? -1 : 1);
+            if (down & HidNpadButton_A) page.Change(1);
             if (down & (HidNpadButton_B | HidNpadButton_Y)) guide = false;
             if (down & HidNpadButton_Plus) break;
         }
         else if (down & HidNpadButton_Y)
         {
             guide = true;
-            guideScroll = 0;
+            page.Open(cfgPath);
             held = 0;
         }
         else
@@ -143,7 +156,7 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, int autoFra
             }
             if (down & (HidNpadButton_Plus | HidNpadButton_B)) break;
         }
-        if (guide) Launcher::DrawGuide(canvas, guideScroll, "UP AND DOWN: SCROLL    B: BACK TO THE GAMES");
+        if (guide) page.Draw(canvas, "UP / DOWN: CHOOSE    LEFT / RIGHT / A: CHANGE    B: BACK");
         else cols = Launcher::Draw(canvas, games, selected, first, note);
         u32 stride;
         u32* out = (u32*)framebufferBegin(&fb, &stride);
@@ -327,7 +340,7 @@ bool Start(int& argc, char**& argv)
             // (Shown for 90 frames, then the game played last, as if chosen.)
             testArgs.erase(showList);
             for (Launcher::Game& g : games) Launcher::FindArt(g, dir);
-            chosen = PickGame(games, chosen, 90);
+            chosen = PickGame(games, chosen, SettingsPath(dir), 90);
             fprintf(stderr, "[switch] test run: %s, after the game list\n", games[chosen].rom.c_str());
         }
         else if (testRun)
@@ -357,7 +370,7 @@ bool Start(int& argc, char**& argv)
                 for (Launcher::Game& g : games)
                     for (const Launcher::Game& other : games)
                         if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
-                chosen = PickGame(games, chosen);
+                chosen = PickGame(games, chosen, SettingsPath(dir));
                 if (chosen < 0) return false;
                 if (FILE* f = fopen(lastPath.c_str(), "w"))
                 {
@@ -391,9 +404,7 @@ bool Start(int& argc, char**& argv)
     fprintf(stderr, "[switch] %s (game code %s), save %s/%s%s\n", rom.c_str(), code[0] ? code : "?", gameDir.c_str(),
         saveName.c_str(), ownFolder ? "" : " (from another folder)");
     // The settings: settings.cfg beside the game (ssrecomp.cfg before; an old one is renamed).
-    const std::string cfgPath = dir + "/settings.cfg", oldCfg = dir + "/ssrecomp.cfg";
-    struct stat cst;
-    if (stat(cfgPath.c_str(), &cst) != 0 && stat(oldCfg.c_str(), &cst) == 0) rename(oldCfg.c_str(), cfgPath.c_str());
+    const std::string cfgPath = SettingsPath(dir);
     g_args = { argc > 0 && argv[0] ? argv[0] : "pokemon-ds-wide", rom, "--save", gameDir + "/" + saveName, "--fullscreen",
                "--config", cfgPath };
     // A game that is not recompiled (Black, White, Black 2, White 2) comes with its function table, made on the

@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -378,62 +380,73 @@ inline int Draw(Canvas& c, const std::vector<Game>& games, int selected, int& fi
     // More games above or below the ones shown.
     if (first > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, th.hint);
     if ((first + rows) * cols < (int)games.size()) c.Fill(c.w / 2 - 8 * s, bottom - 2 * s, 16 * s, s, th.hint);
-    const std::string hint = !note.empty() ? note : !hintText.empty() ? hintText : "A: PLAY    Y: MENU GUIDE    +: QUIT";
+    const std::string hint = !note.empty() ? note : !hintText.empty() ? hintText : "A: PLAY    Y: SETTINGS    +: QUIT";
     c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, th.hint);
     return cols;
 }
 
-// The pause menu's guide (Y on the Switch's list, H or a controller's Y on a PC's): what each of
-// its options does, for someone choosing before they play. Kept in step with the menu in
-// main.cpp (buildMenu). The list's font has capitals, digits and : - + . / < > ! ( ) only.
-struct GuideEntry
+// The settings page (Y on the Switch's list, H or a controller's Y on a PC's): the pause menu's
+// options with what each does, set here before playing. They are written to the same settings
+// file the games read (main.cpp, Settings: keys, values and defaults must stay in step with it),
+// a line at a time, leaving the others as they are. Entries without a key are what can only be
+// done in the pause menu. The list's font has capitals, digits and : - + . / < > ! ( ) only.
+struct Setting
 {
+    const char* key;  // nullptr: told about, not set here
     const char* name;
+    std::vector<std::pair<std::string, std::string>> values; // stored, shown
+    std::string def;  // the stored value when the file has none ("": the game decides, AUTO)
     const char* text;
 };
-inline std::vector<GuideEntry> GuideEntries()
+inline std::vector<Setting> SettingsList()
 {
-    return {
+    const std::vector<std::pair<std::string, std::string>> onOff = { { "1", "ON" }, { "0", "OFF" } };
+    std::vector<Setting> l;
 #ifdef __SWITCH__
-        { "OPENING THE MENU", "PRESS + AND - TOGETHER WHILE PLAYING. UP AND DOWN CHOOSE. LEFT AND RIGHT OR A CHANGE. B GOES BACK TO THE GAME." },
+    // (The first start's 60 FPS and WORLD DETAIL depend on the game: SoulSilver and HeartGold
+    // start lighter. Until either is set, AUTO.)
+    l.push_back({ "fps60", "60 FPS", onOff, "", "ON: THE 3D WORLD GETS IN-BETWEEN FRAMES AND MOVES AT 60 FRAMES A SECOND (THE GAMES DRAW IT AT 30). OFF: 30 AS ON A DS." });
 #else
-        { "OPENING THE MENU", "ESC ON THE KEYBOARD. ON A CONTROLLER: ITS GUIDE BUTTON (XBOX / PS) OR START AND SELECT TOGETHER." },
-        { "SCREEN LAYOUT", "MERGED: THE ONE WIDESCREEN PICTURE. HYBRID / SIDE / VERTICAL / TOP / BOTTOM: THE TWO DS SCREENS LAID OUT AS ON OTHER EMULATORS." },
-        { "LARGE SCREEN", "FOR THE LAYOUTS WITH A LARGE AND A SMALL SCREEN: WHICH ONE IS LARGE. AUTO FOLLOWS WHAT THE GAME IS DOING." },
+    l.push_back({ "view", "SCREEN LAYOUT", { { "merged", "MERGED" }, { "hybrid", "HYBRID" }, { "side", "SIDE" }, { "vertical", "VERTICAL" }, { "top", "TOP" }, { "bottom", "BOTTOM" } }, "merged",
+                  "MERGED: THE ONE WIDESCREEN PICTURE. THE OTHERS SHOW THE TWO DS SCREENS LAID OUT AS ON OTHER EMULATORS." });
+    l.push_back({ "large_screen", "LARGE SCREEN", { { "auto", "AUTO" }, { "top", "TOP" }, { "bottom", "BOTTOM" } }, "auto",
+                  "FOR THE LAYOUTS WITH A LARGE AND A SMALL SCREEN: WHICH ONE IS LARGE. AUTO FOLLOWS WHAT THE GAME IS DOING." });
+    l.push_back({ "fps60", "60 FPS", onOff, "1", "ON: THE 3D WORLD GETS IN-BETWEEN FRAMES AND MOVES AT 60 FRAMES A SECOND (THE GAMES DRAW IT AT 30). OFF: 30 AS ON A DS." });
+    l.push_back({ "fullscreen", "BORDERLESS FULLSCREEN", onOff, "0", "ON: FILLS YOUR SCREEN AS A BORDERLESS WINDOW AT ITS OWN RESOLUTION. SWITCHING TO OTHER WINDOWS IS INSTANT. F11 DOES THE SAME." });
 #endif
-        { "60 FPS", "ON: THE 3D WORLD GETS IN-BETWEEN FRAMES AND MOVES AT 60 FRAMES A SECOND (THE GAMES DRAW IT AT 30). OFF: 30 AS ON A DS." },
+    l.push_back({ "smooth", "SMOOTH SCALING", onOff, "0", "ON: THE PICTURE IS SOFTENED AS IT IS SCALED UP TO YOUR SCREEN. OFF: SHARP PIXELS." });
+    l.push_back({ "wide", "WIDESCREEN WORLD", onOff, "1", "ON: THE 3D WORLD IS DRAWN OUT TO THE SIDES OF THE 16:9 SCREEN. OFF: ONLY AS WIDE AS A DS SCREEN." });
+    l.push_back({ "wide_map", "WIDE MAP LOADING", onOff, "1", "BLACK / WHITE / BLACK 2 / WHITE 2: LOADS MORE OF THE MAP AROUND YOU SO THE WIDE VIEW HAS LAND AT ITS EDGES." });
+    l.push_back({ "battle_buttons", "BATTLE BUTTONS", { { "corner", "CORNER" }, { "panel", "PANEL" }, { "strip", "STRIP" } }, "strip",
+                  "WHERE THE BATTLE MENU GOES. CORNER: SMALL BUTTONS IN A CORNER. PANEL: THE FIGHT / BAG / POKEMON / RUN PANEL FROM THE GAME BESIDE THE BATTLE. "
+                  "STRIP: LARGE BUTTONS IN THE MESSAGE BOX IN BLACK AND WHITE (CORNER IN THE OTHERS). SOULSILVER / HEARTGOLD / PLATINUM HAVE THEIR OWN." });
 #ifdef __SWITCH__
-        { "ONE FRAME AHEAD", "ON: THE GAME RUNS ONE FRAME AHEAD OF THE SCREEN AND EVERY FRAME IS SHOWN AT AN EVEN TIME. SMOOTHER IN BUSY TOWNS AND BATTLES. OFF: EACH FRAME IS SHOWN AS SOON AS IT IS READY. ONE FRAME (17 MS) LESS DELAY AFTER A BUTTON BUT LESS EVEN WHEN BUSY." },
+    l.push_back({ "wide_lines", "WORLD DETAIL", { { "192", "192" }, { "288", "288" }, { "384", "384" }, { "540", "540" }, { "720", "720" } }, "",
+                  "HOW MANY LINES THE WIDE 3D WORLD IS DRAWN WITH. 720 IS FULL SHARPNESS ON THE SWITCH. LOWER IS LIGHTER ON THE CONSOLE." });
+    l.push_back({ "auto_detail", "LOWER DETAIL WHEN BUSY", onOff, "1", "ON: DROPS THE WORLD DETAIL FOR A MOMENT WHEN DRAWING CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." });
 #else
-        { "BORDERLESS FULLSCREEN", "ON: FILLS YOUR SCREEN AS A BORDERLESS WINDOW AT ITS OWN RESOLUTION. SWITCHING TO OTHER WINDOWS IS INSTANT. F11 DOES THE SAME." },
+    l.push_back({ "wide_lines", "3D RESOLUTION", { { "192", "192P (DS)" }, { "288", "288P" }, { "384", "384P" }, { "540", "540P" }, { "720", "720P" }, { "1080", "1080P" }, { "1440", "1440P (2K)" }, { "2160", "2160P (4K)" } }, "720",
+                  "HOW SHARP THE 3D WORLD IS. PICK YOUR SCREEN RESOLUTION OR LOWER IF YOUR PC CANNOT KEEP UP. SPRITES AND TEXT KEEP THEIR DS PIXELS." });
+    l.push_back({ "auto_detail", "LOWER RES WHEN BUSY", onOff, "1", "ON: DROPS THE 3D RESOLUTION FOR A MOMENT WHEN YOUR PC CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." });
+    l.push_back({ "wide_gpu", "WORLD ON GPU", onOff, "1", "ON: THE WIDE 3D WORLD IS DRAWN BY YOUR GRAPHICS CARD (OPENGL 4.3). TURN IT OFF IF THE WORLD LOOKS WRONG OR THE GAME WILL NOT START: THE PROCESSOR THEN DRAWS IT (THAT WANTS A FAST PC)." });
 #endif
-        { "SMOOTH SCALING", "ON: THE PICTURE IS SOFTENED AS IT IS SCALED UP TO YOUR SCREEN. OFF: SHARP PIXELS." },
-        { "WIDESCREEN WORLD", "ON: THE 3D WORLD IS DRAWN OUT TO THE SIDES OF THE 16:9 SCREEN. OFF: ONLY AS WIDE AS A DS SCREEN." },
-        { "WIDE MAP LOADING", "BLACK / WHITE / BLACK 2 / WHITE 2: LOADS MORE OF THE MAP AROUND YOU SO THE WIDE VIEW HAS LAND AT ITS EDGES. A CHANGE APPLIES THE NEXT TIME THE GAME STARTS." },
-        { "BATTLE BUTTONS", "WHERE THE BATTLE MENU GOES. CORNER: SMALL BUTTONS IN A CORNER. PANEL: THE FIGHT / BAG / POKEMON / RUN PANEL FROM THE GAME BESIDE THE BATTLE. STRIP (BLACK AND WHITE): LARGE BUTTONS IN THE MESSAGE BOX." },
-#ifdef __SWITCH__
-        { "WORLD DETAIL", "HOW MANY LINES THE WIDE 3D WORLD IS DRAWN WITH. 720 IS FULL SHARPNESS ON THE SWITCH. LOWER IS LIGHTER ON THE CONSOLE." },
-        { "LOWER DETAIL WHEN BUSY", "ON: DROPS THE WORLD DETAIL FOR A MOMENT WHEN DRAWING CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." },
-        { "WORLD ON GPU", "ON: THE WIDE 3D WORLD IS DRAWN BY THE SWITCH GRAPHICS CHIP. LEAVE IT ON." },
-#else
-        { "3D RESOLUTION", "HOW SHARP THE 3D WORLD IS: 720P / 1080P / 1440P (2K) / 2160P (4K). PICK YOUR SCREEN RESOLUTION OR LOWER IF YOUR PC CANNOT KEEP UP. SPRITES AND TEXT KEEP THEIR DS PIXELS." },
-        { "LOWER RES WHEN BUSY", "ON: DROPS THE 3D RESOLUTION FOR A MOMENT WHEN YOUR PC CANNOT KEEP UP (A MOVE FULL OF EFFECTS) INSTEAD OF SLOWING THE GAME DOWN." },
-        { "WORLD ON GPU", "ON: THE WIDE 3D WORLD IS DRAWN BY YOUR GRAPHICS CARD (OPENGL 4.3). TURN IT OFF IF THE WORLD LOOKS WRONG OR THE GAME WILL NOT START: THE PROCESSOR THEN DRAWS IT (THAT WANTS A FAST PC)." },
-#endif
-        { "FPS COUNTER", "SHOWS THE FRAMES A SECOND IN A CORNER." },
+    l.push_back({ "show_fps", "FPS COUNTER", onOff, "0", "SHOWS THE FRAMES A SECOND IN A CORNER." });
 #ifndef __SWITCH__
-        { "BUTTONS", "BY LABEL: THE BUTTON MARKED A IS THE DS A ON ANY CONTROLLER. BY POSITION: THE BUTTONS WHERE A DS HAS THEM (XBOX A IS DS B)." },
+    l.push_back({ "buttons", "BUTTONS", { { "labels", "BY LABEL" }, { "positions", "BY POSITION" } }, "labels",
+                  "BY LABEL: THE BUTTON MARKED A IS THE DS A ON ANY CONTROLLER. BY POSITION: THE BUTTONS WHERE A DS HAS THEM (XBOX A IS DS B)." });
+    l.push_back({ "pad_touch", "STICK TOUCH CURSOR", onOff, "0", "ON: THE RIGHT STICK MOVES A CURSOR ON THE TOUCH SCREEN AND THE LEFT TRIGGER PRESSES IT." });
 #endif
-        { "STICK TOUCH CURSOR", "ON: THE RIGHT STICK MOVES A CURSOR ON THE TOUCH SCREEN AND THE LEFT TRIGGER PRESSES IT." },
+    // Only in the pause menu.
 #ifdef __SWITCH__
-        { "FAST FORWARD", "ON: KEEPS FAST FORWARDING WITHOUT HOLDING A BUTTON. HOLDING ZR FAST FORWARDS ANYWAY (UP TO 4X)." },
+    l.push_back({ nullptr, "THE PAUSE MENU", {}, "", "PRESS + AND - TOGETHER WHILE PLAYING. EVERYTHING ABOVE IS THERE TOO AND CAN BE CHANGED AS YOU PLAY." });
+    l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD ZR (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
 #else
-        { "FAST FORWARD", "ON: KEEPS FAST FORWARDING WITHOUT HOLDING A BUTTON. HOLDING THE RIGHT TRIGGER OR LEFT SHIFT FAST FORWARDS ANYWAY (UP TO 4X)." },
+    l.push_back({ nullptr, "THE PAUSE MENU", {}, "", "ESC ON THE KEYBOARD. ON A CONTROLLER: ITS GUIDE BUTTON (XBOX / PS) OR START AND SELECT TOGETHER. EVERYTHING ABOVE IS THERE TOO." });
+    l.push_back({ nullptr, "FAST FORWARD", {}, "", "HOLD THE RIGHT TRIGGER OR LEFT SHIFT (UP TO 4X). FAST FORWARD IN THE PAUSE MENU KEEPS IT ON WITHOUT HOLDING." });
 #endif
-        { "SAVE STATE / LOAD STATE", "ONE QUICK SLOT PER GAME: SAVES OR LOADS EXACTLY WHERE YOU ARE. YOUR SAVE IN THE GAME IS SEPARATE AND STILL WORKS AS NORMAL." },
-        { "RESET GAME", "STARTS THE GAME AGAIN FROM ITS TITLE SCREEN." },
-        { "QUIT", "BACK TO THIS GAME LIST." },
-    };
+    l.push_back({ nullptr, "SAVE STATE / LOAD STATE", {}, "", "IN THE PAUSE MENU: ONE QUICK SLOT PER GAME. YOUR SAVE IN THE GAME IS SEPARATE AND STILL WORKS AS NORMAL." });
+    l.push_back({ nullptr, "RESET GAME / QUIT", {}, "", "IN THE PAUSE MENU: START THE GAME AGAIN FROM ITS TITLE SCREEN / BACK TO THIS GAME LIST." });
+    return l;
 }
 
 // Words to lines of at most `chars` characters.
@@ -459,42 +472,159 @@ inline std::vector<std::string> Wrap(const std::string& text, int chars)
     return lines;
 }
 
-// The guide over the whole canvas, from line `scroll` (kept in range here). hint: the line along
-// the bottom.
-inline void DrawGuide(Canvas& c, int& scroll, const std::string& hint, const Theme& th = Theme())
+struct SettingsPage
 {
-    const int s = std::max(1, c.h / 240);
-    const int ts = std::max(1, (s * 2 + 1) / 3); // the text's scale: 2 at 720 lines, 3 at 1080
-    c.Fill(0, 0, c.w, c.h, th.bg);
-    c.Fill(0, 0, c.w, 22 * s, th.band);
-    c.Fill(0, 22 * s, c.w, th.bandLineH * s, th.bandLine);
-    const std::string title = "PAUSE MENU GUIDE";
-    c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, th.title);
-    // One column, at most 100 characters of description wide, in the middle.
-    const int width = std::min(c.w - 24 * s, 100 * 6 * ts);
-    const int x = (c.w - width) / 2;
-    struct Line { std::string text; bool name; };
-    std::vector<Line> lines;
-    for (const GuideEntry& e : GuideEntries())
+    std::string path;
+    std::vector<Setting> items = SettingsList();
+    std::vector<std::string> lines; // the file, as it is
+    int selected = 0, scroll = 0;
+
+    void Open(const std::string& cfgPath, bool keepChoice = false)
     {
-        lines.push_back({ e.name, true });
-        for (const std::string& l : Wrap(e.text, width / (6 * ts) - 2)) lines.push_back({ l, false });
-        lines.push_back({ "", false });
+        path = cfgPath;
+        lines.clear();
+        if (FILE* f = fopen(path.c_str(), "r"))
+        {
+            char buf[1024];
+            while (fgets(buf, sizeof buf, f))
+            {
+                std::string l = buf;
+                while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
+                lines.push_back(l);
+            }
+            fclose(f);
+        }
+        if (keepChoice) return;
+        selected = 0;
+        scroll = 0;
+        while (selected < (int)items.size() && !items[selected].key) selected++;
     }
-    const int top = 30 * s, bottom = c.h - 18 * s, lineH = 10 * ts;
-    const int fit = std::max(1, (bottom - top) / lineH);
-    scroll = std::max(0, std::min(scroll, (int)lines.size() - fit));
-    int y = top;
-    for (int i = scroll; i < (int)lines.size() && y + lineH <= bottom; i++, y += lineH)
+    std::string Stored(const std::string& key) const
     {
-        const Line& l = lines[i];
-        if (l.name) c.Text(x, y, l.text, ts, th.subSel);
-        else c.Text(x + 2 * 6 * ts, y, l.text, ts, th.name);
+        for (const std::string& l : lines)
+            if (l.size() > key.size() && !l.compare(0, key.size(), key) && l[key.size()] == '=') return l.substr(key.size() + 1);
+        return "";
     }
-    // More above or below.
-    if (scroll > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, th.hint);
-    if (scroll + fit < (int)lines.size()) c.Fill(c.w / 2 - 8 * s, bottom + s, 16 * s, s, th.hint);
-    c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, th.hint);
-}
+    // The index of the shown value (-1: AUTO).
+    int ValueIndex(const Setting& s) const
+    {
+        std::string v = Stored(s.key);
+        if (v.empty()) v = s.def;
+        if (v.empty()) return -1;
+        for (size_t i = 0; i < s.values.size(); i++)
+            if (s.values[i].first == v) return (int)i;
+        // Values the file may hold in other spellings: numbers between the choices (the
+        // nearest below), ON/OFF as anything but "0" or "1".
+        if (!strcmp(s.key, "wide_lines"))
+        {
+            int best = 0;
+            for (size_t i = 0; i < s.values.size(); i++)
+                if (atoi(s.values[i].first.c_str()) <= atoi(v.c_str())) best = (int)i;
+            return best;
+        }
+        for (size_t i = 0; i < s.values.size(); i++)
+            if (s.values[i].first == s.def) return (int)i;
+        return 0;
+    }
+    std::string Shown(const Setting& s) const
+    {
+        const int i = ValueIndex(s);
+        return i < 0 ? "AUTO" : s.values[i].second;
+    }
+    void Move(int d)
+    {
+        for (int i = selected + d; i >= 0 && i < (int)items.size(); i += d)
+            if (items[i].key)
+            {
+                selected = i;
+                return;
+            }
+    }
+    // The chosen option's next (d 1) or previous (d -1) value, written to the file. Returns its
+    // key, or nullptr.
+    const char* Change(int d)
+    {
+        if (selected < 0 || selected >= (int)items.size() || !items[selected].key) return nullptr;
+        const Setting& s = items[selected];
+        const int n = (int)s.values.size();
+        const int i = ValueIndex(s);
+        const int next = i < 0 ? (d > 0 ? 0 : n - 1) : (i + d + n) % n;
+        const std::string line = std::string(s.key) + "=" + s.values[next].first;
+        bool found = false;
+        for (std::string& l : lines)
+            if (l.size() > strlen(s.key) && !l.compare(0, strlen(s.key), s.key) && l[strlen(s.key)] == '=')
+            {
+                l = line;
+                found = true;
+            }
+        if (!found) lines.push_back(line);
+        if (FILE* f = fopen(path.c_str(), "w"))
+        {
+            for (const std::string& l : lines) fprintf(f, "%s\n", l.c_str());
+            fclose(f);
+        }
+        return s.key;
+    }
+
+    // Over the whole canvas: the options with their values (the chosen one marked), each with
+    // what it does below it, kept in view as the choice moves.
+    void Draw(Canvas& c, const std::string& hint, const Theme& th = Theme())
+    {
+        const int s = std::max(1, c.h / 240);
+        const int ts = std::max(1, (s * 2 + 1) / 3); // the text's scale: 2 at 720 lines, 3 at 1080
+        c.Fill(0, 0, c.w, c.h, th.bg);
+        c.Fill(0, 0, c.w, 22 * s, th.band);
+        c.Fill(0, 22 * s, c.w, th.bandLineH * s, th.bandLine);
+        const std::string title = "SETTINGS";
+        c.Text((c.w - Canvas::TextWidth(title, s + 1)) / 2, 6 * s, title, s + 1, th.title);
+        const int width = std::min(c.w - 24 * s, 100 * 6 * ts);
+        const int x = (c.w - width) / 2;
+        struct Line { std::string text, value; int item; bool name; };
+        std::vector<Line> out;
+        int selFirst = 0, selLast = 0;
+        bool infoHeading = false;
+        for (int i = 0; i < (int)items.size(); i++)
+        {
+            const Setting& e = items[i];
+            if (!e.key && !infoHeading)
+            {
+                out.push_back({ "", "", -1, false });
+                infoHeading = true;
+            }
+            if (i == selected) selFirst = (int)out.size();
+            out.push_back({ e.name, e.key ? Shown(e) : "", i, true });
+            for (const std::string& l : Wrap(e.text, width / (6 * ts) - 2)) out.push_back({ l, "", i, false });
+            if (i == selected) selLast = (int)out.size() - 1;
+            out.push_back({ "", "", -1, false });
+        }
+        const int top = 30 * s, bottom = c.h - 18 * s, lineH = 10 * ts;
+        const int fit = std::max(1, (bottom - top) / lineH);
+        if (selFirst < scroll) scroll = selFirst;
+        if (selLast >= scroll + fit) scroll = selLast - fit + 1;
+        scroll = std::max(0, std::min(scroll, (int)out.size() - fit));
+        int y = top;
+        for (int i = scroll; i < (int)out.size() && y + lineH <= bottom; i++, y += lineH)
+        {
+            const Line& l = out[i];
+            const bool sel = l.item == selected && l.item >= 0 && items[l.item].key;
+            if (l.name)
+            {
+                if (sel) c.Fill(x - 4 * ts, y - 2 * ts, width + 8 * ts, lineH, th.tile);
+                const bool info = !items[l.item].key;
+                c.Text(x, y, l.text, ts, info ? th.hint : sel ? th.nameSel : th.subSel);
+                if (!l.value.empty())
+                {
+                    const std::string v = sel ? "< " + l.value + " >" : l.value;
+                    c.Text(x + width - Canvas::TextWidth(v, ts), y, v, ts, sel ? th.nameSel : th.name);
+                }
+            }
+            else if (!l.text.empty())
+                c.Text(x + 2 * 6 * ts, y, l.text, ts, sel ? th.name : th.sub);
+        }
+        if (scroll > 0) c.Fill(c.w / 2 - 8 * s, top - 4 * s, 16 * s, s, th.hint);
+        if (scroll + fit < (int)out.size()) c.Fill(c.w / 2 - 8 * s, bottom + s, 16 * s, s, th.hint);
+        c.Text((c.w - Canvas::TextWidth(hint, s)) / 2, c.h - 12 * s, hint, s, th.hint);
+    }
+};
 
 }

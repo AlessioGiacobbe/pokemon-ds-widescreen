@@ -2,17 +2,17 @@
 
 ## Unreleased
 
-- **A guide to the pause menu in the game list**: press Y (on a PC also H or F1) to read what
-  every option does before you play.
-- **Switch: ONE FRAME AHEAD in the pause menu**, on by default (see below): turn it off for a
-  frame less delay after a button, or to compare.
-
+- **Settings in the game list**: press Y (on a PC also H or F1) to set the pause menu's options
+  before you play, each with what it does written under it.
+- **Switch: a shorter pause menu.** WORLD ON GPU and STICK TOUCH CURSOR are gone from it: the
+  world is always drawn by the graphics chip (if it ever fails to keep going, the processor
+  draws it for that start only), and the Switch has its touch screen.
 - **PC: the Windows program is now `Pokemon DS Launcher.exe`**, with its own icon, and the
   menu's FULLSCREEN is called BORDERLESS FULLSCREEN (which is what it always was) and WORLD DETAIL
   is 3D RESOLUTION, shown as 720P, 1080P, 1440P (2K) or 2160P (4K). The game list
   can show your own pictures of the games: see `icons/` in the PC README.
 - **Fast forward is on the right trigger in every game** (ZR on the Switch, RT on a PC
-  controller): hold it for up to 4x speed. It was the left trigger. With STICK TOUCH CURSOR on,
+  controller): hold it for up to 4x speed. It was the left trigger. With STICK TOUCH CURSOR on (PC),
   the left trigger now presses the touch screen instead of the right.
 - **Fast forward goes faster and looks smoother.** Of the frames it runs at once only the last
   is shown, so the others are no longer drawn (their 2D and widescreen world); the 60 FPS
@@ -27,8 +27,8 @@
   makes its picture late when the frames around it are quick. At a 1581 MHz CPU clock, frames
   shown unevenly (over 17.5 ms after the last): White 2's Aspertia City from 39% to 17%, a
   Black 2 battle from 29% to 19%, Platinum's Snowpoint City from 30% to 10%, a HeartGold route from 19% to 2%. The cost is one
-  more frame (17 ms) between pressing a button and seeing it; ONE FRAME AHEAD in the pause menu
-  turns it off.
+  more frame (17 ms) between pressing a button and seeing it, which in these turn-based games
+  is hard to notice.
 - **Switch: fewer late frames in towns and battles.** Preparing the 3D pictures for the
   graphics chip, sending them and collecting them now happens on the Switch's spare cores
   instead of between the game's own work, about 1 ms less a frame. Measured from save states,
