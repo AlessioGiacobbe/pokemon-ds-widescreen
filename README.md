@@ -29,6 +29,7 @@ cartridge. Copy it in under the game's name, in this folder:
 | Where you play | Folder |
 |---|---|
 | PC (Windows, Linux, Steam Deck) | the `saves` folder beside the program |
+| Linux AppImage | `~/.local/share/pokemon-ds-wide/saves` |
 | Android | the `saves` folder inside the folder you chose for your ROMs |
 | Nintendo Switch | `/switch/pokemon-ds-wide/` on the SD card |
 
@@ -72,6 +73,9 @@ DS game, presented the way it should look on a modern screen.
 
 1. **Download** [`pokemon-ds-wide-pc-windows-x86_64.zip`](../../releases/tag/pc-v1)
    (Windows) or [`pokemon-ds-wide-pc-linux-x86_64.tar.gz`](../../releases/tag/pc-v1) (Linux).
+   On Linux there is also an **AppImage**, the program as one file: add it to Gear Lever (or
+   another AppImage manager) and it updates itself. Its ROMs, saves and settings go in
+   `~/.local/share/pokemon-ds-wide` (**O** in the game list opens its `roms` folder).
 2. **Unpack it** anywhere (not inside Program Files) and put your ROMs in its
    `roms` folder (any names).
 3. **Start** `Pokemon DS Launcher.exe` (Linux: `pokemon-ds-wide`) and pick a game.
