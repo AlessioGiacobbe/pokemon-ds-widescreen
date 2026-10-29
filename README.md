@@ -148,21 +148,22 @@ emulator or a flash cart, copy your save in under that name. The all-in-one
 list also shows the games in the separate downloads' folders and plays each
 with the save already there, so you don't need to move anything.
 
-**Pictures:** each game shows the icon from its ROM, or the HOME Menu icon of
-its separate program when that is installed. For your own, put a square JPEG
+**Pictures:** each game shows its box art. For your own, put a square JPEG
 or PNG in `/switch/pokemon-ds-wide/icons/` named after the game's code: `IRBO`
 Black, `IRAO` White, `IREO` Black 2, `IRDO` White 2, `IPKE` HeartGold, `IPGE`
 SoulSilver, `CPUE` Platinum (e.g. `icons/IREO.jpg`).
 
-**Recommended: start each game from the HOME Menu.** With
-[sphaira](https://github.com/ITotalJustice/sphaira) (a Homebrew Menu you can
-use instead of the usual one) you can install a forwarder for each game: an
-icon on the Switch's HOME Menu that starts it directly, with no holding R. In
-sphaira's Homebrew list, select the game (for example `pokemon-black2-wide`, or
-**Pokemon DS Widescreen** for the all-in-one) and choose to install a
-forwarder. Keep the game's folder where it is, as the forwarder starts the
-`.nro` in it. Each game then has its own entry, so sys-clk (below) can have its
-own settings for it.
+**Recommended: start each game from the HOME Menu.** In the all-in-one's
+settings (**Y** in the list), **HOME MENU ICONS** puts an icon for each game in
+the list on the Switch's HOME Menu, with its box art, which starts that game
+straight away with no holding R. It is made on your console (no PC or keys
+file). Like any forwarder, the icons need sigpatches to start. Keep
+`/switch/pokemon-ds-wide/` where it is, as the icons start the program in it;
+choose HOME MENU ICONS again after adding games. Each game then has its own
+entry, so sys-clk (below) can have its own settings for it. To remove one:
+Options on its icon, Data Management, Delete Software. (For a separate
+download, [sphaira](https://github.com/ITotalJustice/sphaira) can install a
+forwarder for its `.nro`.)
 
 **sys-clk** (recommended for full speed), handheld. With a forwarder, start the
 game, open sys-clk's overlay and set these for that game's own profile: they
@@ -337,6 +338,9 @@ covers that project. Function names come from the
 symbol files), Platinum's from a build of
 [pret/pokeplatinum](https://github.com/pret/pokeplatinum); SoulSilver's and HeartGold's
 addresses come from ssrecomp's own SoulSilver layout. The DS is emulated by [melonDS](https://melonds.kuribo64.net).
+The Switch's HOME MENU ICONS are made the way [sphaira](https://github.com/ITotalJustice/sphaira)
+makes its forwarders, with its homebrew loader (`tools/switch/forwarder`, GPL-3.0, based on
+nx-hbloader).
 
 GPL-3.0-or-later (see `LICENSE`), as required by melonDS. Not affiliated with
 or endorsed by Nintendo, Game Freak, The Pokémon Company or the melonDS

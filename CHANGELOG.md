@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Switch: HOME MENU ICONS** in the all-in-one's settings (Y in the list): an icon on the HOME
+  Menu for each game, with its box art, that starts the game straight away. Made on the console
+  (no PC or keys file); like any forwarder they need sigpatches. The list shows box art for every
+  game too.
 - **PC: desktop shortcuts for each game**: DESKTOP SHORTCUTS on the game list's settings page
   makes them, with the box art as their icons; each starts its game without the list
   (`--game IREO` on a command line does the same).
