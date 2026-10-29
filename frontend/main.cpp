@@ -238,6 +238,7 @@ struct PadState
 
 #include "touchpad.h"
 #include "controls.h"
+#include "cheats.h"
 
 static int PadButtonFromName(const std::string& n)
 {
@@ -1578,6 +1579,17 @@ int main(int argc, char** argv)
     fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
     auto nds = MakeConsole(rom, sav, opt.headless);
     if (!nds) return 1;
+    // Cheats (cheats.h): from the cheats folder beside the saves, the ones that are on running
+    // from the start. (Not in a lockstep test, which compares two runs of the game as it is.)
+    Cheats::List cheats;
+    const std::string gameCode = rom.size() >= 0x200 ? std::string((const char*)&rom[0x0C], 4) : std::string();
+    if (!opt.lockstep && rom.size() >= 0x200)
+    {
+        cheats.Load(Cheats::FolderFor(opt.save), gameCode, rom.data());
+        cheats.Apply(nds->AREngine);
+        fprintf(stderr, "[cheats] %zu for %s in %s, %d on\n", cheats.items.size(), gameCode.c_str(), cheats.folder.c_str(), cheats.On());
+        for (const std::string& src : cheats.sources) fprintf(stderr, "[cheats]   from %s\n", src.c_str());
+    }
 #ifdef __SWITCH__
     if (UseJit) fprintf(stderr, "[switch] fast memory: %s\n", UseFastMem ? "on" : "off");
 #endif
@@ -3850,9 +3862,10 @@ int main(int argc, char** argv)
         M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDEMAP, M_BATTLEBUTTONS,
         M_WIDELINES, M_AUTODETAIL, M_WIDEGPU, M_GPU3D, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_EMULATION,
         M_CONTROLS, M_STARTBTN, M_FAST, M_FFLOWRES, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT,
-        M_DISPLAY, M_GRAPHICS, M_CONTROLMENU, M_BACK
+        M_DISPLAY, M_GRAPHICS, M_CONTROLMENU, M_BACK, M_CHEATS, M_NOTHING,
+        M_CHEAT0 = 1000 // (M_CHEAT0 + i: cheat i, CHEATS)
     };
-    enum { PAGE_MAIN, PAGE_KEYS, PAGE_DISPLAY, PAGE_GRAPHICS, PAGE_CONTROLS };
+    enum { PAGE_MAIN, PAGE_KEYS, PAGE_DISPLAY, PAGE_GRAPHICS, PAGE_CONTROLS, PAGE_CHEATS };
     std::vector<int> menuIds;
     bool fastLock = false;
     double ffFrameMs = 0; // emulation time of one frame while fast forwarding (see speed)
@@ -3920,6 +3933,7 @@ int main(int argc, char** argv)
             add(M_DISPLAY, "DISPLAY", "");
             add(M_GRAPHICS, "GRAPHICS", "");
             add(M_CONTROLMENU, "CONTROLS", "");
+            add(M_CHEATS, "CHEATS", cheats.On() ? std::to_string(cheats.On()) + " ON" : "");
             add(M_RESET, "RESET GAME", "");
             add(M_QUIT, "QUIT", "");
         }
@@ -3986,6 +4000,13 @@ int main(int argc, char** argv)
             add(M_EMULATION, "EMULATION", std::string(!cfg.jit ? "INTERPRETER" : cfg.fastMem ? "FAST JIT" : "JIT")
                 + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : ""));
 #endif
+            add(M_BACK, "BACK", "");
+        }
+        else if (menuPage == PAGE_CHEATS)
+        {
+            if (cheats.items.empty()) add(M_NOTHING, "NONE FOUND FOR THIS GAME", "");
+            for (size_t i = 0; i < cheats.items.size(); i++)
+                add(M_CHEAT0 + (int)i, cheats.items[i].name.c_str(), cheats.items[i].on ? "ON" : "OFF");
             add(M_BACK, "BACK", "");
         }
         else if (menuPage == PAGE_CONTROLS)
@@ -5052,7 +5073,8 @@ int main(int argc, char** argv)
             int backTo = -1;
             if (nav.back && menuPage != PAGE_MAIN)
             {
-                backTo = menuPage == PAGE_DISPLAY ? M_DISPLAY : menuPage == PAGE_GRAPHICS ? M_GRAPHICS : M_CONTROLMENU;
+                backTo = menuPage == PAGE_DISPLAY ? M_DISPLAY : menuPage == PAGE_GRAPHICS ? M_GRAPHICS
+                       : menuPage == PAGE_CHEATS ? M_CHEATS : M_CONTROLMENU;
                 nav = MenuInput();
             }
             else if (nav.back)
@@ -5064,8 +5086,19 @@ int main(int argc, char** argv)
             int hit = menu.Update(nav, dir);
             const int id = backTo >= 0 ? M_BACK : hit >= 0 && hit < (int)menuIds.size() ? menuIds[hit] : -1;
             if (backTo >= 0) hit = 0;
+            // A cheat: on or off at once, for the game as it runs (cheats.h).
+            if (id >= M_CHEAT0)
+            {
+                cheats.Toggle((size_t)(id - M_CHEAT0));
+                cheats.Apply(nds->AREngine);
+                fprintf(stderr, "[cheats] %s %s\n", cheats.items[id - M_CHEAT0].key.c_str(), cheats.items[id - M_CHEAT0].on ? "on" : "off");
+            }
             switch (id)
             {
+            case M_CHEATS:
+                goPage(PAGE_CHEATS, -1);
+                hit = -1;
+                break;
             case M_DISPLAY:
                 goPage(PAGE_DISPLAY, -1);
                 hit = -1;
@@ -5079,7 +5112,9 @@ int main(int argc, char** argv)
                 hit = -1;
                 break;
             case M_BACK:
-                if (backTo < 0) backTo = menuPage == PAGE_DISPLAY ? M_DISPLAY : menuPage == PAGE_GRAPHICS ? M_GRAPHICS : M_CONTROLMENU;
+                if (backTo < 0)
+                    backTo = menuPage == PAGE_DISPLAY ? M_DISPLAY : menuPage == PAGE_GRAPHICS ? M_GRAPHICS
+                           : menuPage == PAGE_CHEATS ? M_CHEATS : M_CONTROLMENU;
                 goPage(PAGE_MAIN, backTo);
                 hit = -1;
                 break;
@@ -6454,7 +6489,7 @@ int main(int argc, char** argv)
             std::string hint = touchPadUsed && touchPad.visible ? "TAP: CHOOSE   OUTSIDE: BACK"
                                : btn(Controls::A) + ": SELECT   " + btn(Controls::B) + ": BACK";
             const int selId = menu.selected >= 0 && menu.selected < (int)menuIds.size() ? menuIds[menu.selected] : -1;
-            static const char* pageTitle[] = { "", "KEYS AND BUTTONS", "DISPLAY", "GRAPHICS", "CONTROLS" };
+            static const char* pageTitle[] = { "", "KEYS AND BUTTONS", "DISPLAY", "GRAPHICS", "CONTROLS", "CHEATS" };
             if (menuPage == PAGE_KEYS)
             {
                 if (!(touchPadUsed && touchPad.visible)) hint = btn(Controls::A) + ": CHANGE   " + btn(Controls::B) + ": BACK";
@@ -6476,6 +6511,9 @@ int main(int argc, char** argv)
             // (What START BUTTON does, while it is the one chosen.)
             if (selId == M_STARTBTN) hint = cfg.startMenu ? "START OPENS THIS MENU" : "START IS THE DS START";
             if (selId == M_CONTROLS) hint = "GIVE ANY BUTTON ANOTHER KEY OR BUTTON";
+            if (selId == M_CHEATS) hint = cheats.items.empty() ? "NONE FOUND: SEE THE README" : "ACTION REPLAY CODES";
+            if (selId == M_NOTHING) hint = "PUT " + gameCode + ".TXT OR USRCHEAT.DAT IN CHEATS";
+            if (selId >= M_CHEAT0 && !(touchPadUsed && touchPad.visible)) hint = btn(Controls::A) + ": ON / OFF   " + btn(Controls::B) + ": BACK";
             menu.Draw(canvas, pageTitle[menuPage], hint);
             }
             overlayUsed = true;

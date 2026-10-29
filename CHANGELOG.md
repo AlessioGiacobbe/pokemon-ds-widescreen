@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Cheats: CHEATS in the pause menu.** Action Replay codes, run by melonDS's own engine, from a
+  `cheats` folder: the R4 / DeSmuME database (`usrcheat.dat`), a text file of your own codes named
+  after the game's code (`IPKE.txt` for HeartGold, ...) or a melonDS `.mch` file. Each turns on and
+  off as you play, and stays as you left it. Long lists scroll.
 - **SoulSilver and HeartGold: the Running Shoes button beside the X menu.** The game greys it out
   while its menu is open, and the single-screen view only shows the touch screen then; now the
   button stands next to the menu, ON or OFF, and Y (or a touch on it) turns running on or off.

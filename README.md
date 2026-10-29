@@ -49,6 +49,38 @@ cartridge. Copy it in under the game's name, in this folder:
 - **Check it worked:** the game list shows SAVE FOUND under the game (NEW GAME: not found).
 - **Back up first:** a save copied in replaces the one there under that name.
 
+## Cheats
+
+Action Replay codes, turned on and off as you play: **CHEATS** in the pause menu. They go
+in a `cheats` folder:
+
+| Where you play | Folder |
+|---|---|
+| PC (Windows, Linux, Steam Deck) | `cheats` beside the program (next to `saves`) |
+| Linux AppImage | `~/.local/share/pokemon-ds-wide/cheats` |
+| Mac | `~/Library/Application Support/Pokemon DS Widescreen/cheats` |
+| Android | `cheats` inside the folder you chose for your ROMs |
+| Nintendo Switch | `/switch/pokemon-ds-wide/cheats/` on the SD card |
+
+- **A cheat database:** `usrcheat.dat` (the R4 / DeSmuME one) holds codes for every game;
+  CHEATS lists this game's.
+- **Codes of your own:** a text file named after the game's code: `IREO.txt` (Black 2),
+  `IRDO.txt` (White 2), `IRBO.txt` (Black), `IRAO.txt` (White), `IPKE.txt` (HeartGold),
+  `IPGE.txt` (SoulSilver), `CPUE.txt` (Platinum). The cheat's name on a line, its code
+  under it; as many cheats as you like, one after another:
+
+  ```
+  60 FPS battles
+  92247612 00002801
+  A2000E28 00000000
+  12000E28 00000000
+  D2000000 00000000
+  ```
+  melonDS's own cheat files (`IPKE.mch` and so on) work too.
+
+The codes must be for your version of the game (US or Europe). A cheat changes the game's
+memory while it runs: **save first**, and turn it off if the game misbehaves.
+
 ## What is it?
 
 A program for your PC or your Switch (as homebrew) that runs the game on the

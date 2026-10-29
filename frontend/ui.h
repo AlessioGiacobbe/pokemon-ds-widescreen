@@ -174,8 +174,10 @@ struct Menu
         return -1;
     }
 
-    // Where the box and its rows were last drawn (Draw), in the canvas's pixels.
+    // Where the box and its rows were last drawn (Draw), in the canvas's pixels, and the first
+    // row shown (a list longer than the screen scrolls with the chosen row: CHEATS).
     mutable int drawnX = 0, drawnY = 0, drawnW = 0, drawnH = 0, drawnLineH = 0, drawnFirstY = 0;
+    mutable int scroll = 0;
 
     // The row at (x, y) of the canvas the menu was drawn on (touch screens): its index, -1 for
     // a point in the box but on no row, -2 for a point outside the box.
@@ -183,7 +185,7 @@ struct Menu
     {
         if (drawnW <= 0 || x < drawnX || x >= drawnX + drawnW || y < drawnY || y >= drawnY + drawnH) return -2;
         if (drawnLineH <= 0 || y < drawnFirstY) return -1;
-        const int i = (y - drawnFirstY) / drawnLineH;
+        const int i = scroll + (y - drawnFirstY) / drawnLineH;
         return i < (int)items.size() ? i : -1;
     }
 
@@ -195,7 +197,13 @@ struct Menu
         // (Rows closer together if they would not all fit on the screen, down to 9 * scale.)
         // With no title the box starts with the first item.
         const bool hasTitle = !title.empty();
-        const int rows = (int)items.size() + (hasTitle ? 3 : 2);
+        // (As many rows as fit at the smallest spacing; the rest scroll into view.)
+        const int fit = std::max(1, (c.h - 4 - 6 * scale) / (9 * scale) - (hasTitle ? 3 : 2));
+        const int shown = std::min((int)items.size(), fit);
+        if (selected < scroll) scroll = selected;
+        if (selected >= scroll + shown) scroll = selected - shown + 1;
+        scroll = std::max(0, std::min(scroll, (int)items.size() - shown));
+        const int rows = shown + (hasTitle ? 3 : 2);
         if (lineH * rows + 6 * scale > c.h - 4) lineH = std::max(9 * scale, (c.h - 4 - 6 * scale) / rows);
         int boxW = 190 * scale;
         if (boxW > c.w - 8) boxW = c.w - 8;
@@ -215,7 +223,10 @@ struct Menu
         if (hasTitle) c.Text(bx + (boxW - Canvas::TextWidth(title, scale)) / 2, by + 3 * scale, title, scale, 0xFFFFD75E);
 
         int y = by + (hasTitle ? lineH : 0) + 5 * scale;
-        for (int i = 0; i < (int)items.size(); i++)
+        // (Marks at the box's right edge where rows are scrolled out of view, above or below.)
+        if (scroll > 0) c.Text(bx + boxW - 8 * scale, y - lineH + 2 * scale, "+", scale, 0xFF8FA0C0);
+        if (scroll + shown < (int)items.size()) c.Text(bx + boxW - 8 * scale, y + shown * lineH - 2 * scale, "+", scale, 0xFF8FA0C0);
+        for (int i = scroll; i < scroll + shown; i++)
         {
             bool sel = i == selected;
             if (sel) c.Fill(bx + 2 * scale, y - 2 * scale, boxW - 4 * scale, lineH, 0xFF3D6FD1);
