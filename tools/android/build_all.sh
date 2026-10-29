@@ -144,17 +144,49 @@ say "The app around it: manifest, icon, SDL's Java code and the app's own"
 W="$HERE/build-android-dist/skeleton"
 rm -rf "$W"
 mkdir -p "$W/classes" "$W/dex"
-for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
-    mkdir -p "$W/res/mipmap-${d%%:*}"
-    python3 - "$ICON" "$W/res/mipmap-${d%%:*}/ic_launcher.png" "${d##*:}" <<'PY'
+# The icon: the picture as it is for Android 7 and older, and an adaptive icon for Android 8 on
+# (mipmap-anydpi-v26), whose launchers cut it to their own shape (a circle on a Pixel). Without
+# one, the square picture was shrunk inside a white circle. Its one layer is the picture at 70% of
+# the layer's width with its edges carried outwards, so the shape is filled and the middle of the
+# picture is what shows (SSR_ANDROID_ICON_FILL to change the 70%).
+for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+    IFS=: read -r dens legacy layer <<< "$d"
+    mkdir -p "$W/res/mipmap-$dens"
+    python3 - "$ICON" "$W/res/mipmap-$dens" "$legacy" "$layer" "${SSR_ANDROID_ICON_FILL:-0.7}" <<'PY'
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]).convert('RGBA')
+src, out, legacy, layer, fill = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), float(sys.argv[5])
+im = Image.open(src).convert('RGB')
 side = min(im.size)   # the middle square of the picture
 im = im.crop(((im.width - side) // 2, (im.height - side) // 2, (im.width + side) // 2, (im.height + side) // 2))
-im.resize((int(sys.argv[3]),) * 2, Image.LANCZOS).save(sys.argv[2], optimize=True)
+im.resize((legacy, legacy), Image.LANCZOS).save(out + '/ic_launcher.png', optimize=True)
+s = max(1, round(layer * fill))
+# (Its outer 4% left out: a picture's own rounded corners or border would be carried outwards.)
+i = side * 4 // 100
+pic = im.crop((i, i, side - i, side - i)).resize((s, s), Image.LANCZOS)
+o = (layer - s) // 2
+bg = Image.new('RGB', (layer, layer))
+# The edges carried outwards: each row's end pixels to the sides, then the top and bottom rows.
+for y in range(s):
+    bg.paste(pic.getpixel((0, y)), (0, o + y, o, o + y + 1))
+    bg.paste(pic.getpixel((s - 1, y)), (o + s, o + y, layer, o + y + 1))
+bg.paste(pic, (o, o))
+top, bottom = bg.crop((0, o, layer, o + 1)), bg.crop((0, o + s - 1, layer, o + s))
+for y in range(o):
+    bg.paste(top, (0, y))
+for y in range(o + s, layer):
+    bg.paste(bottom, (0, y))
+bg.save(out + '/ic_launcher_background.png', optimize=True)
 PY
 done
+mkdir -p "$W/res/mipmap-anydpi-v26"
+cat > "$W/res/mipmap-anydpi-v26/ic_launcher.xml" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>
+XML
 "$BT/aapt2" compile --dir "$W/res" -o "$W/res.zip"
 "$BT/aapt2" link -o "$W/base.apk" -I "$JAR" --manifest tools/android/allgames/AndroidManifest.xml \
     --min-sdk-version 24 --target-sdk-version 34 "$W/res.zip"

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **START opens the pause menu** (+ on the Switch, a controller's START on a PC or phone). The
+  games hardly use the DS's START; START BUTTON in the settings puts it back (then + and − together,
+  or START and SELECT, open the menu as before).
+- **Android: a proper app icon** that fills the launcher's circle, instead of a square picture
+  inside a white circle.
 - **README: Use your own save**, near the top: where each platform keeps the saves, each game's
   save name, and which save files work.
 - **One download per platform:** the all-in-one for the Switch and the PC download, each with all

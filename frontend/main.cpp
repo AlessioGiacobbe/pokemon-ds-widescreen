@@ -1272,6 +1272,9 @@ struct Settings
     // the bottom screen up.
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
+    // A controller's START (+ on the Switch) opens the pause menu instead of being the DS's
+    // START, which the games hardly use (START BUTTON: PAUSE MENU or DS START).
+    bool startMenu = true;
     // While fast forwarding, the widescreen world at no more than 360 lines (more frames a
     // second, so a faster fast forward where drawing it is the limit). Off on a PC (the PC
     // defaults below), where it is a setting: FAST FORWARD LOW RES.
@@ -1337,6 +1340,7 @@ struct Settings
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "ff_low_res") ffLowRes = v == "1";
+            else if (k == "start_button") startMenu = v != "ds";
             else if (k == "cpu_boost") cpuBoost = v == "1";
             else if (k == "jit") jit = v == "1";
             else if (k == "fastmem") fastMem = v == "1";
@@ -1378,6 +1382,7 @@ struct Settings
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
         f << "ff_low_res=" << (ffLowRes ? 1 : 0) << "\n";
+        f << "start_button=" << (startMenu ? "menu" : "ds") << "\n";
         f << "battle_buttons=" << (battleButtons == 0 ? "corner" : battleButtons == 2 ? "panel" : "strip") << "\n";
 #ifdef SSR_PC_LAUNCHER
         if (windowW > 0 && windowH > 0) f << "window=" << windowW << "x" << windowH << "\n";
@@ -3799,6 +3804,7 @@ int main(int argc, char** argv)
 #if SSR_MENU_EMULATION
         M_EMULATION,
 #endif
+        M_STARTBTN,
         M_FAST,
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
         M_FFLOWRES,
@@ -3882,6 +3888,7 @@ int main(int argc, char** argv)
             { "EMULATION", std::string(!cfg.jit ? "INTERPRETER" : cfg.fastMem ? "FAST JIT" : "JIT")
                 + (cfg.jit != UseJit || (cfg.jit && cfg.fastMem != UseFastMem) ? " (NEXT START)" : "") },
 #endif
+            { "START BUTTON", cfg.startMenu ? "PAUSE MENU" : "DS START" },
             { "FAST FORWARD", fastLock ? "ON" : "OFF" },
 #if !defined(__SWITCH__) && !defined(__ANDROID__)
             // ON: 360 lines while fast forwarding, for more frames a second (the menu's hint says so).
@@ -3938,6 +3945,7 @@ int main(int argc, char** argv)
     PadState prevPad;
     MenuInput heldNav;          // navigation directions held last tick, for edge detection
     bool prevComboMenu = false;
+    bool ctrlStart = false, touchStart = false, prevCtrlStart = false; // see cfg.startMenu
     bool swallowMenuButtons = false; // keeps the buttons that closed the menu from reaching the game
     const double frameTime = 1.0 / 59.8261;
     uint64_t perfFreq = opt.headless ? 1 : SDL_GetPerformanceFrequency();
@@ -4621,6 +4629,7 @@ int main(int argc, char** argv)
             }
 #endif
             ps = ReadPad(pads);
+            ctrlStart = ps.btn[PAD_START]; // (a controller's, before the on-screen buttons join in)
             if (touchPadUsed)
             {
                 touchPad.Layout(outW, outH);
@@ -4640,6 +4649,7 @@ int main(int argc, char** argv)
                 // The on-screen buttons go by their labels: the one marked A is the DS's A.
                 bool held[PAD_COUNT] = {};
                 touchPad.Apply(held, touchMenuHeld);
+                touchStart = held[PAD_START];
                 if (!cfg.byLabel)
                 {
                     std::swap(held[PAD_A], held[PAD_B]);
@@ -4813,8 +4823,12 @@ int main(int argc, char** argv)
         // Controller: the pause menu opens with Guide, or with Start and Select together.
         auto pressed = [&](int b) { return ps.btn[b] && !prevPad.btn[b]; };
         bool comboMenu = ps.btn[PAD_START] && ps.btn[PAD_BACK];
-        if (pressed(PAD_GUIDE) || (comboMenu && !prevComboMenu)) toggleMenu = true;
+        // (With START BUTTON on PAUSE MENU, a controller's START alone; the on-screen START of a
+        // phone stays the DS's, beside its own MENU button.)
+        const bool startPress = cfg.startMenu && ctrlStart && !prevCtrlStart;
+        if (pressed(PAD_GUIDE) || startPress || (!cfg.startMenu && comboMenu && !prevComboMenu)) toggleMenu = true;
         prevComboMenu = comboMenu;
+        prevCtrlStart = ctrlStart;
 
         MenuInput heldNow;
         heldNow.up = ps.btn[PAD_UP] || ps.ly < -0.5f;
@@ -4952,6 +4966,9 @@ int main(int argc, char** argv)
                 say("APPLIES THE NEXT TIME THE GAME STARTS");
                 break;
 #endif
+            case M_STARTBTN:
+                cfg.startMenu = !cfg.startMenu;
+                break;
             case M_FAST:
                 fastLock = !fastLock;
                 break;
@@ -5006,7 +5023,9 @@ int main(int argc, char** argv)
         int speed = 1;
         if (!paused && !swallowMenuButtons)
         {
-            keys |= PadKeys(ps, cfg.byLabel);
+            PadState toGame = ps;
+            if (cfg.startMenu && ctrlStart) toGame.btn[PAD_START] = touchStart; // (START is the menu's)
+            keys |= PadKeys(toGame, cfg.byLabel);
             // Only presses made while the command strip is up count; anything done in the bag or
             // party screens must not move it afterwards, and its next showing starts from the ROM.
             const bool stripUp = singleScreenFlag && (singleScreenFlag[1] == 1 || singleScreenFlag[1] == 2);
@@ -6102,6 +6121,8 @@ int main(int argc, char** argv)
             // (What FAST FORWARD LOW RES is for, while it is the one chosen.)
             if (menu.selected == M_FFLOWRES) hint = "ON: MORE FPS IN FAST FORWARD";
 #endif
+            // (What START BUTTON does, while it is the one chosen.)
+            if (menu.selected == M_STARTBTN) hint = cfg.startMenu ? "START OPENS THIS MENU" : "START IS THE DS START";
             menu.Draw(canvas, "", hint);
             overlayUsed = true;
         }
