@@ -705,9 +705,24 @@ bool Start(int& argc, char**& argv)
     if (!fo.roms.empty()) MakeDir(fo.saves);
 #else
     fo.dir = ProgramDir();
+    fo.funcs = fo.dir + "/data/funcs";
+#if !defined(_WIN32)
+    // From an AppImage (the Linux download for Gear Lever and the like): the program's folder is
+    // the AppImage's own, read-only, so the ROMs, saves and settings are in the user's data
+    // folder (~/.local/share/pokemon-ds-wide, O in the list opens its roms folder); the function
+    // tables stay in the AppImage.
+    if (const char* appImage = getenv("APPIMAGE"); appImage && *appImage)
+    {
+        const char* xdg = getenv("XDG_DATA_HOME");
+        const char* home = getenv("HOME");
+        const std::string base = xdg && *xdg ? xdg : std::string(home ? home : ".") + "/.local/share";
+        fo.dir = base + "/pokemon-ds-wide";
+        for (size_t i = 1; i <= fo.dir.size(); i++) // (each folder on the way, as mkdir -p)
+            if (i == fo.dir.size() || fo.dir[i] == '/') MakeDir(fo.dir.substr(0, i));
+    }
+#endif
     fo.roms = fo.dir + "/roms";
     fo.saves = fo.dir + "/saves";
-    fo.funcs = fo.dir + "/data/funcs";
     fo.cfg = fo.dir + "/settings.cfg";
     fo.art = fo.dir;
     MakeDir(fo.roms);

@@ -236,6 +236,9 @@ inline int Make(const std::string& dir, const std::vector<Launcher::Game>& games
         return 0;
     }
     exe[n] = 0;
+    // From an AppImage: the AppImage file itself (the program inside lives only while it runs).
+    if (const char* appImage = getenv("APPIMAGE"); appImage && *appImage && strlen(appImage) < sizeof exe)
+        strcpy(exe, appImage);
     const char* homeEnv = getenv("HOME");
     const std::string home = homeEnv ? homeEnv : "";
     // The applications menu (and Steam's "Add a Non-Steam Game" list on the Steam Deck).

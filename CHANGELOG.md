@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Linux: an AppImage** (`pokemon-ds-wide-pc-linux-x86_64.AppImage`), the program as one file, for
+  Gear Lever and other AppImage managers, which also update it from the release. Its ROMs, saves
+  and settings go in `~/.local/share/pokemon-ds-wide` (O in the game list opens its roms folder);
+  its desktop shortcuts start the AppImage.
 - **Switch: HOME MENU ICONS could fail with THIS BUILD HAS NO FORWARDER** when the game list had no
   game that needed the program's built-in tables (only SoulSilver and HeartGold, or games with their
   own funcs.txt). Fixed.

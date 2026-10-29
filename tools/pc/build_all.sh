@@ -14,6 +14,9 @@
 # The results, in build-pc-dist/:
 #   pokemon-ds-wide-pc-windows-x86_64.zip   Pokemon DS Launcher.exe, SDL2.dll, data/, roms/
 #   pokemon-ds-wide-pc-linux-x86_64.tar.gz  pokemon-ds-wide, libSDL2-2.0.so.0, data/, roms/
+#   pokemon-ds-wide-pc-linux-x86_64.AppImage the same as one file (and its .zsync), for Gear Lever
+#                                            and other AppImage managers; ROMs, saves and settings
+#                                            then go in ~/.local/share/pokemon-ds-wide
 #
 # Needs Linux or WSL2 (Ubuntu 24.04) with git, CMake, Ninja, Python 3 and curl; for Windows also
 # MinGW-w64 (sudo apt install g++-mingw-w64-x86-64-posix), for Linux SDL2's development files
@@ -21,6 +24,8 @@
 # build-pc-deps/ and checked against its known checksum. The Windows program's icon:
 # SSR_PC_ICON=your.ico (optional). The game list's pictures, built into the program: SSR_PC_ART, a
 # folder of your own with IREO.jpg, IRDO.jpg ... named as for the list's icons/ folder (optional).
+# The AppImage's icon: SSR_LINUX_ICON=your.jpg or .png (optional); it is made with appimagetool,
+# fetched once into build-pc-deps/, and zsyncmake (sudo apt install zsync) for its .zsync.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -208,8 +213,54 @@ if [ "$TARGET" != windows ]; then
     tar -czf "build-pc-dist/$TGZ" -C build-pc-dist/linux pokemon-ds-wide
     tar -tzf "build-pc-dist/$TGZ" | check_contents
     say "Done: $HERE/build-pc-dist/$TGZ"
+
+    # The same program as one AppImage. The update information in it points at the PC release's
+    # .zsync, so AppImage managers (Gear Lever, AppImageUpdate) find new versions by themselves.
+    say "The AppImage"
+    APPIMAGE=pokemon-ds-wide-pc-linux-x86_64.AppImage
+    AIT="$HERE/build-pc-deps/appimagetool-x86_64.AppImage"
+    if [ ! -x "$AIT" ]; then
+        mkdir -p "$HERE/build-pc-deps"
+        curl -fsSL -o "$AIT" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x "$AIT"
+    fi
+    command -v zsyncmake >/dev/null || fail "zsyncmake is not installed (Ubuntu: sudo apt install zsync)"
+    AD=build-pc-dist/AppDir
+    rm -rf "$AD"
+    mkdir -p "$AD/usr/bin"
+    cp -r "$OUT/." "$AD/usr/bin/"
+    rm -rf "$AD/usr/bin/roms" # (the ROMs go in the data folder, see pc_launcher.cpp)
+    ln -s usr/bin/pokemon-ds-wide "$AD/AppRun"
+    python3 - "${SSR_LINUX_ICON:-$HERE/tools/appimage/ssrecomp-setup.png}" "$AD/pokemon-ds-wide.png" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGBA')
+side = min(im.size)
+im = im.crop(((im.width - side) // 2, (im.height - side) // 2, (im.width + side) // 2, (im.height + side) // 2))
+im.resize((256, 256), Image.LANCZOS).save(sys.argv[2])
+PY
+    ln -s pokemon-ds-wide.png "$AD/.DirIcon"
+    cat > "$AD/pokemon-ds-wide.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Pokemon DS Widescreen
+Comment=The DS Pokemon games as one widescreen picture
+Exec=pokemon-ds-wide
+Icon=pokemon-ds-wide
+Terminal=false
+Categories=Game;
+DESKTOP
+    rm -f "build-pc-dist/$APPIMAGE" "build-pc-dist/$APPIMAGE.zsync"
+    (cd build-pc-dist && ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$AIT" --no-appstream \
+        -u "gh-releases-zsync|mamesj|pokemon-ds-widescreen|pc-v1|$APPIMAGE.zsync" AppDir "$APPIMAGE")
+    [ -f "build-pc-dist/$APPIMAGE.zsync" ] || fail "no .zsync was made for the AppImage"
+    # (Its contents: the program, SDL2, the tables and notes, the icon and the desktop file.)
+    (cd "$AD" && find . -mindepth 1 \( -type d -printf '%P/\n' \) -o -printf '%P\n' |
+        grep -v '^AppRun$\|^\.DirIcon$\|^pokemon-ds-wide\.\(png\|desktop\)$\|^usr/$' |
+        sed 's|^usr/bin/|pokemon-ds-wide/|' | check_contents)
+    say "Done: $HERE/build-pc-dist/$APPIMAGE"
 fi
-ls -l build-pc-dist/*.zip build-pc-dist/*.tar.gz 2>/dev/null
+ls -l build-pc-dist/*.zip build-pc-dist/*.tar.gz build-pc-dist/*.AppImage* 2>/dev/null
 cat <<EOF
 
 Unpack the download anywhere, put your ROMs in its roms folder (any names: English Black, White,
