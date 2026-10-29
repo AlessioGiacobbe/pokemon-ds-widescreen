@@ -11,6 +11,7 @@
 #include <cstring>
 #include <string>
 #include <utility>
+#include <cmath>
 #include <vector>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -213,6 +214,62 @@ inline bool NroIcon(const std::string& nro, std::vector<unsigned char>& jpeg)
 // the game's folder, or the Homebrew Menu icon of a one-game program (.nro) in its folder (not in
 // the list's own folder: that one is the all-games program, whose icon is no game's). The
 // downloads hold none: these are the player's own.
+// Square ARGB pixels (side n) at side m: smooth both ways (bilinear when larger, the average of
+// the pixels covered when smaller), with the colours weighted by their opacity.
+inline std::vector<uint32_t> ResizeArt(const std::vector<uint32_t>& src, int n, int m)
+{
+    std::vector<uint32_t> out((size_t)m * m);
+    auto at = [&](int x, int y) { return src[(size_t)std::min(n - 1, std::max(0, y)) * n + std::min(n - 1, std::max(0, x))]; };
+    for (int y = 0; y < m; y++)
+        for (int x = 0; x < m; x++)
+        {
+            double acc[4] = {}, wsum = 0;
+            auto add = [&](uint32_t p, double w) {
+                const double al = (p >> 24) / 255.0;
+                acc[0] += w * al * ((p >> 16) & 255);
+                acc[1] += w * al * ((p >> 8) & 255);
+                acc[2] += w * al * (p & 255);
+                acc[3] += w * (p >> 24);
+                wsum += w;
+            };
+            if (m >= n)
+            {
+                const double fx = (x + 0.5) * n / m - 0.5, fy = (y + 0.5) * n / m - 0.5;
+                const int x0 = (int)std::floor(fx), y0 = (int)std::floor(fy);
+                const double tx = fx - x0, ty = fy - y0;
+                add(at(x0, y0), (1 - tx) * (1 - ty));
+                add(at(x0 + 1, y0), tx * (1 - ty));
+                add(at(x0, y0 + 1), (1 - tx) * ty);
+                add(at(x0 + 1, y0 + 1), tx * ty);
+            }
+            else
+            {
+                const int sx0 = x * n / m, sx1 = std::max(sx0 + 1, (x + 1) * n / m);
+                const int sy0 = y * n / m, sy1 = std::max(sy0 + 1, (y + 1) * n / m);
+                for (int sy = sy0; sy < sy1; sy++)
+                    for (int sx = sx0; sx < sx1; sx++) add(at(sx, sy), 1);
+            }
+            const double alpha = acc[3] / wsum;
+            const double k = alpha > 0 ? 255.0 / (alpha * wsum) : 0;
+            auto c = [&](double v) { return (uint32_t)std::min(255.0, std::max(0.0, v * k + 0.5)); };
+            out[(size_t)y * m + x] = ((uint32_t)std::min(255.0, alpha + 0.5) << 24) | (c(acc[0]) << 16) | (c(acc[1]) << 8) | c(acc[2]);
+        }
+    return out;
+}
+
+// The game's picture at side m, for an icon outside the list (desktop shortcuts, HOME Menu
+// entries): its box art or picture, else its DS icon (sharp, as a pixel picture). Empty when it
+// has neither.
+inline std::vector<uint32_t> GamePicture(const Game& g, int m)
+{
+    if (!g.art.empty()) return ResizeArt(g.art, Art, m);
+    if (!g.hasIcon) return {};
+    std::vector<uint32_t> out((size_t)m * m);
+    for (int y = 0; y < m; y++)
+        for (int x = 0; x < m; x++) out[(size_t)y * m + x] = g.icon[(y * 32 / m) * 32 + x * 32 / m];
+    return out;
+}
+
 inline void FindArt(Game& g, const std::string& listFolder)
 {
     std::vector<unsigned char> data;
@@ -457,6 +514,11 @@ inline std::vector<Setting> SettingsList()
                   "PUTS A SHORTCUT FOR EACH GAME IN THIS LIST ON YOUR DESKTOP AND IN YOUR APPS MENU WITH ITS PICTURE. IT STARTS THAT GAME STRAIGHT AWAY. ON THE STEAM DECK THEY ALSO SHOW UP IN ADD A NON-STEAM GAME. CREATE AGAIN AFTER ADDING GAMES OR MOVING THIS FOLDER." });
 #endif
 #endif
+#endif
+#if defined(__SWITCH__) && defined(SSR_ALL_GAMES)
+    // (frontend/switch_forwarder.cpp, made by the game list: switch_platform.cpp.)
+    l.push_back({ "!forwarders", "HOME MENU ICONS", { { "", "INSTALL" } }, "",
+                  "PUTS AN ICON FOR EACH GAME IN THIS LIST ON THE HOME MENU WITH ITS PICTURE. IT STARTS THAT GAME STRAIGHT AWAY. MADE ON THIS CONSOLE: NO PC OR KEYS FILE NEEDED. LIKE ANY FORWARDER THE ICONS NEED SIGPATCHES TO START. INSTALL AGAIN AFTER ADDING GAMES. REMOVE ONE IN THE HOME MENU (OPTIONS / DELETE SOFTWARE)." });
 #endif
     // Only in the pause menu.
 #ifdef __SWITCH__

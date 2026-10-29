@@ -241,6 +241,8 @@ elseif(SSR_SWITCH)
     option(SSR_ALL_GAMES "Switch: the all-games program" OFF)
     if(SSR_ALL_GAMES)
         target_compile_definitions(ssrecomp PRIVATE SSR_ALL_GAMES)
+        # Its HOME MENU ICONS (the settings page of its list).
+        target_sources(ssrecomp PRIVATE frontend/switch_forwarder.cpp)
     endif()
     add_custom_target(ssrecomp_nro ALL
         COMMAND "${CMAKE_COMMAND}"
@@ -315,7 +317,7 @@ endif()
 # the builder's own with IREO.jpg, IRDO.jpg ... named as for the list's icons/ folder; none come
 # with the source), shown for a game the player has no picture of.
 set(SSR_PC_ART "" CACHE PATH "a folder of pictures for the game list, built into the program")
-if(SSR_PC_ALL_GAMES AND SSR_PC_ART AND IS_DIRECTORY "${SSR_PC_ART}")
+if((SSR_PC_ALL_GAMES OR SSR_ALL_GAMES) AND SSR_PC_ART AND IS_DIRECTORY "${SSR_PC_ART}")
     set(_art_body "")
     set(_art_table "")
     foreach(code IRBO IRAO IREO IRDO IPKE IPGE CPUE)

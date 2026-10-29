@@ -114,60 +114,8 @@ inline std::vector<uint8_t> Png(const std::vector<uint32_t>& argb, int w, int h)
     return out;
 }
 
-// Square ARGB pixels (side n) at side m: smooth both ways (bilinear when larger, the average of
-// the pixels covered when smaller), with the colours weighted by their opacity.
-inline std::vector<uint32_t> Resize(const std::vector<uint32_t>& src, int n, int m)
-{
-    std::vector<uint32_t> out((size_t)m * m);
-    auto at = [&](int x, int y) { return src[(size_t)std::min(n - 1, std::max(0, y)) * n + std::min(n - 1, std::max(0, x))]; };
-    for (int y = 0; y < m; y++)
-        for (int x = 0; x < m; x++)
-        {
-            double acc[4] = {}, wsum = 0;
-            auto add = [&](uint32_t p, double w) {
-                const double al = (p >> 24) / 255.0;
-                acc[0] += w * al * ((p >> 16) & 255);
-                acc[1] += w * al * ((p >> 8) & 255);
-                acc[2] += w * al * (p & 255);
-                acc[3] += w * (p >> 24);
-                wsum += w;
-            };
-            if (m >= n)
-            {
-                const double fx = (x + 0.5) * n / m - 0.5, fy = (y + 0.5) * n / m - 0.5;
-                const int x0 = (int)std::floor(fx), y0 = (int)std::floor(fy);
-                const double tx = fx - x0, ty = fy - y0;
-                add(at(x0, y0), (1 - tx) * (1 - ty));
-                add(at(x0 + 1, y0), tx * (1 - ty));
-                add(at(x0, y0 + 1), (1 - tx) * ty);
-                add(at(x0 + 1, y0 + 1), tx * ty);
-            }
-            else
-            {
-                const int sx0 = x * n / m, sx1 = std::max(sx0 + 1, (x + 1) * n / m);
-                const int sy0 = y * n / m, sy1 = std::max(sy0 + 1, (y + 1) * n / m);
-                for (int sy = sy0; sy < sy1; sy++)
-                    for (int sx = sx0; sx < sx1; sx++) add(at(sx, sy), 1);
-            }
-            const double alpha = acc[3] / wsum;
-            const double k = alpha > 0 ? 255.0 / (alpha * wsum) : 0;
-            auto c = [&](double v) { return (uint32_t)std::min(255.0, std::max(0.0, v * k + 0.5)); };
-            out[(size_t)y * m + x] = ((uint32_t)std::min(255.0, alpha + 0.5) << 24) | (c(acc[0]) << 16) | (c(acc[1]) << 8) | c(acc[2]);
-        }
-    return out;
-}
-
-// The game's picture at side m: its box art or picture of the player's own, else its DS icon
-// (sharp, as a pixel picture). Empty when it has neither.
-inline std::vector<uint32_t> Picture(const Launcher::Game& g, int m)
-{
-    if (!g.art.empty()) return Resize(g.art, Launcher::Art, m);
-    if (!g.hasIcon) return {};
-    std::vector<uint32_t> out((size_t)m * m);
-    for (int y = 0; y < m; y++)
-        for (int x = 0; x < m; x++) out[(size_t)y * m + x] = g.icon[(y * 32 / m) * 32 + x * 32 / m];
-    return out;
-}
+// The game's picture at side m (Launcher::GamePicture).
+inline std::vector<uint32_t> Picture(const Launcher::Game& g, int m) { return Launcher::GamePicture(g, m); }
 
 inline bool WriteFile(const std::string& path, const std::vector<uint8_t>& data)
 {

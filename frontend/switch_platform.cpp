@@ -23,6 +23,16 @@
 #include "thirdparty/stb_image.h"
 #undef STB_IMAGE_IMPLEMENTATION
 #include "launcher.h"
+#ifdef SSR_ALL_GAMES
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBI_WRITE_NO_STDIO
+#include "thirdparty/stb_image_write.h"
+#include "switch_forwarder.h"
+#endif
+#ifdef SSR_PC_ART
+// The game list's pictures built into the program (pc_art.cpp, CMakeLists.txt: SSR_PC_ART).
+namespace PcLauncher { const unsigned char* BuiltInArt(const char* code, size_t& size); }
+#endif
 
 // How many chunks the program's SoulSilver tables have: none in a build for the Black games only.
 extern const uint32_t rc_num_chunks;
@@ -83,6 +93,60 @@ std::string SettingsPath(const std::string& dir)
     return cfgPath;
 }
 
+#ifdef SSR_ALL_GAMES
+// The game's picture as the HOME Menu's icon: a 256x256 JPEG (over the list's dark grey where
+// the picture is see-through, as a DS icon is). Empty without a picture.
+std::vector<uint8_t> IconJpeg(const Launcher::Game& g)
+{
+    const std::vector<uint32_t> px = Launcher::GamePicture(g, 256);
+    if (px.empty()) return {};
+    std::vector<uint8_t> rgb((size_t)256 * 256 * 3);
+    for (size_t i = 0; i < px.size(); i++)
+    {
+        const uint32_t p = px[i], a = p >> 24;
+        for (int c = 0; c < 3; c++)
+        {
+            const uint32_t v = (p >> (16 - 8 * c)) & 255;
+            rgb[i * 3 + c] = (uint8_t)((v * a + 0x1c * (255 - a)) / 255);
+        }
+    }
+    std::vector<uint8_t> jpeg;
+    stbi_write_jpg_to_func([](void* ctx, void* data, int size) {
+        auto* out = (std::vector<uint8_t>*)ctx;
+        out->insert(out->end(), (uint8_t*)data, (uint8_t*)data + size);
+    }, &jpeg, 256, 256, 3, rgb.data(), 92);
+    return jpeg;
+}
+
+// HOME MENU ICONS (the settings page): one HOME Menu entry per game in the list, each starting
+// this program with "--game CODE" (switch_forwarder.cpp). What came of it, for the page.
+std::string InstallHomeIcons(const std::vector<Launcher::Game>& games)
+{
+    if (g_self.empty()) return "FAILED: NO PROGRAM PATH";
+    std::vector<SwitchForwarder::Entry> entries;
+    std::vector<std::string> done;
+    for (const Launcher::Game& g : games)
+    {
+        if (!Playable(g) || std::find(done.begin(), done.end(), g.code) != done.end()) continue;
+        done.push_back(g.code);
+        SwitchForwarder::Entry e;
+        const Launcher::KnownGame* k = Launcher::Known(g.code);
+        e.name = k ? k->name : g.name;
+        e.args = "--game " + g.code;
+        e.icon = IconJpeg(g);
+        if (e.icon.empty()) continue;
+        entries.push_back(std::move(e));
+    }
+    if (entries.empty()) return "NO GAMES TO ADD";
+    std::string error;
+    const int made = SwitchForwarder::Install(g_self, entries, error);
+    fprintf(stderr, "[switch] HOME Menu icons: %d of %d%s%s\n", made, (int)entries.size(), error.empty() ? "" : ", ", error.c_str());
+    if (made == (int)entries.size()) return std::to_string(made) + " ON THE HOME MENU";
+    if (made > 0) return std::to_string(made) + " OF " + std::to_string(entries.size()) + " (" + error + ")";
+    return "FAILED: " + error;
+}
+#endif
+
 // The game list (launcher.h) on the screen until a game is chosen: its index, or -1 for +.
 // Shown with libnx's framebuffer, before the game's own window exists.
 // autoFrames > 0: the list is shown that many frames and the selected game played (test runs:
@@ -103,8 +167,31 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, const std::
     Launcher::SettingsPage page;
     std::string note;
     int shown = 0;
+#ifdef SSR_ALL_GAMES
+    bool installIcons = false; // (HOME MENU ICONS chosen: done after INSTALLING is on the screen)
+#endif
+    auto change = [&](int d) {
+        const char* key = page.Change(d);
+#ifdef SSR_ALL_GAMES
+        if (key && !strcmp(key, "!forwarders") && !installIcons)
+        {
+            page.items[page.selected].values[0].second = "INSTALLING...";
+            installIcons = true;
+        }
+#else
+        (void)key;
+#endif
+    };
     while (appletMainLoop())
     {
+#ifdef SSR_ALL_GAMES
+        // (Set during the last pass, which then showed INSTALLING... on the screen.)
+        if (installIcons)
+        {
+            page.items[page.selected].values[0].second = InstallHomeIcons(games);
+            installIcons = false;
+        }
+#endif
         if (autoFrames > 0 && ++shown > autoFrames)
         {
             result = selected;
@@ -121,8 +208,8 @@ int PickGame(const std::vector<Launcher::Game>& games, int selected, const std::
         {
             const bool step = held == 1 || (held > 20 && held % 6 == 0);
             if (step && (up || dn)) page.Move(up ? -1 : 1);
-            if (step && (lf || rt)) page.Change(lf ? -1 : 1);
-            if (down & HidNpadButton_A) page.Change(1);
+            if (step && (lf || rt)) change(lf ? -1 : 1);
+            if (down & HidNpadButton_A) change(1);
             if (down & (HidNpadButton_B | HidNpadButton_Y)) guide = false;
             if (down & HidNpadButton_Plus) break;
         }
@@ -291,7 +378,17 @@ bool Start(int& argc, char**& argv)
     fprintf(stderr, "[switch] memory: %llu MB in use of %llu MB\n", (unsigned long long)(used >> 20),
         (unsigned long long)(total >> 20));
 
-    // With arguments (e.g. sent with nxlink while testing) they are used as they are.
+    // "--game IREO" (the HOME Menu icons: switch_forwarder.cpp): that game at once, without the
+    // list. Other arguments (e.g. sent with nxlink while testing) are used as they are.
+    std::string direct;
+#ifdef SSR_ALL_GAMES
+    if (argc == 3 && !strcmp(argv[1], "--game"))
+    {
+        direct = argv[2];
+        for (char& c : direct) c = (char)toupper((unsigned char)c);
+    }
+    else
+#endif
     if (argc >= 2) return true;
 
     // The game: the only one there is, or the one chosen from the list (launcher.h).
@@ -320,7 +417,27 @@ bool Start(int& argc, char**& argv)
         return false;
     }
 #else
-    if (games.size() > 1)
+    int directGame = -1;
+    for (size_t i = 0; i < games.size() && !direct.empty(); i++)
+        if (games[i].code == direct && Playable(games[i]))
+        {
+            directGame = (int)i;
+            break;
+        }
+    if (!direct.empty() && directGame < 0) fprintf(stderr, "[switch] --game %s: not in the list\n", direct.c_str());
+    if (directGame >= 0)
+    {
+        // (Noted as the game played last, so that the list starts on it after QUIT.)
+        chosen = directGame;
+        if (FILE* f = fopen((dir + "/last-game.txt").c_str(), "w"))
+        {
+            fprintf(f, "%s\n", games[chosen].rom.c_str());
+            fclose(f);
+        }
+        fprintf(stderr, "[switch] --game %s: %s\n", direct.c_str(), games[chosen].rom.c_str());
+        g_canChange = true;
+    }
+    else if (games.size() > 1)
     {
         // The list starts on the game played last.
         const std::string lastPath = dir + "/last-game.txt";
@@ -370,6 +487,15 @@ bool Start(int& argc, char**& argv)
                 for (Launcher::Game& g : games)
                     for (const Launcher::Game& other : games)
                         if (g.art.empty() && !other.art.empty() && other.code == g.code) g.art = other.art;
+#ifdef SSR_PC_ART
+                // Else the box art built into the program.
+                for (Launcher::Game& g : games)
+                {
+                    size_t size = 0;
+                    if (g.art.empty())
+                        if (const unsigned char* data = PcLauncher::BuiltInArt(g.code.c_str(), size)) Launcher::LoadArt(data, size, g.art);
+                }
+#endif
                 chosen = PickGame(games, chosen, SettingsPath(dir));
                 if (chosen < 0) return false;
                 if (FILE* f = fopen(lastPath.c_str(), "w"))

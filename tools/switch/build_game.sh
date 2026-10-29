@@ -152,12 +152,27 @@ all)
     ROMFS="$HERE/$BUILD/romfs"
     bw_tables "$ROMFS"
     cp tools/platinum/CPUE.txt "$ROMFS/funcs/CPUE.txt"
+    # The HOME Menu entries' program (HOME MENU ICONS in the list's settings: frontend/switch_forwarder.cpp).
+    say "The HOME Menu icons' loader (tools/switch/forwarder)"
+    build bash tools/switch/build_forwarder.sh "$HERE/$BUILD/forwarder-build" "$ROMFS/forwarder"
+    [ -s "$ROMFS/forwarder/main" ] && [ -s "$ROMFS/forwarder/main.npdm" ] || fail "the HOME Menu icons' loader was not made"
+    # The list's box art built in (SSR_PC_ART: a folder of your own, IREO.jpg ..., as for the PC
+    # download), copied beside the build so that the build (in Docker too) can see it.
+    ART=""
+    if [ -n "${SSR_PC_ART:-}" ]; then
+        [ -d "$SSR_PC_ART" ] || fail "SSR_PC_ART: no such folder: $SSR_PC_ART"
+        rm -rf "$BUILD/box-art"
+        mkdir -p "$BUILD/box-art"
+        cp "$SSR_PC_ART"/*.jpg "$SSR_PC_ART"/*.png "$BUILD/box-art/" 2>/dev/null || true
+        ART="$HERE/$BUILD/box-art"
+        say "Pictures for the game list: $SSR_PC_ART"
+    fi
     icon="${SSR_SWITCH_ICON_ALL:-${SSR_SWITCH_ICON:-}}"
     rm -f "$BUILD/icon.jpg"
     [ -n "$icon" ] && install -D -m 644 "$icon" "$BUILD/icon.jpg"
     say "Compiling for the Switch"
     build SSR_SWITCH_JIT=1 SSR_SWITCH_GEN="$HERE/build-gen-tables" SSR_SWITCH_BUILD="$BUILD" \
-        SSR_SWITCH_ROMFS="$ROMFS" SSR_ALL_GAMES=ON SSR_NRO_TITLE="Pokemon DS Widescreen" bash tools/switch/build.sh
+        SSR_SWITCH_ROMFS="$ROMFS" SSR_ALL_GAMES=ON SSR_PC_ART="$ART" SSR_NRO_TITLE="Pokemon DS Widescreen" bash tools/switch/build.sh
     mkdir -p build-sd/switch/pokemon-ds-wide/roms
     cp "$BUILD/ssrecomp.nro" build-sd/switch/pokemon-ds-wide/pokemon-ds-wide.nro
     ZIP=pokemon-ds-wide-all-switch.zip
