@@ -79,7 +79,7 @@ bool RomfsReady()
 bool Playable(const Launcher::Game& g)
 {
     if (!g.known) return false;
-    if (g.code == "IPGE" || g.code == "IPKE") return rc_num_chunks > 0;
+    if (Launcher::HeartSilver(g.code)) return rc_num_chunks > 0;
     struct stat st;
     if (stat((g.folder + "/funcs.txt").c_str(), &st) == 0) return true;
     return RomfsReady() && stat(("romfs:/funcs/" + g.code + ".txt").c_str(), &st) == 0;
@@ -639,8 +639,8 @@ bool Start(int& argc, char**& argv)
     const std::string rom = game.rom, gameDir = game.folder;
     char code[5] = {};
     memcpy(code, game.code.data(), std::min<size_t>(4, game.code.size()));
-    // SoulSilver and HeartGold (US): the same program, layouts from its own tables.
-    const bool heartSilver = !strcmp(code, "IPGE") || !strcmp(code, "IPKE");
+    // SoulSilver and HeartGold: the same program, layouts from its own tables.
+    const bool heartSilver = Launcher::HeartSilver(game.code);
     // The save is named after the game (SoulSilver's name is the one earlier builds used), in
     // the game's own folder.
     const std::string saveName = game.saveName;
@@ -673,8 +673,8 @@ bool Start(int& argc, char**& argv)
                             "  It plays the English versions of:\n"
                             "    Pokemon Black 2 (IREO), Pokemon White 2 (IRDO), Pokemon Black (IRBO)\n"
                             "    and Pokemon White (IRAO), US and Europe;\n"
-                            "    Pokemon SoulSilver (IPGE) and Pokemon HeartGold (IPKE), US, with the\n"
-                            "    SoulSilver and HeartGold download;\n"
+                            "    Pokemon SoulSilver (IPGE) and Pokemon HeartGold (IPKE), US, and HeartGold\n"
+                            "    in Italian (IPKI), with the SoulSilver and HeartGold download;\n"
                             "    Pokemon Platinum (CPUE), with the Platinum download.\n"
                             "  Other languages put the game's code in other places.");
                 return false;

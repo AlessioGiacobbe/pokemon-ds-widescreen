@@ -1568,8 +1568,9 @@ int main(int argc, char** argv)
     std::vector<uint8_t> rom = ReadFile(opt.rom);
     FuncWatch::RomPath = opt.rom; // (for a function table that reads its first bytes from it)
     // Pokemon SoulSilver (US): its new game's first menu is skipped (see where keys are sent).
-    // (HeartGold too: the same game where it matters here.)
-    const bool soulSilverRom = rom.size() > 0x10 && (memcmp(&rom[0x0C], "IPGE", 4) == 0 || memcmp(&rom[0x0C], "IPKE", 4) == 0);
+    // (HeartGold too, the Italian one included: the same game where it matters here.)
+    const bool soulSilverRom = rom.size() > 0x10 && (memcmp(&rom[0x0C], "IPGE", 4) == 0 || memcmp(&rom[0x0C], "IPKE", 4) == 0 ||
+        memcmp(&rom[0x0C], "IPKI", 4) == 0);
     if (rom.empty())
     {
         fprintf(stderr, "cannot read ROM: %s\n", opt.rom.c_str());
@@ -1642,10 +1643,11 @@ int main(int argc, char** argv)
             fclose(f);
         }
         if (overlays.Open(opt.rom))
-            rc_portable_load(code, [](void* user, int id, unsigned* size) -> const unsigned char* {
+            rc_portable_load(code, [](void* user, int id, unsigned* size, unsigned* ram) -> const unsigned char* {
                 const NdsOverlays::Overlay* ov = static_cast<NdsOverlays*>(user)->Get((uint32_t)id);
                 if (!ov) return nullptr;
                 *size = (unsigned)ov->data.size();
+                *ram = ov->ram;
                 return ov->data.data();
             }, &overlays);
         else

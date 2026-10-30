@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **HeartGold in Italian** (Pokémon Versione Oro HeartGold) plays with all its one-screen layouts,
+  as the US copy does; its save is `heartgold-it.sav`.
 - **KEYS AND BUTTONS in the game list too:** its settings page (CONTROLS) changes the keys and
   buttons before you play, as the pause menu does; on the Switch as well (any controller it
   takes, sys-con and MissionControl ones included), and its list follows the buttons changed.

@@ -60,6 +60,7 @@ inline const KnownGame* Known(const std::string& code)
         { "IREO", "Pokemon Black 2", "black2.sav" },
         { "IRDO", "Pokemon White 2", "white2.sav" },
         { "IPKE", "Pokemon HeartGold", "heartgold.sav" },
+        { "IPKI", "Pokemon HeartGold (IT)", "heartgold-it.sav" },
         { "IPGE", "Pokemon SoulSilver", "soulsilver.sav" },
         { "CPUE", "Pokemon Platinum", "platinum.sav" },
     };
@@ -69,10 +70,16 @@ inline const KnownGame* Known(const std::string& code)
 }
 inline int Order(const std::string& code)
 {
-    static const char* order[] = { "IRBO", "IRAO", "IREO", "IRDO", "IPKE", "IPGE", "CPUE" };
-    for (int i = 0; i < 7; i++)
+    static const char* order[] = { "IRBO", "IRAO", "IREO", "IRDO", "IPKE", "IPKI", "IPGE", "CPUE" };
+    for (int i = 0; i < 8; i++)
         if (code == order[i]) return i;
-    return 7;
+    return 8;
+}
+// SoulSilver and HeartGold (US, and the Italian HeartGold): the program's own tables give their
+// layouts (tools/soulsilver/*.json for the games other than SoulSilver), not a function table.
+inline bool HeartSilver(const std::string& code)
+{
+    return code == "IPGE" || code == "IPKE" || code == "IPKI";
 }
 
 inline bool EndsWithNds(const std::string& name)
