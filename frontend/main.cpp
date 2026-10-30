@@ -6512,9 +6512,10 @@ int main(int argc, char** argv)
             if (selId == M_STARTBTN) hint = cfg.startMenu ? "START OPENS THIS MENU" : "START IS THE DS START";
             if (selId == M_CONTROLS) hint = "GIVE ANY BUTTON ANOTHER KEY OR BUTTON";
             if (selId == M_CHEATS) hint = cheats.items.empty() ? "NONE FOUND: SEE THE README" : "ACTION REPLAY CODES";
-            if (selId == M_NOTHING) hint = "PUT " + gameCode + ".TXT OR USRCHEAT.DAT IN CHEATS";
+            if (selId == M_NOTHING) hint = "GET USRCHEAT.DAT: SEE THE README";
             if (selId >= M_CHEAT0 && !(touchPadUsed && touchPad.visible)) hint = btn(Controls::A) + ": ON / OFF   " + btn(Controls::B) + ": BACK";
-            menu.Draw(canvas, pageTitle[menuPage], hint);
+            const std::string note = selId >= M_CHEAT0 && selId - M_CHEAT0 < (int)cheats.items.size() ? cheats.items[selId - M_CHEAT0].note : std::string();
+            menu.Draw(canvas, pageTitle[menuPage], hint, note);
             }
             overlayUsed = true;
         }

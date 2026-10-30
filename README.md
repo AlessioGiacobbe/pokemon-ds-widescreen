@@ -73,7 +73,7 @@ every setting: a phone and the Switch are always full screen, for one.
 ## Cheats
 
 Action Replay codes, turned on and off as you play: **CHEATS** in the pause menu. They go
-in a `cheats` folder:
+in a `cheats` folder (make it if it isn't there):
 
 | Where you play | Folder |
 |---|---|
@@ -83,8 +83,11 @@ in a `cheats` folder:
 | Android | `cheats` inside the folder you chose for your ROMs |
 | Nintendo Switch | `/switch/pokemon-ds-wide/cheats/` on the SD card |
 
-- **A cheat database:** `usrcheat.dat` (the R4 / DeSmuME one) holds codes for every game;
-  CHEATS lists this game's.
+- **A cheat database:** `usrcheat.dat` holds codes for every game; CHEATS lists this
+  game's, in their folders, with the database's note on the chosen one under the menu.
+  The one most people use is DeadSkullzJr's: download it from
+  [his GBAtemp thread](https://gbatemp.net/threads/deadskullzjrs-nds-cheat-databases.488711/)
+  and put `usrcheat.dat` in the `cheats` folder.
 - **Codes of your own:** a text file named after the game's code: `IREO.txt` (Black 2),
   `IRDO.txt` (White 2), `IRBO.txt` (Black), `IRAO.txt` (White), `IPKE.txt` (HeartGold),
   `IPGE.txt` (SoulSilver), `CPUE.txt` (Platinum). The cheat's name on a line, its code

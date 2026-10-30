@@ -36,6 +36,7 @@ struct Cheat
     std::vector<melonDS::u32> code;
     bool on = false;
     int group = -1;    // a folder of the database in which only one may be on (-1: none)
+    std::string note;  // what the database says about it ("hold L+R", ...), in the menus' font
 };
 
 // A name in the menus' font: capitals, digits and : - + . / < > ! ( ), others as spaces, cut to
@@ -88,7 +89,8 @@ struct List
         return true;
     }
 
-    void Add(const std::string& name, const std::string& key, const std::vector<melonDS::u32>& code, int group = -1)
+    void Add(const std::string& name, const std::string& key, const std::vector<melonDS::u32>& code, int group = -1,
+             const std::string& note = "")
     {
         if (code.empty()) return;
         Cheat c;
@@ -96,6 +98,10 @@ struct List
         c.key = key;
         c.code = code;
         c.group = group;
+        // (Shown under the menu, a few lines at most; the whole name first when the menu's is cut.)
+        if (!note.empty() && Shown(note, 160) != "?") c.note = Shown(note, 160);
+        const std::string full = Shown(name, 80);
+        if (full != c.name) c.note = c.note.empty() ? full : full + ": " + c.note;
         items.push_back(c);
     }
 
@@ -141,7 +147,7 @@ struct List
             if (!file.Error)
             {
                 for (const melonDS::ARCode& c : file.GetCodes())
-                    Add((c.Parent && !c.Parent->Name.empty() ? c.Parent->Name + ": " : "") + c.Name, "mch:" + c.Name, c.Code);
+                    Add((c.Parent && !c.Parent->Name.empty() ? c.Parent->Name + ": " : "") + c.Name, "mch:" + c.Name, c.Code, -1, c.Description);
                 sources.push_back(mch);
             }
         }
@@ -167,7 +173,7 @@ struct List
                         if (std::holds_alternative<melonDS::ARCode>(item))
                         {
                             const auto& c = std::get<melonDS::ARCode>(item);
-                            Add(c.Name, "dat:" + c.Name, c.Code);
+                            Add(c.Name, "dat:" + c.Name, c.Code, -1, c.Description);
                         }
                         else
                         {
@@ -177,7 +183,7 @@ struct List
                                 if (std::holds_alternative<melonDS::ARCode>(sub))
                                 {
                                     const auto& c = std::get<melonDS::ARCode>(sub);
-                                    Add(cat.Name + ": " + c.Name, "dat:" + cat.Name + "/" + c.Name, c.Code, g);
+                                    Add(cat.Name + ": " + c.Name, "dat:" + cat.Name + "/" + c.Name, c.Code, g, c.Description.empty() ? cat.Description : c.Description);
                                 }
                         }
                     }

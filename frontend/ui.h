@@ -189,7 +189,9 @@ struct Menu
         return i < (int)items.size() ? i : -1;
     }
 
-    void Draw(Canvas& c, const std::string& title, const std::string& hint) const
+    // note: a few lines of text in a strip under the box (CHEATS: what the database says about
+    // the chosen cheat), wrapped to the box's width.
+    void Draw(Canvas& c, const std::string& title, const std::string& hint, const std::string& note = "") const
     {
         int scale = c.h / 240;
         if (scale < 1) scale = 1;
@@ -208,7 +210,27 @@ struct Menu
         int boxW = 190 * scale;
         if (boxW > c.w - 8) boxW = c.w - 8;
         int boxH = lineH * rows + 6 * scale;
-        int bx = (c.w - boxW) / 2, by = (c.h - boxH) / 2;
+        // The note's lines (up to 4, the last cut short), and the box moved up to make room.
+        std::vector<std::string> noteLines;
+        if (!note.empty())
+        {
+            std::string line, word;
+            const int maxW = boxW - 12 * scale;
+            auto push = [&](const std::string& w) {
+                const std::string t = line.empty() ? w : line + " " + w;
+                if (!line.empty() && Canvas::TextWidth(t, scale) > maxW) { noteLines.push_back(line); line = w; }
+                else line = t;
+            };
+            for (char ch : note + " ")
+            {
+                if (ch == ' ') { if (!word.empty()) push(word); word.clear(); }
+                else word += ch;
+            }
+            if (!line.empty()) noteLines.push_back(line);
+            if (noteLines.size() > 4) { noteLines.resize(4); noteLines[3] += "..."; }
+        }
+        const int noteH = noteLines.empty() ? 0 : (int)noteLines.size() * 9 * scale + 6 * scale;
+        int bx = (c.w - boxW) / 2, by = std::max(2, (c.h - boxH - noteH) / 2);
         // (Kept for ItemAt: where the rows were drawn.)
         drawnX = bx;
         drawnY = by;
@@ -240,5 +262,13 @@ struct Menu
             y += lineH;
         }
         c.Text(bx + (boxW - Canvas::TextWidth(hint, scale)) / 2, y + 4 * scale, hint, scale, 0xFF8FA0C0);
+        if (!noteLines.empty())
+        {
+            const int ny = by + boxH + 3 * scale;
+            c.Fill(bx - scale, ny - scale, boxW + 2 * scale, noteH + 2 * scale, 0xFFE8E8E8);
+            c.Fill(bx, ny, boxW, noteH, 0xFF142034);
+            for (size_t i = 0; i < noteLines.size(); i++)
+                c.Text(bx + 6 * scale, ny + 4 * scale + (int)i * 9 * scale, noteLines[i], scale, 0xFFC8D0E0);
+        }
     }
 };
