@@ -16,6 +16,7 @@
 #include <chrono>
 #include <thread>
 #include "sampler.h"
+#include "ssr_os.h"
 #include <vector>
 #include <tuple>
 #include <deque>
@@ -1125,9 +1126,9 @@ struct Pads
             fprintf(stderr, "controller: %s\n", name ? name : "?");
             return name ? name : "";
         }
-#ifdef __ANDROID__
-        // Android reports some of a device's own keys as a joystick, and using one hides the
-        // on-screen controls.
+#ifdef SSR_PHONE
+        // Android reports some of a device's own keys as a joystick (and iOS its motion sensor),
+        // and using one hides the on-screen controls.
         return nullptr;
 #endif
         SDL_Joystick* j = SDL_JoystickOpen(index);
@@ -1862,7 +1863,7 @@ int main(int argc, char** argv)
 
     if (!opt.headless)
     {
-#ifdef __ANDROID__
+#ifdef SSR_PHONE
         SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
         SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
         // Fingers are handled one by one (on-screen controls and the touch screen).
@@ -1873,6 +1874,11 @@ int main(int argc, char** argv)
         // HIDAPI drivers on, a pad one of them claims (a Backbone One, a PlayStation pad) is
         // left out of Android's list, and is lost if SDL cannot open it over USB itself.
         SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "0");
+#endif
+#ifdef SSR_IOS
+        // The home bar at the bottom fades away, and a swipe up from the bottom edge (where the
+        // DS's SELECT and START are) needs a second swipe to leave the game.
+        SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
 #endif
 #ifdef __SWITCH__
         // The touch screen is read from its finger events (see switchFinger), not as a mouse.
@@ -3943,7 +3949,7 @@ int main(int argc, char** argv)
             // (The Switch always shows the one wide screen these layouts are built around.)
             add(M_LAYOUT, "SCREEN LAYOUT", LayoutName(layout.mode));
             add(M_LARGE, "LARGE SCREEN", large[focus.mode]);
-#if !defined(__ANDROID__)
+#if !defined(SSR_PHONE)
             // (Always full screen on the Switch and phones. Borderless: a window the size of the
             // screen, so other windows come up at once.)
             add(M_FULLSCREEN, "BORDERLESS FULLSCREEN", onOff(cfg.fullscreen));
@@ -3990,7 +3996,7 @@ int main(int argc, char** argv)
             // widescreen picture back, far more than drawing it in software.)
             add(M_GPU3D, "3D ON GPU", UseGpu3D ? "ON" : cfg.gpu3d ? "ON (NOT AVAILABLE)" : "OFF");
 #endif
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(SSR_PHONE)
             // ON: 360 lines while fast forwarding, for more frames a second (the menu's hint says so).
             add(M_FFLOWRES, "FAST FORWARD LOW RES", onOff(cfg.ffLowRes));
 #endif
@@ -4017,7 +4023,7 @@ int main(int argc, char** argv)
             // (Nothing to choose on the Switch: its labels are the DS's positions.)
             add(M_BUTTONS, "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION");
 #endif
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(SSR_PHONE)
             add(M_PADTOUCH, "STICK TOUCH CURSOR", onOff(cfg.padTouch)); // (the Switch and phones have touch screens)
 #endif
             add(M_BACK, "BACK", "");
@@ -4059,7 +4065,7 @@ int main(int argc, char** argv)
     // On-screen controls (touch screens): shown while no controller is connected.
     TouchPad touchPad;
     bool touchPadUsed = false, touchMenuHeld = false, prevTouchMenu = false;
-#ifdef __ANDROID__
+#ifdef SSR_PHONE
     touchPadUsed = true;
 #endif
 #ifdef __SWITCH__
@@ -5141,7 +5147,7 @@ int main(int argc, char** argv)
                 cfg.fps60 = !cfg.fps60;
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
                 break;
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(SSR_PHONE)
             case M_FULLSCREEN:
                 cfg.fullscreen = !cfg.fullscreen;
                 if (window)
@@ -5202,7 +5208,7 @@ int main(int argc, char** argv)
                 cfg.byLabel = !cfg.byLabel;
                 break;
 #endif
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(SSR_PHONE)
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
@@ -5231,7 +5237,7 @@ int main(int argc, char** argv)
             case M_FAST:
                 fastLock = !fastLock;
                 break;
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(SSR_PHONE)
             case M_FFLOWRES:
                 cfg.ffLowRes = !cfg.ffLowRes;
                 break;
@@ -6504,7 +6510,7 @@ int main(int argc, char** argv)
             }
             else
             {
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(SSR_PHONE)
             // (What FAST FORWARD LOW RES is for, while it is the one chosen.)
             if (selId == M_FFLOWRES) hint = "ON: MORE FPS IN FAST FORWARD";
 #endif
