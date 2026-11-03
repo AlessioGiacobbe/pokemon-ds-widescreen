@@ -171,7 +171,7 @@ ZIP="$DIST/pokemon-ds-wide-pc-macos-$ARCH.zip"
 # Only the program, its tables, notes, licence and icon: never a ROM, save or game code.
 python3 - "$ZIP" <<'PY'
 import re, sys, zipfile
-ok = re.compile(r'^Pokemon Fulldex\.app/(Contents/(Info\.plist|MacOS/(pokemon-ds-wide)?|_CodeSignature/(CodeResources)?|Resources/(AppIcon\.icns|README\.txt|LICENSE\.txt|LICENSE-mGBA\.txt|data/|data/funcs/|data/funcs/(IREO|IRDO|IRBO|IRAO|CPUE|ADAE|APAE|ADAS|IRAS|CPUS|IREF|IRDF|CPUF|IRBF|IRAF)\.txt)?)?)?$')
+ok = re.compile(r'^Pokemon Fulldex\.app/(Contents/(Info\.plist|MacOS/(pokemon-ds-wide)?|_CodeSignature/(CodeResources)?|Resources/(AppIcon\.icns|README\.txt|LICENSE\.txt|LICENSE-mGBA\.txt|data/|data/funcs/|data/funcs/(IREO|IRDO|IRBO|IRAO|CPUE|ADAE|APAE|ADAS|IRAS|CPUS|IREF|IRDF|CPUF|IRBF|IRAF|IRBI|IRAI|IREI|IRDI|CPUI|ADAI|APAI)\.txt)?)?)?$')
 names = zipfile.ZipFile(sys.argv[1]).namelist()
 bad = [n for n in names if not ok.match(n)]
 if bad: sys.exit('unexpected files in the Mac download: %s' % bad)

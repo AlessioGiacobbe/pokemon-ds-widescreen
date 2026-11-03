@@ -12,7 +12,8 @@ inline std::string BaseGameCode(const std::string& code)
         { "IRAS", "IRAO" }, { "CPUS", "CPUE" }, { "IPGS", "IPGE" }, { "IPKS", "IPKE" },
         { "ADAS", "ADAE" }, { "IRBF", "IRBO" }, { "IRAF", "IRAO" }, { "IREF", "IREO" },
         { "IRDF", "IRDO" }, { "IPGF", "IPGE" }, { "IPKF", "IPKE" }, { "CPUF", "CPUE" },
-        { "IPKI", "IPKE" }
+        { "IPKI", "IPKE" }, { "IPGI", "IPGE" }, { "CPUI", "CPUE" }, { "IRBI", "IRBO" },
+        { "IRAI", "IRAO" }, { "IREI", "IREO" }, { "IRDI", "IRDO" }, { "ADAI", "ADAE" }, { "APAI", "APAE" }
     };
     for (const auto& alias : aliases) if (code == alias[0]) return alias[1];
     return code;

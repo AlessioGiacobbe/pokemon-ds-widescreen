@@ -56,8 +56,8 @@ language, revision or game, and complete playthroughs have not been verified.
 |---|---|
 | French (revision 0) | Black, White, Black 2, White 2, SoulSilver, HeartGold, Platinum |
 | Spanish | White, Platinum, SoulSilver, HeartGold |
-| Italian | HeartGold |
-| Experimental | English Diamond/Pearl and Spanish Diamond |
+| Italian | Black, White, Black 2, White 2, SoulSilver, HeartGold, Platinum |
+| Experimental | English and Italian Diamond/Pearl, Spanish Diamond |
 
 Regional versions use separate save names, such as `heartgold-fr.sav`, `heartgold-es.sav`
 and `heartgold-it.sav`; keep a backup when bringing an existing save across. GBA regional
@@ -90,7 +90,7 @@ cartridge. Copy it in under the game's name, in this folder:
 |---|---|
 | Black 2 / White 2 | `black2.sav` / `white2.sav` |
 | Black / White | `black.sav` / `white.sav` |
-| SoulSilver / HeartGold | `soulsilver.sav` / `heartgold.sav` (Italian: `heartgold-it.sav`) |
+| SoulSilver / HeartGold | `soulsilver.sav` / `heartgold.sav` (Italian: `soulsilver-it.sav` / `heartgold-it.sav`) |
 | Platinum | `platinum.sav` |
 
 - **Which files work:** a plain `.sav`, as melonDS, DeSmuME (Export Backup
@@ -462,8 +462,8 @@ Please tell us how it runs on yours, with your model (see [Reporting a bug](#rep
 | ![Black 2: the view from Aspertia's lookout, sky and mountains carried to the edges](docs/screenshots/black2-aspertia-lookout.jpg) | ![Black 2: Castelia City's pier](docs/screenshots/black2-castelia-pier.jpg) |
 
 - **ROMs:** any English copy (US or Europe), trimmed or not, including the
-  "NDSi Enhanced" one. Other languages put the game's code elsewhere: the
-  program says so instead of starting.
+  "NDSi Enhanced" one; French revision 0 and Italian copies too. Other
+  languages put the game's code elsewhere: the program says so instead of starting.
 - **Saves:** `black2.sav` and `white2.sav` (`tools/bw2/convert_save.py` turns
   `.dsv` and Action Replay saves into the raw 512 KB save).
 - **No version exclusives:** OTHER VERSION POKEMON in the pause menu (off to
@@ -486,8 +486,8 @@ Please tell us how it runs on yours, with your model (see [Reporting a bug](#rep
 | ![HeartGold: Totodile against a wild Pidgey on Route 29, with FIGHT, BAG, RUN, POKÉMON and the party beside the battle](docs/screenshots/heartgold-totodile-battle.jpg) | ![SoulSilver: Lugia following you along Route 7](docs/screenshots/soulsilver-lugia-following.jpg) |
 
 - **ROMs:** the English versions, US or Europe (the European English copies
-  are the same game as the US ones), Spanish and French revision 0; HeartGold
-  also supports Italian. Other languages start without the one-screen layouts.
+  are the same game as the US ones), Spanish, Italian and French revision 0.
+  Other languages start without the one-screen layouts.
 - **Saves:** `soulsilver.sav` and `heartgold.sav` (the same format, so either
   game reads the other's).
 - **No version exclusives:** OTHER VERSION POKEMON in the pause menu (off to
@@ -509,7 +509,7 @@ Please tell us how it runs on yours, with your model (see [Reporting a bug](#rep
 | ![Black: Reshiram against a wild Mantyke, with the game's FIGHT, BAG, RUN and POKÉMON panel beside the battle](docs/screenshots/black-reshiram-battle.jpg) | ![White: Zekrom in battle, with the FIGHT panel beside it](docs/screenshots/white-zekrom-battle.jpg) |
 | ![Black: a double battle, Reshiram and Excadrill against a wild Pelipper and Mantyke, the HP boxes down the edges](docs/screenshots/black-reshiram-double.jpg) | ![Black: Nimbasa City in widescreen](docs/screenshots/black-nimbasa.jpg) |
 
-- **ROMs:** any English copy (US or Europe), trimmed or not; French revision 0 for both games, and White in Spanish too.
+- **ROMs:** any English copy (US or Europe), trimmed or not; French revision 0 and Italian for both games, and White in Spanish too.
 - **Saves:** `black.sav` and `white.sav` (the same format, so either game reads
   the other's; `tools/bw2/convert_save.py` turns `.dsv` and Action Replay saves
   into the raw 512 KB save).
@@ -530,7 +530,7 @@ Please tell us how it runs on yours, with your model (see [Reporting a bug](#rep
 | ![Platinum: Infernape against a wild Machoke, with FIGHT, BAG, RUN and POKÉMON beside the battle](docs/screenshots/platinum-infernape-battle.jpg) | ![Platinum: Snowpoint City in the snow, in widescreen](docs/screenshots/platinum-snowpoint.jpg) |
 
 - **ROM:** the English version, US or Europe (both game code `CPUE`), or the
-  Spanish (`CPUS`) or French revision 0 (`CPUF`) versions, trimmed or not.
+  Spanish (`CPUS`), Italian (`CPUI`) or French revision 0 (`CPUF`) versions, trimmed or not.
 - **Save:** `platinum.sav`.
 - **What you get:** Sinnoh in widescreen, the snow and rain reaching the edges
   of the view; battles with their buttons and moves beside the action; the X
@@ -575,8 +575,8 @@ OLED in handheld mode; a PC has room to spare, and draws the same picture up to
 ## Known limits
 
 - English versions (US or Europe) for the seven established DS games; French
-  revision 0 for all seven; Spanish White, Platinum, SoulSilver and HeartGold;
-  Italian HeartGold. Diamond/Pearl support is experimental. See
+  revision 0 and Italian for all seven; Spanish White, Platinum, SoulSilver and
+  HeartGold. Diamond/Pearl support (English, Italian, Spanish Diamond) is experimental. See
   [regional profiles and touch controls](docs/REGIONAL-AND-TOUCH-CONTROLS.md).
 - Platinum: the Pokétch (the watch on the touch screen) isn't shown during
   normal play; its apps are one press of the screen-swap button away.
@@ -616,8 +616,8 @@ version and the **`game.log`** file, which says what the program did:
 A screenshot or short video helps too. Please never attach your ROM. A white or
 black screen when a game starts usually means the ROM isn't one the program
 plays: an English copy (US or Europe) of Black, White, Black 2, White 2,
-SoulSilver, HeartGold or Platinum, or a Spanish copy of White, Platinum,
-SoulSilver or HeartGold, unchanged (no
+SoulSilver, HeartGold or Platinum, a Spanish copy of White, Platinum,
+SoulSilver or HeartGold, or an Italian copy of any of the seven, unchanged (no
 patches, translations, randomizers or trimming).
 
 ## Support

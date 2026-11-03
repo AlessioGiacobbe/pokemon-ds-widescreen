@@ -111,6 +111,14 @@ inline const KnownGame* Known(const std::string& code)
         { "ADAS", "Pokemon Diamond (ES, Experimental)", "diamond-es.sav" },
         { "IPKI", "Pokemon HeartGold (IT)", "heartgold-it.sav" },
         { "CPUF", "Pokemon Platinum (FR)", "platinum-fr.sav" },
+        { "IRBI", "Pokemon Black (IT)", "black-it.sav" },
+        { "IRAI", "Pokemon White (IT)", "white-it.sav" },
+        { "IREI", "Pokemon Black 2 (IT)", "black2-it.sav" },
+        { "IRDI", "Pokemon White 2 (IT)", "white2-it.sav" },
+        { "IPGI", "Pokemon SoulSilver (IT)", "soulsilver-it.sav" },
+        { "CPUI", "Pokemon Platinum (IT)", "platinum-it.sav" },
+        { "ADAI", "Pokemon Diamond (IT, Experimental)", "diamond-it.sav" },
+        { "APAI", "Pokemon Pearl (IT, Experimental)", "pearl-it.sav" },
     };
     for (const KnownGame& g : games)
         if (code == g.code) return &g;

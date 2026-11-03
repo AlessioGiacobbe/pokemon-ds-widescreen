@@ -81,12 +81,16 @@ private:
             { "IRDO", 0x021ca050, 0x0208ee94, 0x1a3e00, 29 }, // White 2
             { "IREF", 0x021ca058, 0x0208ee78, 0x1a3e00, 29 }, // Black 2 FR
             { "IRDF", 0x021ca06c, 0x0208eea4, 0x1a3e00, 29 }, // White 2 FR
+            { "IREI", 0x021c9f38, 0x0208ede8, 0x1a3e00, 29 }, // Black 2 IT
+            { "IRDI", 0x021c9f6c, 0x0208ee14, 0x1a3e00, 29 }, // White 2 IT
             { "IRBO", 0x021d3700, 0x0209d8b0, 0x199500, 21 }, // Black
             { "IRAO", 0x021d3718, 0x0209d8c8, 0x199500, 21 }, // White
             // Other languages: the same table and heap setup found in their ROMs (by their contents).
             { "IRAS", 0x021d36bc, 0x0209d898, 0x199500, 21 }, // White (Spanish)
             { "IRBF", 0x021d3678, 0x0209d830, 0x199500, 21 }, // Black FR
             { "IRAF", 0x021d3690, 0x0209d848, 0x199500, 21 }, // White FR
+            { "IRBI", 0x021d35e8, 0x0209d830, 0x199500, 21 }, // Black IT
+            { "IRAI", 0x021d3600, 0x0209d848, 0x199500, 21 }, // White IT
         };
         for (const Version& v : versions)
             if (!strcmp(code, v.code)) return &v;

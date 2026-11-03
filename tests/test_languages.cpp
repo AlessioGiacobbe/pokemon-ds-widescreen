@@ -11,10 +11,11 @@ int main()
     UiLang::SetSystem("es"); UiLang::Set("auto"); assert(UiLang::lang == 1);
     UiLang::Set("it"); UiLang::SetSystem("en"); assert(UiLang::lang == 2);
     UiLang::Set("auto"); assert(UiLang::lang == 0);
-    const char* codes[] = {"IRBF","IRAF","IREF","IRDF","IPGF","IPKF","CPUF","IRAS","CPUS","IPGS","IPKS","ADAS","IPKI"};
+    const char* codes[] = {"IRBF","IRAF","IREF","IRDF","IPGF","IPKF","CPUF","IRAS","CPUS","IPGS","IPKS","ADAS","IPKI","IRBI","IRAI","IREI","IRDI","IPGI","CPUI","ADAI","APAI"};
     for (auto code : codes) { const auto* game = Launcher::Known(code); assert(game); assert(std::string(game->code) == code); }
-    assert(!Launcher::Known("IPKJ")); assert(!Launcher::Known("IPKD")); assert(!Launcher::Known("CPUI"));
+    assert(!Launcher::Known("IPKJ")); assert(!Launcher::Known("IPKD")); assert(!Launcher::Known("CPUD"));
     assert(BaseGameCode("IPKJ") == "IPKJ");
     assert(std::string(Launcher::Known("IPKF")->save) != Launcher::Known("IPKE")->save);
     assert(std::string(Launcher::Known("IPKS")->save) != Launcher::Known("IPKI")->save);
+    assert(BaseGameCode("APAI") == "APAE"); assert(BaseGameCode("IRBI") == "IRBO");
 }

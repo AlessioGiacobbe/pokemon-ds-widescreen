@@ -3,6 +3,8 @@
 
 ## Unreleased
 
+- **Italian copies of every DS game:** Black, White, Black 2, White 2, SoulSilver and Platinum now play in Italian with the same one-screen layouts as the English versions (HeartGold already did), and Diamond and Pearl too, still experimental. Each has its own save, such as `platinum-it.sav` or `black2-it.sav`.
+
 - Italian menus for what came after the first translation: updates, RetroAchievements, cheat search, save backups, the game list's colour and background, touch controls. In Italian and Spanish, values such as ON / OFF are now translated in the menus too, and long Italian names no longer run into their value.
 
 - iPhone and iPad: wait for the active app scene before opening the game list, and keep rendering aligned when the available display changes.
