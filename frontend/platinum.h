@@ -101,6 +101,9 @@ struct PtFuncs
     int startMenu = -1;      // the X menu (and the applications started from it)
     int dex = -1, party = -1, bag = -1, trainerCard = -1, options = -1, summary = -1;
     int townMap = -1, box = -1, naming = -1, title = -1, mainMenu = -1, intro = -1;
+    // The introduction's wait for the Poke Ball's button to be touched: it runs every frame from
+    // the end of "Touch the button on the middle of the Poke Ball" until it is touched.
+    int introBall = -1;
     int starter = -1, journal = -1, moveReminder = -1, evolution = -1, eggHatch = -1;
     int hallOfFame = -1, credits = -1;
     int battle = -1;         // any battle
@@ -167,6 +170,7 @@ struct PtFuncs
         title = find("TitleScreen_Main");
         mainMenu = find("MainMenu_Main");
         intro = find("RowanIntro_Main");
+        introBall = find("RowanIntro_WasPokeballOpened");
         starter = find("ChooseStarter_Main");
         journal = find("JournalController_Main");
         moveReminder = find("MoveReminder_Main");

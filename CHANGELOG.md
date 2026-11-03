@@ -3,6 +3,8 @@
 
 ## Unreleased
 
+- Platinum, Diamond and Pearl: A moves on "Here, I have a Poké Ball." at the start of a new game. It used to touch the ball there, before the game asks for it, so the text only moved on with B.
+
 - iPhone and iPad: wait for the active app scene before opening the game list, and keep rendering aligned when the available display changes.
 
 - iPhone and iPad: adopt the modern app lifecycle to fix launch failures on iOS 27, and size the game window to the available display when folding, unfolding or resizing.

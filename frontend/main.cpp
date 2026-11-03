@@ -7038,6 +7038,10 @@ int main(int argc, char** argv)
         // game ignores the buttons there (PtFuncs::IntroTouch): his YES / NO ("Please touch a
         // button on the Touch Screen below"), where A touches YES and B touches NO, and "Touch the
         // button on the middle of the Poke Ball", where A touches it. So a controller can answer.
+        // (The ball is drawn before that, while "Here, I have a Poke Ball." waits for a button:
+        // there A must reach the game, or the text never moves on. So A touches the ball only
+        // while the game waits for the touch (pt.introBall runs); with a table that lacks that
+        // function, the picture alone decides, as before.)
         if (pt.on && funcWatchOn && !paused && funcWatch.Ran(pt.intro, 2))
         {
             static uint32_t prevIntroKeys = 0;
@@ -7045,7 +7049,8 @@ int main(int argc, char** argv)
             const uint32_t edge = keys & ~prevIntroKeys;
             prevIntroKeys = keys;
             const int kind = PtFuncs::IntroTouch(nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get());
-            const uint32_t answer = kind == PtFuncs::INTRO_YESNO ? (1u << KEY_A) | (1u << KEY_B) : kind ? (1u << KEY_A) : 0;
+            const bool ballWaits = kind == PtFuncs::INTRO_BALL && (pt.introBall < 0 || funcWatch.Ran(pt.introBall, 2));
+            const uint32_t answer = kind == PtFuncs::INTRO_YESNO ? (1u << KEY_A) | (1u << KEY_B) : ballWaits ? (1u << KEY_A) : 0;
             if (answer || introTouch > 0)
             {
                 if (answer && introTouch == 0 && (edge & answer))
