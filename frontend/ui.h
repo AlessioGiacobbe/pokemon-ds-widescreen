@@ -301,10 +301,13 @@ struct Menu
         scroll = std::max(0, std::min(scroll, (int)items.size() - shown));
         const int rows = shown + (hasTitle ? 3 : 2);
         if (lineH * rows + 6 * scale > c.h - 4) lineH = std::max(9 * scale, (c.h - 4 - 6 * scale) / rows);
+        // (A value as drawn: translated before its arrows go round it, as the whole would not be
+        // in the language's table.)
+        auto shownValue = [](const MenuItem& item) { return item.info ? item.value : "< " + UiLang::Tr(item.value) + " >"; };
         int boxW = (boxUnits > 0 ? boxUnits : 190) * scale;
         if (UiLang::lang)
             for (const auto& item : items)
-                boxW = std::max(boxW, Canvas::TextWidth(item.label, scale) + Canvas::TextWidth(item.value, scale) + 20 * scale);
+                boxW = std::max(boxW, Canvas::TextWidth(item.label, scale) + (item.value.empty() ? 0 : Canvas::TextWidth(shownValue(item), scale)) + 20 * scale);
         if (boxW > c.w - 8) boxW = c.w - 8;
         int boxH = lineH * rows + 6 * scale;
         // The note's lines (up to 4, the last cut short), and the box moved up to make room.
@@ -353,7 +356,7 @@ struct Menu
             c.Text(bx + 6 * scale, y, items[i].label, scale, col);
             if (!items[i].value.empty())
             {
-                std::string v = items[i].info ? items[i].value : "< " + items[i].value + " >";
+                const std::string v = shownValue(items[i]);
                 // (A slider's value right-aligned in room for its widest, "< 100% >", the bar left
                 // of it, so the bar stays put as the number changes.)
                 const int vx = bx + boxW - 6 * scale - Canvas::TextWidth(items[i].slider >= 0 ? "< 100% >" : v, scale);

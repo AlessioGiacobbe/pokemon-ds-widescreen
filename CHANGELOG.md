@@ -3,6 +3,8 @@
 
 ## Unreleased
 
+- Italian menus for what came after the first translation: updates, RetroAchievements, cheat search, save backups, the game list's colour and background, touch controls. In Italian and Spanish, values such as ON / OFF are now translated in the menus too, and long Italian names no longer run into their value.
+
 - iPhone and iPad: wait for the active app scene before opening the game list, and keep rendering aligned when the available display changes.
 
 - iPhone and iPad: adopt the modern app lifecycle to fix launch failures on iOS 27, and size the game window to the available display when folding, unfolding or resizing.

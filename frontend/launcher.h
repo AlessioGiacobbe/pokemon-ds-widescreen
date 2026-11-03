@@ -1290,7 +1290,7 @@ struct SettingsPage
                 if (!l.value.empty())
                 {
                     const bool group = !strncmp(items[l.item].key, "!group", 6);
-                const std::string v = sel && !group ? "< " + l.value + " >" : l.value;
+                const std::string v = sel && !group ? "< " + UiLang::Tr(l.value) + " >" : l.value; // (translated inside its arrows)
                     c.Text(x + width - Canvas::TextWidth(v, ts), y, v, ts, sel ? th.nameSel : th.name);
                 }
             }
